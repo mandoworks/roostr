@@ -70,36 +70,11 @@ TOML
   fi
 fi
 
-# 5. Add shell alias to ~/.zshrc or ~/.bashrc
-SHELL_RC=""
-if [ -n "${ZSH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "zsh" ]; then
-  SHELL_RC="$HOME/.zshrc"
-elif [ -n "${BASH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "bash" ]; then
-  SHELL_RC="$HOME/.bashrc"
-fi
-
-if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
-  if ! grep -q "toggle-board --plugin roostr" "$SHELL_RC"; then
-    echo "   adding 'roostr' shell command to $SHELL_RC..."
-    cat <<'SH' >> "$SHELL_RC"
-
-# Roostr: typing 'roostr' in Herdr opens/toggles the live board split
-roostr() {
-  if [ $# -eq 0 ] && [ -n "${HERDR_ENV:-}" ]; then
-    herdr plugin action invoke toggle-board --plugin roostr > /dev/null
-  else
-    command roostr "$@"
-  fi
-}
-SH
-  fi
-fi
-
 echo ""
 echo -e "${GREEN}${BOLD}✔ Roostr successfully installed!${RESET}"
 echo ""
 echo "How to use:"
-echo "  1. Inside Herdr, press prefix + b to toggle the live board split."
-echo "  2. Or type 'roostr' in any Herdr terminal pane."
+echo "  1. In any terminal pane, run 'roostr' to turn that pane into the live board."
+echo "  2. Or press prefix + r in Herdr to toggle the split board."
 echo "  3. From agent statuslines, report exact metrics via 'roostr report'."
 echo ""
