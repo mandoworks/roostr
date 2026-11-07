@@ -656,6 +656,19 @@ function copyToClipboard(text) {
   }
 }
 
+function orchestrationEnabled(cfg, opts) {
+  if (process.env.ROOSTR_EXPERIMENTAL === '1' || process.env.ROOSTR_ORCHESTRATION === '1' || process.env.CREW_BOARD_EXPERIMENTAL === '1') {
+    return true;
+  }
+  if (opts && (opts.orchestration || (opts.menu && opts.menu.orchestration))) {
+    return true;
+  }
+  if (cfg && cfg.orchestration && cfg.orchestration.enabled) {
+    return true;
+  }
+  return false;
+}
+
 // The clickable menu bar. Returns the line and its hit regions.
 function menuBar(menu, width) {
   const provider = ui.clean(menu.provider);
@@ -664,12 +677,16 @@ function menuBar(menu, width) {
     ['view', `view: ${menu.view}`],
     ['scope', `scope: ${menu.scope}`],
     ['edit', 'edit task'],
-    ['setup', 'S setup'],
-    ['head-honcho', 'O head'],
-    ['secretary', 'K sec'],
-    ['monitor', 'M monitor'],
-    ['recover', 'C continue'],
   ];
+  if (menu.orchestration) {
+    items.push(
+      ['setup', 'S setup'],
+      ['head-honcho', 'O head'],
+      ['secretary', 'K sec'],
+      ['monitor', 'M monitor'],
+      ['recover', 'C continue']
+    );
+  }
   if (provider) {
     const sub = menu.subview && menu.subview !== 'all'
       ? (menu.subview.startsWith(provider + ' ') ? menu.subview.slice(provider.length + 1) : menu.subview)
@@ -690,9 +707,10 @@ function menuBar(menu, width) {
     x += ui.strWidth(t) + 1;
   }
   const pKeys = provider ? (menu.hasSubviews ? ' p P' : ' p') : '';
+  const orchKeys = menu.orchestration ? ' S O K M C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
-    : ` click to select · double click jump · ↑↓ ↵ f e t v s d S O K M C${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
+    : ` click to select · double click jump · ↑↓ ↵ f e t v s d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
   if (x + ui.strWidth(hint) <= width) line += (menu.notice ? hint : C.dim(hint));
   return { line, hits };
 }
@@ -1081,11 +1099,13 @@ function helpLines(menu, sources, width = 100) {
       ['p / P', usage],
     ]],
     more: ['MORE', [
-      ['S', 'setup: tools and preferred models'],
-      ['O', 'start Head Honcho in a shell pane'],
-      ['K', 'start a secretary in a shell pane'],
-      ['M', 'prompt the secretary for a monitor pass'],
-      ['C', 'allow or continue the selected stuck pane'],
+      ...(menu && menu.orchestration ? [
+        ['S', 'setup: tools and preferred models'],
+        ['O', 'start Head Honcho in a shell pane'],
+        ['K', 'start a secretary in a shell pane'],
+        ['M', 'prompt the secretary for a monitor pass'],
+        ['C', 'allow or continue the selected stuck pane'],
+      ] : []),
       ['t', `colour tags (${menu.tags})`],
       ['a', 'allow a new crew file'],
       ['u', 'install the offered update'],
@@ -2014,7 +2034,7 @@ ${REPORT_USAGE.replace(/^usage: /, '       ')}
        crew-board summary [--json] [--days 30] [--no-write]
        crew-board template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
        crew-board name --language en|es|pt|fr [--count 1..20] [--exclude a,b,c]
-       crew-board analytics [--days N] [--by pane|model|kind|batch] [--json]
+       crew-board analytics [--days N | --today] [--by pane|model|kind|batch] [--json]
 
 options:
   --workspace <id|label>  only show agent panes in this workspace
@@ -2080,6 +2100,7 @@ function parseArgs(argv) {
     else if (a === '--interval') o.interval = Math.max(2, Number(val()) || 3);
     else if (a === '--once') o.once = true;
     else if (a === '--backups') o.backups = true;
+    else if (a === '--orchestration' || a === '--experimental') o.orchestration = true;
     else if (a === '--json') { o.json = true; o.jsonRows = false; }
     else if (a === '--json-rows') { o.jsonRows = true; o.json = false; }
     else if (a === '--no-update-check') o.noUpdateCheck = true;
@@ -2441,6 +2462,7 @@ function runLive(opts) {
     const sources = [...new Set(provLimits.map((l) => l.source))];
     return {
       tags: opts.tags || 'label', view: opts.view, scope: model ? model.scopeLabel : 'all',
+      orchestration: orchestrationEnabled(currentConfig(), opts),
       provider: prov,
       subview: prov ? shownSubview(prov) : null,
       hasSubviews: sources.length > 1,
@@ -2700,10 +2722,12 @@ function runLive(opts) {
   const runMonitor = (auto) => {
     if (!model) return;
     const cfg = currentConfig();
-    const autoOn = model.secretaryAuto != null ? model.secretaryAuto : cfg.secretary.auto;
+    if (auto && !orchestrationEnabled(cfg, opts)) return;
+    const autoOn = model.secretaryAuto != null ? model.secretaryAuto : (cfg.secretary && cfg.secretary.auto);
     if (auto && !autoOn) return;
-    const intervalMs = model.secretaryIntervalMs != null ? model.secretaryIntervalMs : cfg.secretary.intervalSeconds * 1000;
+    const intervalMs = model.secretaryIntervalMs != null ? model.secretaryIntervalMs : ((cfg.secretary && cfg.secretary.intervalSeconds ? cfg.secretary.intervalSeconds : 900) * 1000);
     if (auto && !monitorDue(lastMonitor, Date.now(), intervalMs, autoOn)) return;
+    const scope = monitorScope(cfg, model);
     const target = secretaryTarget(model.rows, scope === 'workspace' ? model.home : null);
     if (!target) {
       if (!auto) flash('no secretary pane; press K to start one');
@@ -2714,7 +2738,6 @@ function runLive(opts) {
       if (!auto) flash('secretary is busy');
       return;
     }
-    const scope = monitorScope(cfg, model);
     if (scope === 'workspace' && !model.home) {
       if (!auto) flash('open the board in a workspace for a workspace scope pass');
       return;
@@ -2818,14 +2841,19 @@ function runLive(opts) {
       }, 2000);
     }
     else if (action === 'backups') openBackups();
-    else if (action === 'setup') {
-      const loaded = config.loadConfig();
-      setup = setupState(loaded.config, loaded.warnings);
+    else if (['setup', 'head-honcho', 'secretary', 'monitor', 'recover'].includes(action)) {
+      if (!orchestrationEnabled(currentConfig(), opts)) {
+        flash('orchestration is gated for v0.3.0 (set ROOSTR_EXPERIMENTAL=1)');
+        return;
+      }
+      if (action === 'setup') {
+        const loaded = config.loadConfig();
+        setup = setupState(loaded.config, loaded.warnings);
+      } else if (action === 'head-honcho') openHeadPicker();
+      else if (action === 'secretary') openSecretaryPicker();
+      else if (action === 'monitor') runMonitor(false);
+      else if (action === 'recover') recoverPane();
     }
-    else if (action === 'head-honcho') openHeadPicker();
-    else if (action === 'secretary') openSecretaryPicker();
-    else if (action === 'monitor') runMonitor(false);
-    else if (action === 'recover') recoverPane();
     else if (action === 'update' && model && model.update && !updating) {
       // The new files land in place; this process keeps running the old code
       // until the board is reopened.
@@ -3085,5 +3113,5 @@ function main(argv) {
 module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
   render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups,
-  setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, secretaryTarget, monitorDue, monitorScope, monitorPrompt, surge,
+  setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, secretaryTarget, monitorDue, monitorScope, monitorPrompt, surge, orchestrationEnabled,
 };

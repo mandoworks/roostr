@@ -6,7 +6,7 @@
 
 const { execFile } = require('child_process');
 
-const TIMEOUT_MS = 4000;
+const TIMEOUT_MS = Number(process.env.HERDR_TIMEOUT_MS) || 10000;
 
 function herdrBin() {
   return process.env.HERDR_BIN_PATH || 'herdr';

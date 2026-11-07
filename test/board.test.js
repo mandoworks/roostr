@@ -509,7 +509,9 @@ test('render: menu bar and click regions', () => {
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
-  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
+  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[d today\] \[\? keys\]/);
+  const outOrch = board.render(m, { width: 140, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
+  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
   const tags = hits.find((h) => h.action === 'tags');
@@ -1684,26 +1686,72 @@ test('usage limits: Shift+P (P) toggles sub-views inside subscription, condensin
   assert.match(menuBarOut, /p P/);
 });
 
-test('menu: setup, head-honcho and monitor items have hit regions', () => {
+test('menu: setup, head-honcho and monitor items have hit regions when orchestration enabled', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const hits = [];
-  const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits }).split('\n');
+  const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, hits }).split('\n');
   assert.match(out[1], /\[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\]/);
   for (const action of ['setup', 'head-honcho', 'secretary', 'monitor', 'recover']) {
     assert.ok(hits.some((h) => h.action === action), action);
   }
 });
 
-test('help: setup, Head Honcho and monitor rows are listed', () => {
+test('menu: orchestration items are hidden by default', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
-  const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all' }, help: true });
+  const hits = [];
+  const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits }).split('\n');
+  assert.doesNotMatch(out[1], /\[S setup\]/);
+  assert.doesNotMatch(out[1], /\[O head\]/);
+  assert.doesNotMatch(out[1], /\[K sec\]/);
+  assert.doesNotMatch(out[1], /\[M monitor\]/);
+  assert.doesNotMatch(out[1], /\[C continue\]/);
+  for (const action of ['setup', 'head-honcho', 'secretary', 'monitor', 'recover']) {
+    assert.ok(!hits.some((h) => h.action === action), action);
+  }
+});
+
+test('help: setup, Head Honcho and monitor rows are listed when orchestration enabled', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, help: true });
   assert.match(out, /  S +setup: tools and preferred models/);
   assert.match(out, /  O +start Head Honcho in a shell pane/);
   assert.match(out, /  K +start a secretary in a shell pane/);
   assert.match(out, /  M +prompt the secretary for a monitor pass/);
   assert.match(out, /  C +allow or continue the selected stuck pane/);
+});
+
+test('help: orchestration rows are hidden by default', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all' }, help: true });
+  assert.doesNotMatch(out, /  S +setup:/);
+  assert.doesNotMatch(out, /  O +start Head Honcho/);
+  assert.doesNotMatch(out, /  K +start a secretary/);
+  assert.doesNotMatch(out, /  M +prompt the secretary/);
+  assert.doesNotMatch(out, /  C +allow or continue/);
+});
+
+test('orchestrationEnabled: checks env, options and config', () => {
+  const origExp = process.env.ROOSTR_EXPERIMENTAL;
+  const origOrch = process.env.ROOSTR_ORCHESTRATION;
+  delete process.env.ROOSTR_EXPERIMENTAL;
+  delete process.env.ROOSTR_ORCHESTRATION;
+  try {
+    assert.equal(board.orchestrationEnabled({}, {}), false);
+    assert.equal(board.orchestrationEnabled({}, { orchestration: true }), true);
+    assert.equal(board.orchestrationEnabled({}, { menu: { orchestration: true } }), true);
+    assert.equal(board.orchestrationEnabled({ orchestration: { enabled: true } }, {}), true);
+    process.env.ROOSTR_EXPERIMENTAL = '1';
+    assert.equal(board.orchestrationEnabled({}, {}), true);
+  } finally {
+    if (origExp !== undefined) process.env.ROOSTR_EXPERIMENTAL = origExp;
+    else delete process.env.ROOSTR_EXPERIMENTAL;
+    if (origOrch !== undefined) process.env.ROOSTR_ORCHESTRATION = origOrch;
+    else delete process.env.ROOSTR_ORCHESTRATION;
+  }
 });
 
 test('setup: the screen renders at 80 columns and saves', () => {

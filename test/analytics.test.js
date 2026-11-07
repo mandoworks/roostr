@@ -193,6 +193,38 @@ test('analytics: query and CLI formatText execute without throw', () => {
   assert.ok(textOutput.includes('$0.0100'));
 });
 
+test('analytics: query with today: true bounds cutoff to midnight local and sets window today', () => {
+  const mockNow = new Date('2026-11-07T15:30:00').getTime();
+  const midnight = new Date(mockNow);
+  midnight.setHours(0, 0, 0, 0);
+  const midnightMs = midnight.getTime();
+
+  const samples = [
+    // Yesterday sample (before midnight)
+    { at: midnightMs - 1000, pane: 'w1:p1', model: 'gemini-3.8-flash', tokens: 50, cost: 0.01 },
+    // Today sample (after midnight)
+    { at: midnightMs + 1000, pane: 'w1:p1', model: 'gemini-3.8-flash', tokens: 100, cost: 0.02 },
+  ];
+
+  const result = analytics.query({
+    now: mockNow,
+    today: true,
+    by: 'model',
+    samples,
+    ledger: [],
+    transitions: [],
+  });
+
+  assert.equal(result.today, true);
+  assert.equal(result.window, 'today');
+  assert.equal(result.data.length, 1);
+  assert.equal(result.data[0].tokens, 100);
+  assert.equal(result.data[0].cost, 0.02);
+
+  const textOutput = analytics.formatText(result);
+  assert.ok(textOutput.includes('today (00:00 local to now)'));
+});
+
 test('report: append failure isolation ensures writeReport does not throw on append error', () => {
   const badUsagePath = path.join(tmpRoot, 'unwritable-dir', 'sub', 'usage.jsonl');
   // Make parent an unwritable file so mkdir fails

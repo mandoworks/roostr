@@ -352,8 +352,18 @@ function analyzeBatchTimeline(tasksData, ledgerEntries, transitions, samples) {
 
 function query(options = {}) {
   const now = Number.isFinite(options.now) ? options.now : Date.now();
-  const days = Number.isFinite(options.days) && options.days > 0 ? options.days : 30;
-  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  const isToday = Boolean(options.today);
+  let cutoff;
+  let days = 30;
+  if (isToday) {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    cutoff = d.getTime();
+    days = 1;
+  } else {
+    days = Number.isFinite(options.days) && options.days > 0 ? options.days : 30;
+    cutoff = now - days * 24 * 60 * 60 * 1000;
+  }
   const by = options.by && VIEWS.includes(options.by) ? options.by : 'model';
 
   // Read usage samples
@@ -409,13 +419,16 @@ function query(options = {}) {
   return {
     generated_at: new Date(now).toISOString(),
     days,
+    window: isToday ? 'today' : `${days}d`,
+    today: isToday,
     by,
     data,
   };
 }
 
 function formatText(result) {
-  const lines = [`analytics: by ${result.by} · ${result.days} days`];
+  const windowLabel = result.today ? 'today (00:00 local to now)' : `${result.days} days`;
+  const lines = [`analytics: by ${result.by} · ${windowLabel}`];
   const items = result.data;
 
   if (result.by === 'model') {
@@ -504,7 +517,7 @@ function formatText(result) {
 
 function helpText() {
   return [
-    'usage: crew-board analytics [--days N] [--by pane|model|kind|batch] [--tasks <path>] [--json]',
+    'usage: crew-board analytics [--days N | --today] [--by pane|model|kind|batch] [--tasks <path>] [--json]',
     '',
     'Four analytical views over continuous usage, ledger attempts, and transitions:',
     '  (1) cost by model',
@@ -513,6 +526,7 @@ function helpText() {
     '  (4) batch timeline for tasks.json',
     '',
     'flags:',
+    '  --today         lookback window bounded to today (00:00 local to now, matches tokscale --today)',
     '  --days N        lookback window in days (default: 30)',
     '  --by VIEW       grouping: model (default), pane, kind, or batch',
     '  --tasks <path>  tasks.json path for batch view (default: docs/orchestration/tasks.json)',
@@ -531,6 +545,7 @@ function main(argv = []) {
     return 0;
   }
   const json = argv.includes('--json');
+  const today = argv.includes('--today');
   let days = 30;
   let by = 'model';
   let tasksFile = null;
@@ -554,7 +569,7 @@ function main(argv = []) {
     }
   }
 
-  const result = query({ days, by, tasksFile });
+  const result = query({ days, today, by, tasksFile });
   if (json) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } else {
