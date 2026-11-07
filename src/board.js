@@ -1000,11 +1000,19 @@ function todayLines(model, width, metric = 'tokens') {
   const totalCost = ts ? ts.total : clients.reduce((n, c) => n + c.cost, 0);
   const sessions = clients.reduce((n, c) => n + c.sessions, 0);
   const models = ts ? collectModels(ts, metric) : [];
+  const hits = [];
 
   const head = `${bold(C.title('today'))}  ${C.text(`${fmtTokens(totalTokens)} tokens · ${fmtCost(totalCost)} · ${sessions} session${sessions === 1 ? '' : 's'}`)}`;
-  const right = C.dim(`${metric === 'cost' ? 'by cost' : 'by tokens'} · ${source}`);
+  const metricLabel = metric === 'cost' ? 'by cost' : 'by tokens';
+  const right = C.dim(`${metricLabel} · ${source}`);
   const gap = width - ui.strWidth(head) - ui.strWidth(right);
-  lines.push(gap >= 2 ? head + ' '.repeat(gap) + right : head);
+  if (gap >= 2) {
+    const metricX0 = width - ui.strWidth(right);
+    hits.push({ action: 'metric', y: lines.length, x0: metricX0, x1: metricX0 + ui.strWidth(metricLabel) - 1 });
+    lines.push(head + ' '.repeat(gap) + right);
+  } else {
+    lines.push(head);
+  }
   const pace = paceLine(model, totalTokens, metric);
   if (pace) lines.push(pace);
   lines.push('');
@@ -1073,8 +1081,12 @@ function todayLines(model, width, metric = 'tokens') {
     lines.push(C.dim('  the whole day, closed sessions and every agent need tokscale: github.com/junhoyeo/tokscale'));
   }
   lines.push('');
-  lines.push(C.dim(`  d close · $ ${metric === 'cost' ? 'tokens' : 'cost'}${ts ? ' · data from tokscale by Junho Yeo' : ''}`));
-  return lines;
+  const closeY = lines.length;
+  hits.push({ action: 'today', y: closeY, x0: 2, x1: 8 });
+  const metricLabelBottom = `$ ${metric === 'cost' ? 'tokens' : 'cost'}`;
+  hits.push({ action: 'metric', y: closeY, x0: 12, x1: 12 + ui.strWidth(metricLabelBottom) - 1 });
+  lines.push(C.dim(`  d close · ${metricLabelBottom}${ts ? ' · data from tokscale by Junho Yeo' : ''}`));
+  return { lines, hits };
 }
 
 // The help screen: the keys in four groups and a legend for the symbols, in
@@ -1280,20 +1292,81 @@ function sourcesOf(limits, provider) {
 
 // One line per usage source: a bar per window, coloured by how full it is,
 // and when it resets.
-function limitsLine(l, now) {
-  const parts = l.windows.map((w) => {
+function limitsLine(l, now, hits = null, index = 0) {
+  let x = 0;
+  const src = ui.clean(l.source);
+  x += ui.strWidth(src) + 2;
+
+  const parts = l.windows.map((w, wi) => {
+    if (wi > 0) x += 3;
     if (w.used == null) {
-      if (w.name.startsWith('[')) return bold(C.cyan(w.name));
-      // Only the cap is known: show it, never a guessed bar.
+      if (w.name.startsWith('[')) {
+        x += ui.strWidth(w.name);
+        return bold(C.cyan(w.name));
+      }
+      const plain = w.cap ? `${w.name} ?/${w.cap}` : w.name;
+      x += ui.strWidth(plain);
       return w.cap ? `${C.text(w.name)} ${C.dim(`?/${w.cap}`)}` : C.text(w.name);
     }
     const pct = Math.max(0, Math.min(100, w.used));
     const fill = Math.round(pct / 10);
     const paint = pct >= 85 ? C.red : pct >= 60 ? C.amber : C.green;
-    const reset = w.resets ? ` ${C.dim(`resets ${fmtReset(w.resets * 1000, now)}`)}` : '';
+    const barWidth = ui.strWidth(w.name) + 1 + 10 + 1 + ui.strWidth(`${Math.round(w.used)}%`);
+    if (hits) {
+      hits.push({
+        action: 'tooltip',
+        text: `${w.name}: ${Math.round(w.used)}% quota used${w.resets ? ` (resets ${fmtReset(w.resets * 1000, now)})` : ''}`,
+        x0: x,
+        x1: x + barWidth - 1,
+        index,
+      });
+    }
+    x += barWidth;
+
     const cap = w.cap ? ` ${C.dim(`(${w.cap})`)}` : '';
-    const eta = w.eta ? ` ${bold(C.amber(`⚠ out in ~${fmtDuration(w.eta - now)}`))}` : '';
-    return `${C.text(w.name)} ${paint('█'.repeat(fill))}${C.dim('░'.repeat(10 - fill))} ${paint(`${Math.round(w.used)}%`)}${cap}${reset}${paceCell(w.pace)}${eta}`;
+    if (w.cap) x += ui.strWidth(` (${w.cap})`);
+
+    const reset = w.resets ? ` ${C.dim(`resets ${fmtReset(w.resets * 1000, now)}`)}` : '';
+    if (w.resets) x += ui.strWidth(` resets ${fmtReset(w.resets * 1000, now)}`);
+
+    let pace = '';
+    if (w.pace >= 0.05) {
+      const p = w.pace;
+      const paceVal = p >= 10 ? Math.round(p) : p.toFixed(1);
+      const paceStr = ` ⚡ ${paceVal}×`;
+      const paceWidth = ui.strWidth(paceStr);
+      if (hits) {
+        hits.push({
+          action: 'tooltip',
+          text: `⚡ burn pace: ${paceVal}× sustainable rate (${p >= 2 ? 'critically high burn' : p >= 1 ? 'faster than sustainable pace' : 'healthy pace'})`,
+          x0: x + 1,
+          x1: x + paceWidth - 1,
+          index,
+        });
+      }
+      x += paceWidth;
+      const paintPace = p >= 2 ? C.red : p >= 1 ? C.amber : C.green;
+      pace = ` ${bold(paintPace(`⚡ ${paceVal}×`))}`;
+    }
+
+    let eta = '';
+    if (w.eta) {
+      const etaStr = ` ⚠ out in ~${fmtDuration(w.eta - now)}`;
+      const etaWidth = ui.strWidth(etaStr);
+      if (hits) {
+        hits.push({
+          action: 'tooltip',
+          text: `⚠ quota run-out: window exhausts in ~${fmtDuration(w.eta - now)} at current burn rate`,
+          x0: x + 1,
+          x1: x + etaWidth - 1,
+          index,
+        });
+      }
+      x += etaWidth;
+      eta = ` ${bold(C.amber(`⚠ out in ~${fmtDuration(w.eta - now)}`))}`;
+    }
+
+    return `${C.text(w.name)} ${paint('█'.repeat(fill))}${C.dim('░'.repeat(10 - fill))} ${paint(`${Math.round(w.used)}%`)}${cap}${reset}${pace}${eta}`;
   });
   return `${bold(C.accent(ui.clean(l.source)))}  ${parts.join('   ')}`;
 }
@@ -1779,7 +1852,9 @@ function render(model, {
   } else if (headPicker) {
     lines.push(...headLines(headPicker, width));
   } else if (today) {
-    lines.push(...todayLines(model, width, metric));
+    const td = todayLines(model, width, metric);
+    for (const h of td.hits) regions.push({ ...h, y: lines.length + h.y });
+    lines.push(...td.lines);
   } else if (backups) {
     lines.push(...backupLines(backups, width, model.now));
   } else {
@@ -1803,16 +1878,22 @@ function render(model, {
       let colX = 0;
       for (const c of cols) {
         if (c.key === 'id' && colX < width) {
-          regions.push({ action: 'copy-id', paneId: r.paneId, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w) });
-        } else if (['tag', 'name', 'state'].includes(c.key) && colX < width) {
+          regions.push({ action: 'copy-id', paneId: r.paneId, index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w) });
+        } else if (['tag', 'name'].includes(c.key) && colX < width) {
           regions.push({ action: 'jump', paneId: r.paneId, index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w) });
+        } else if (c.key === 'state' && colX < width) {
+          const canRecover = r.status === 'blocked' && orchestrationEnabled(model.config, { menu });
+          regions.push({ action: canRecover ? 'recover' : 'detail', paneId: r.paneId, index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w) });
         }
         colX += c.w + 1;
+      }
+      if (!below && colX < width) {
+        regions.push({ action: 'edit', paneId: r.paneId, index: i, y: lines.length, x0: colX, x1: width - 1 });
       }
       regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
       if (below) {
         lines.push(bgLine(ui.clip(line, width), bg, width));
-        regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
+        regions.push({ action: 'edit', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
         lines.push(bgLine(ui.clip(' '.repeat(indent) + taskCell(r, width - indent), width), bg, width));
       } else {
         lines.push(bgLine(ui.clip(`${line} ${taskCell(r, taskW)}`, width), bg, width));
@@ -1865,12 +1946,24 @@ function render(model, {
   const subChoices = ['all', ...sources];
   const nextSub = subChoices[(subChoices.indexOf(activeSub) + 1) % subChoices.length];
   const nextSubLabel = nextSub === 'all' ? 'all' : (nextSub.startsWith(shown + ' ') ? nextSub.slice(shown.length + 1) : nextSub);
+  const usageHits = hits ? [] : null;
   const usage = shown === 'off'
     ? []
     : visibleLimits.map((l, i) => {
-        const nextProv = all.length > 1 && i === 0 ? C.dim(`   p ▸ ${choices[(choices.indexOf(shown) + 1) % choices.length]}`) : '';
-        const nextSubHint = sources.length > 1 && i === 0 ? C.dim(`   P ▸ ${nextSubLabel}`) : '';
-        return ui.clip(limitsLine(l, model.now) + nextProv + nextSubHint, width);
+        const nextProv = all.length > 1 && i === 0 ? `   p ▸ ${choices[(choices.indexOf(shown) + 1) % choices.length]}` : '';
+        const nextSubHint = sources.length > 1 && i === 0 ? `   P ▸ ${nextSubLabel}` : '';
+        const line = limitsLine(l, model.now, usageHits, i);
+        let curX = ui.strWidth(line);
+        if (usageHits && nextProv) {
+          usageHits.push({ action: 'provider', x0: curX + 3, x1: curX + ui.strWidth(nextProv) - 1, index: i });
+          curX += ui.strWidth(nextProv);
+        }
+        if (usageHits && nextSubHint) {
+          usageHits.push({ action: 'subview', x0: curX + 3, x1: curX + ui.strWidth(nextSubHint) - 1, index: i });
+        }
+        const nextProvPaint = nextProv ? C.dim(nextProv) : '';
+        const nextSubPaint = nextSubHint ? C.dim(nextSubHint) : '';
+        return ui.clip(line + nextProvPaint + nextSubPaint, width);
       });
   const box = detail && !help && !today && !backups && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
   const body = lines.map((l) => ui.clip(l, width));
@@ -1889,8 +1982,24 @@ function render(model, {
       }
       out.push(...box.lines);
     }
+    if (usageHits) {
+      const usageBaseY = out.length;
+      for (const h of usageHits) {
+        if (h.x0 >= 0 && h.x0 < width && h.x1 < width) hits.push({ ...h, y: usageBaseY + h.index });
+      }
+    }
     out.push(...usage);
     out.push(footer);
+    if (hits && menu) {
+      if (spend) {
+        const spendPlain = ui.clean(spend);
+        const spendMatch = ui.clean(foot).indexOf(spendPlain);
+        if (spendMatch >= 0) {
+          hits.push({ action: 'today', y: out.length - 1, x0: spendMatch, x1: spendMatch + ui.strWidth(spendPlain) - 1 });
+        }
+      }
+      hits.push({ action: 'help', y: out.length - 1, x0: 0, x1: width - 1 });
+    }
     return out.join('\n');
   }
 
@@ -1962,9 +2071,9 @@ function render(model, {
     out.push(C.dim('─'.repeat(width)));
     origin.push(null);
   }
-  for (const line of use) {
-    out.push(line);
-    origin.push(null);
+  for (let i = 0; i < use.length; i++) {
+    out.push(use[i]);
+    origin.push({ kind: 'usage', index: i });
   }
   out.push(footer);
   origin.push(null);
@@ -1983,8 +2092,24 @@ function render(model, {
         if (y >= 0) hits.push({ ...h, y });
       }
     }
+    if (usageHits) {
+      for (const h of usageHits) {
+        if (!(h.x0 >= 0 && h.x0 < width && h.x1 < width)) continue;
+        const y = at('usage', h.index);
+        if (y >= 0) hits.push({ ...h, y });
+      }
+    }
     // The footer explains ? and ≥; clicking it opens the help.
-    if (menu) hits.push({ action: 'help', y: out.length - 1, x0: 0, x1: width - 1 });
+    if (menu) {
+      if (spend) {
+        const spendPlain = ui.clean(spend);
+        const spendMatch = ui.clean(foot).indexOf(spendPlain);
+        if (spendMatch >= 0) {
+          hits.push({ action: 'today', y: out.length - 1, x0: spendMatch, x1: spendMatch + ui.strWidth(spendPlain) - 1 });
+        }
+      }
+      hits.push({ action: 'help', y: out.length - 1, x0: 0, x1: width - 1 });
+    }
   }
   return out.join('\n');
 }
@@ -2841,6 +2966,7 @@ function runLive(opts) {
       }, 2000);
     }
     else if (action === 'backups') openBackups();
+    else if (action === 'refresh') tick();
     else if (['setup', 'head-honcho', 'secretary', 'monitor', 'recover'].includes(action)) {
       if (!orchestrationEnabled(currentConfig(), opts)) {
         flash('orchestration is gated for v0.3.0 (set ROOSTR_EXPERIMENTAL=1)');
@@ -3004,6 +3130,14 @@ function runLive(opts) {
     }
     if (!h || edit || setup || headPicker) return;
     if (h.action !== 'row' && h.action !== 'jump') lastRowClick = null;
+    if (typeof h.index === 'number' && model && model.rows[h.index]) {
+      selected = h.index;
+      selectedPane = model.rows[h.index].paneId;
+    }
+    if (h.action === 'tooltip') {
+      flash(h.text, 4000);
+      return;
+    }
     if (h.action === 'copy-id') {
       const paneId = h.paneId || (model && model.rows[selected] && model.rows[selected].paneId);
       if (paneId) {

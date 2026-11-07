@@ -412,9 +412,18 @@ test('usage limits: one provider at a time, p names the next including off', () 
 test('render: pace multiplier on the usage line, only while burning', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
-  m.limits = [{ source: 'claude', windows: [{ name: '5h', used: 64, resets: 0, pace: 2.13 }, { name: '7d', used: 72, resets: 0, pace: 0.01 }] }];
-  const line = board.render(m, { width: 200, height: 30 }).split('\n').find((l) => l.startsWith('claude'));
-  assert.match(line, /5h ██████░░░░ 64% ⚡ 2\.1× +7d ███████░░░ 72%$/);
+  m.limits = [{ source: 'claude', windows: [{ name: '5h', used: 64, resets: 0, pace: 2.13, eta: m.now + 3600000 }, { name: '7d', used: 72, resets: 0, pace: 0.01 }] }];
+  const hits = [];
+  const line = board.render(m, { width: 200, height: 30, hits }).split('\n').find((l) => l.startsWith('claude'));
+  assert.match(line, /5h ██████░░░░ 64% ⚡ 2\.1× ⚠ out in ~1h00 +7d ███████░░░ 72%$/);
+  const paceHit = hits.find((h) => h.action === 'tooltip' && h.text && h.text.includes('⚡ burn pace'));
+  assert.ok(paceHit, 'pace tooltip hit exists');
+  assert.match(paceHit.text, /⚡ burn pace: 2\.1×/);
+  const etaHit = hits.find((h) => h.action === 'tooltip' && h.text && h.text.includes('⚠ quota run-out'));
+  assert.ok(etaHit, 'eta tooltip hit exists');
+  assert.match(etaHit.text, /window exhausts in ~1h/);
+  const barHit = hits.find((h) => h.action === 'tooltip' && h.text && h.text.includes('5h: 64% quota used'));
+  assert.ok(barHit, 'usage bar tooltip hit exists');
 });
 
 test('render: detail box for the selected row, with its buttons', () => {
@@ -510,7 +519,7 @@ test('render: menu bar and click regions', () => {
   const hits = [];
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
   assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[d today\] \[\? keys\]/);
-  const outOrch = board.render(m, { width: 140, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
+  const outOrch = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
   assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
@@ -1708,7 +1717,7 @@ test('menu: orchestration items are hidden by default', () => {
   assert.doesNotMatch(out[1], /\[M monitor\]/);
   assert.doesNotMatch(out[1], /\[C continue\]/);
   for (const action of ['setup', 'head-honcho', 'secretary', 'monitor', 'recover']) {
-    assert.ok(!hits.some((h) => h.action === action), action);
+    assert.ok(!hits.some((h) => h.y === 1 && h.action === action), action);
   }
 });
 
