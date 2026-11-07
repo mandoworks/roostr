@@ -1,11 +1,11 @@
 ---
-name: crew-board
+name: roostr
 description: Use when planning, spawning, supervising, or reviewing worker agents in Herdr panes, running the Head Honcho and daemon secretary workflow, or checking agent status, costs, and blocked states via the JSON board.
 ---
 
-# crew-board
+# roostr
 
-The crew board provides full observability and orchestration over agent panes in Herdr. It tracks each pane with its color tag, name, model, state, metrics, and active task line. Nothing is guessed: agents report their own status via `crew-board report`, and uninspected panes display `?`.
+The Roostr board provides full observability and orchestration over agent panes in Herdr. It tracks each pane with its color tag, name, model, state, metrics, and active task line. Nothing is guessed: agents report their own status via `roostr report`, and uninspected panes display `?`.
 
 ## Orchestration Architecture
 
@@ -34,10 +34,10 @@ The interview generates `docs/orchestration-plan.md` with explicit human approva
 Start the Head Honcho prompt from the canonical template:
 
 ```sh
-crew-board template head-honcho --name my-project --plan docs/orchestration-plan.md
+roostr template head-honcho --name my-project --plan docs/orchestration-plan.md
 ```
 
-Configuration lives in `.crew-board.toml`:
+Configuration lives in `.roostr.toml`:
 
 ```toml
 [roles.head-honcho]
@@ -59,7 +59,7 @@ rotation_days = 30
 Inspect available CLI options at any time:
 
 ```sh
-crew-board --help
+roostr --help
 ```
 
 ## Phase 2: Risk Tiering and Negotiation Protocol
@@ -73,10 +73,10 @@ Every work package receives an explicit risk tier:
 Consult empirical history before choosing effort:
 
 ```sh
-crew-board recommend "<task>"
+roostr recommend "<task>"
 ```
 
-The recommendation engine reads historical pass rates and rework counts from `~/.crew-board/summary.json`. It never uses ungrounded guesses.
+The recommendation engine reads historical pass rates and rework counts from `~/.roostr/summary.json`. It never uses ungrounded guesses.
 
 ### Interactive Model and Effort Review Protocol
 
@@ -90,7 +90,7 @@ Never assume recommendations are immutable or treat a table presentation as an i
 
 ### Autonomous Execution Mandate
 
-The Head Honcho or Daemon executes all Herdr spawning commands (`herdr pane split`, `herdr agent start`, `herdr agent rename`, `herdr pane rename`, `crew-board spawn`, `herdr agent prompt`) directly through tool calls.
+The Head Honcho or Daemon executes all Herdr spawning commands (`herdr pane split`, `herdr agent start`, `herdr agent rename`, `herdr pane rename`, `roostr spawn`, `herdr agent prompt`) directly through tool calls.
 
 Never output shell snippets (such as `opencode run`) for the human to copy-paste. Never invoke `opencode run` headless in a terminal: headless runs lack interactive permission handling and auto-reject on security boundaries.
 
@@ -99,8 +99,8 @@ herdr pane split <pane-id> --direction right --cwd "$PWD/.worktrees/<name>"
 herdr agent start diego --kind opencode --pane <new-pane-id>
 herdr agent rename <new-pane-id> diego
 herdr pane rename <new-pane-id> "Diego"
-crew-board report --pane <new-pane-id> --task "<task>" --effort medium --model deepseek-v4.1-flash-1017
-crew-board spawn --pane <new-pane-id> --task "<task>" --role worker
+roostr report --pane <new-pane-id> --task "<task>" --effort medium --model deepseek-v4.1-flash-1017
+roostr spawn --pane <new-pane-id> --task "<task>" --role worker
 ```
 
 ### Worktree Filesystem and Asset Boundaries
@@ -117,11 +117,11 @@ The background daemon secretary monitors pane lifecycle events automatically:
 
 - **Circuit breakers**: Pauses dispatches if remaining pool falls below 15 percent; throttles to one worker if 1-hour burn reaches 80 percent.
 - **Structural nudges**: Automatically prompts panes if output stalls or repeated command errors occur.
-- **Operator hold**: Capped at 12 planner wakes per day. Non-critical excess alerts are held in `~/.crew-board/operator-hold.json`.
+- **Operator hold**: Capped at 12 planner wakes per day. Non-critical excess alerts are held in `~/.roostr/operator-hold.json`.
 - **Live worker updates**: Workers update their own single-line task description during execution:
 
 ```sh
-crew-board report --pane "$HERDR_PANE_ID" --task "writing unit tests for auth module"
+roostr report --pane "$HERDR_PANE_ID" --task "writing unit tests for auth module"
 ```
 
 ## Phase 5: Artifact-Pointer Review Protocol
@@ -136,22 +136,22 @@ When a worker completes its package:
 Record the execution outcome in the attempt ledger:
 
 ```sh
-crew-board outcome --run <runId> --result pass --rework 0 --cost 0.12 --note "Clean pass"
+roostr outcome --run <runId> --result pass --rework 0 --cost 0.12 --note "Clean pass"
 ```
 
 Update historical summary data before the next planning cycle:
 
 ```sh
-crew-board summary
+roostr summary
 ```
 
 Query performance and cost views across models, panes, kinds, and timelines:
 
 ```sh
-bin/crew-board analytics --by model
-bin/crew-board analytics --by pane
-bin/crew-board analytics --by kind
-bin/crew-board analytics --by timeline
+bin/roostr analytics --by model
+bin/roostr analytics --by pane
+bin/roostr analytics --by kind
+bin/roostr analytics --by timeline
 ```
 
 ## Inspecting Board State via JSON
@@ -159,7 +159,7 @@ bin/crew-board analytics --by timeline
 Always prefer JSON output over screen scraping for exact, token-efficient state reads:
 
 ```sh
-crew-board --json --all
+roostr --json --all
 ```
 
 The returned envelope includes version, scope, summary, and pane objects (`paneId`, `name`, `status`, `task`, `tokens`, `cost`, `model`).
@@ -172,7 +172,7 @@ node -e '
   const data = JSON.parse(fs.readFileSync(0, "utf8"));
   const blocked = data.panes.filter((p) => p.status === "blocked");
   if (blocked.length) console.log(blocked.map((p) => `${p.paneId} ${p.name}: ${p.task || "?"}`).join("\n"));
-' < <(crew-board --json --all)
+' < <(roostr --json --all)
 ```
 
 ## Operational Rules
