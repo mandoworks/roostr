@@ -1,0 +1,13 @@
+🐓ROOSTR🐓  example crew                                                                    14:30  load 1.50 1.25 1.00
+● Always  ○ Never
+◼ 1 BLOCKED: copy 30s
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   name   id    model     eff state          ctx tokens  cost  ram task line
+▾ ━━━━━━ example-app ━━━━━━  4 panes
+🟦 docs   w1:p1 opus      med ○ idle 4m      17%    34K $2.03 1.5G write the API guide  REPORT READY   GREEN 
+🟩 api    w1:p2 ?         ?   ● working 27m  18% 208.4K $2.17 640M fix the login timeout bug in the session middleware
+🟨 tests  w1:p3 from-crew ?   ● working ≥41m 34% 340.9K     ?    ? flaky suite triage
+🟪 helper w1:p4 ?         ?   ✓ done 1h05      ?      ?     ?    ? ?
+▾ ━━━━━━ site ━━━━━━  1 pane  ◼ 1 blocked
+🟧 copy   w2:p1 ?         ?   ◼ blocked 30s    ?      ?     ?    ? landing page draft
+5 panes  ● 2 working  ○ 1 idle  ◼ 1 blocked  ✓ 1 done  ? unknown  ≥ since board saw it  tinted = read from screen

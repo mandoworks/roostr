@@ -1,0 +1,11 @@
+     - render.js: the board now pads every row to the pane width and
+       spends 136.7K (14%) of nothing, this line is transcript text.
+
+     ▣  Build · Example Model 2 Free
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Example Model 2 Free OpenCode · high
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   ■■■■■⬝⬝⬝  esc interrupt                     340.9K (34%)  ctrl+p commands

@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+'use strict';
+// roostr entry point.
+//   roostr [board options]   the live board (see --help)
+//   roostr report ...        report exact usage for a pane
+//   roostr recommend ...     recommend optimal model and effort for a task
+//   roostr sessions [...]    list the sessions saved before a restart
+//   roostr restore [...]     print the restore plan
+//   roostr backups [...]     list, show or restore a workspace backup
+//   roostr spawn ...         record a spawn recommendation
+//   roostr outcome ...       record how a run ended
+//   roostr summary [...]     aggregate the orchestration ledger
+//   roostr analytics [...]   query continuous usage and cost attribution
+//   roostr tasks [...]       validate the machine readable task list
+//   roostr template <role>   print a role template
+//   roostr name [...]        draw worker names from the head language
+
+const path = require('path');
+
+const argv = process.argv.slice(2);
+const src = path.join(__dirname, '..', 'src');
+
+const versionArg = argv[0] === 'board' ? argv[1] : argv[0];
+if (versionArg === '--version' || versionArg === '-v') {
+  const binaryName = path.basename(process.argv[1]) || 'roostr';
+  process.stdout.write(`${binaryName} ${require(path.join(src, 'version.js')).VERSION}\n`);
+  process.exit(0);
+}
+
+if (argv[0] === 'report') {
+  process.exitCode = require(path.join(src, 'report.js')).main(argv.slice(1));
+} else if (argv[0] === 'recommend') {
+  process.exitCode = require(path.join(src, 'advisor.js')).main(argv.slice(1));
+} else if (argv[0] === 'spawn' || argv[0] === 'outcome') {
+  process.exitCode = require(path.join(src, 'ledger.js')).main(argv);
+} else if (argv[0] === 'summary') {
+  process.exitCode = require(path.join(src, 'summary.js')).main(argv.slice(1));
+} else if (argv[0] === 'analytics') {
+  process.exitCode = require(path.join(src, 'analytics.js')).main(argv.slice(1));
+} else if (argv[0] === 'tasks') {
+  process.exitCode = require(path.join(src, 'tasks.js')).main(argv.slice(1));
+} else if (argv[0] === 'template') {
+  process.exitCode = require(path.join(src, 'templates.js')).main(argv.slice(1));
+} else if (argv[0] === 'name') {
+  process.exitCode = require(path.join(src, 'names.js')).main(argv.slice(1));
+} else if (argv[0] === 'sessions') {
+  process.exitCode = require(path.join(src, 'sessions.js')).mainSessions(argv.slice(1));
+} else if (argv[0] === 'backups') {
+  require(path.join(src, 'backup.js')).main(argv.slice(1))
+    .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr backups: ${e.message}\n`); process.exitCode = 1; });
+} else if (argv[0] === 'restore') {
+  const p = require(path.join(src, 'restore.js')).main(argv.slice(1));
+  if (p && typeof p.then === 'function') {
+    // process.exit here can truncate a piped plan; exitCode lets stdout drain.
+    p.then((code) => { process.exitCode = code || 0; }).catch(() => { process.exitCode = 1; });
+  } else {
+    process.exitCode = p || 0;
+  }
+} else {
+  const args = argv[0] === 'board' ? argv.slice(1) : argv;
+  require(path.join(src, 'board.js')).main(args).then((code) => { process.exitCode = code; });
+}

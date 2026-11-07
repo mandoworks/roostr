@@ -1,0 +1,72 @@
+{
+  "workspaces": [
+    { "workspace_id": "w1", "label": "example" },
+    { "workspace_id": "w2", "label": "tools" }
+  ],
+  "panes": [
+    {
+      "pane_id": "w1:p1",
+      "workspace_id": "w1",
+      "cwd": "example-app",
+      "label": "example-app · ship the demo",
+      "terminal_id": "term-1"
+    },
+    {
+      "pane_id": "w1:p2",
+      "workspace_id": "w1",
+      "cwd": "example-app",
+      "label": "api-worker · build the endpoint",
+      "terminal_id": "term-2"
+    },
+    {
+      "pane_id": "w2:p1",
+      "workspace_id": "w2",
+      "cwd": "example-app",
+      "label": "docs · write the guide",
+      "terminal_id": "term-3"
+    }
+  ],
+  "agents": [
+    {
+      "pane_id": "w1:p1",
+      "workspace_id": "w1",
+      "agent": "claude",
+      "cwd": "example-app",
+      "terminal_title_stripped": "Claude Code",
+      "state_change_seq": 11,
+      "terminal_id": "term-1",
+      "name": "example-app",
+      "agent_status": "working"
+    },
+    {
+      "pane_id": "w1:p2",
+      "workspace_id": "w1",
+      "agent": "opencode",
+      "cwd": "example-app",
+      "terminal_title_stripped": "api-worker",
+      "state_change_seq": 12,
+      "terminal_id": "term-2",
+      "name": "api-worker",
+      "agent_status": "idle"
+    },
+    {
+      "pane_id": "w2:p1",
+      "workspace_id": "w2",
+      "agent": "agy",
+      "cwd": "example-app",
+      "terminal_title_stripped": "docs",
+      "state_change_seq": 13,
+      "terminal_id": "term-3",
+      "name": "docs",
+      "agent_status": "blocked"
+    }
+  ],
+  "tabs": [
+    { "tab_id": "tab-1", "workspace_id": "w1", "label": "main" },
+    { "tab_id": "tab-2", "workspace_id": "w2", "label": "main" }
+  ],
+  "layouts": [
+    { "tab_id": "tab-1", "panes": ["w1:p1", "w1:p2"], "splits": [] },
+    { "tab_id": "tab-2", "panes": ["w2:p1"], "splits": [] }
+  ]
+}

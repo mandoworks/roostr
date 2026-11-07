@@ -1,0 +1,67 @@
+{
+  "cwd": "/mock/user/project",
+  "session_id": "example",
+  "conversation_id": "example",
+  "transcript_path": "/example/transcript.jsonl",
+  "model": {
+    "id": "Gemini 3.8 Flash (Medium)",
+    "display_name": "Gemini 3.8 Flash (Medium)",
+    "effort": "medium"
+  },
+  "workspace": {
+    "current_dir": "/mock/user/project",
+    "project_dir": "/mock/user/project"
+  },
+  "version": "1.4.5",
+  "context_window": {
+    "total_input_tokens": 22107,
+    "total_output_tokens": 32,
+    "context_window_size": 1048576,
+    "used_percentage": 2.108287811279297,
+    "remaining_percentage": 97.8917121887207,
+    "current_usage": {
+      "input_tokens": 16312,
+      "output_tokens": 32,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0
+    }
+  },
+  "exceeds_200k_tokens": false,
+  "product": "antigravity",
+  "quota": {
+    "3p-5h": {
+      "remaining_fraction": 1,
+      "reset_time": "2026-10-23T03:06:58Z",
+      "reset_in_seconds": 17941
+    },
+    "3p-weekly": {
+      "remaining_fraction": 0.3579708,
+      "reset_time": "2026-10-29T00:14:30Z",
+      "reset_in_seconds": 525993
+    },
+    "gemini-5h": {
+      "remaining_fraction": 0.84217775,
+      "reset_time": "2026-10-22T22:08:16Z",
+      "reset_in_seconds": 19
+    },
+    "gemini-argon-wtu-weekly": {
+      "remaining_fraction": 0.008336933,
+      "reset_time": "2026-10-25T04:20:08Z",
+      "reset_in_seconds": 195131
+    },
+    "gemini-weekly": {
+      "remaining_fraction": 0.028587619,
+      "reset_time": "2026-10-23T23:12:06Z",
+      "reset_in_seconds": 90249
+    }
+  },
+  "agent_state": "idle",
+  "vcs": {
+    "type": "git"
+  },
+  "sandbox": {
+    "enabled": false
+  },
+  "plan_tier": "Google AI Pro",
+  "terminal_width": 144
+}

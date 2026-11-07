@@ -1,0 +1,71 @@
+# roostr: a live board of every agent pane in the Herdr session.
+#
+# Plain Node (v22), zero npm dependencies, no [[build]] step. Herdr runs each
+# command with the plugin root as cwd, so the relative paths resolve as is.
+
+id = "roostr"
+name = "roostr"
+version = "0.2.0"
+description = "Live board of every agent pane: colour tag, name, agent and model, status and time in status, context, tokens, cost, task line, and check badges."
+min_herdr_version = "0.9.1"
+platforms = ["linux", "macos"]
+
+# The board beside your work.
+[[panes]]
+id = "board"
+title = "🐓ROOSTR🐓"
+placement = "split"
+command = ["node", "bin/roostr"]
+
+# The same board as a popup over the current tab; q or Esc closes it.
+[[panes]]
+id = "board-popup"
+title = "🐓ROOSTR🐓"
+placement = "popup"
+width = 140
+height = 24
+command = ["node", "bin/roostr"]
+
+# Exact time in status: Herdr calls this on every agent status change, and it
+# records when the pane entered its new status.
+[[events]]
+on = "pane.agent_status_changed"
+command = ["node", "scripts/status-event.js"]
+
+# Toggle the split board in the current tab: open it, focus it, close it.
+[[actions]]
+id = "toggle-board"
+platforms = ["linux", "macos"]
+contexts = ["workspace"]
+title = "roostr: toggle board"
+description = "Open the board in a split (focus it if open, close it if focused)."
+command = ["node", "scripts/toggle.js"]
+
+[[actions]]
+id = "popup-board"
+platforms = ["linux", "macos"]
+contexts = ["workspace"]
+title = "roostr: popup"
+description = "Show the board as a popup over the current tab."
+command = ["node", "scripts/toggle.js", "--popup"]
+
+# The board on its backups view, as a popup: every workspace backup, its
+# versions drawn out, and r to rebuild one as a new "<label> *restored".
+[[panes]]
+id = "backups"
+title = "🐓ROOSTR🐓"
+placement = "popup"
+width = 140
+height = 40
+command = ["node", "bin/roostr", "--backups"]
+
+# Pick a workspace backup and rebuild it in a new workspace with the same
+# tabs, splits, directories and agents (resumed when a session id was
+# reported). The old workspace is never touched.
+[[actions]]
+id = "restore-workspace"
+platforms = ["linux", "macos"]
+contexts = ["workspace"]
+title = "roostr: backups"
+description = "Check the saved workspace backups and rebuild one as a new workspace."
+command = ["node", "scripts/toggle.js", "--backups"]

@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+
+# agent crew scratch files
+.scratch-*
+graphify-out/
+
+# owner test plan, internal
+human-plan.md

@@ -1,0 +1,8 @@
+  ⎿  Tip: Use /clear to start fresh when switching topics and
+     free up context
+
+───────────────────────────────────────────────────────────────
+❯ 
+───────────────────────────────────────────────────────────────
+  /mock/dev/example-app | $2.1655 | ctx:18% | in:…
+  ⏵⏵ auto mode on · 1 shell

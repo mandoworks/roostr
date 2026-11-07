@@ -1,0 +1,8 @@
+… 2 more actions (1 edit, 1 command) …
+● Edited 1 file (check_materials.py)
+● Ran (until ! pgrep -x Blender >/dev/null; do sleep...) (ctrl+o to expand)
+⣯  Running command...
+└ Tip: Use /voice (or press f5) to record your prompt with your microphone.
+─────────────────────────────────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────────────────────────────────

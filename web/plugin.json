@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "crew-board",
+  "version": "0.1.1",
+  "minHerdrVersion": "0.9.1",
+  "commit": "07a2e0abdda171e41e70912f2499e148df905518",
+  "tag": "v0.1.1",
+  "releasedAt": "2026-10-25T17:34:17Z",
+  "install": "herdr plugin install mandoworks/crew-board --ref v0.1.1",
+  "repo": "https://github.com/mandoworks/crew-board",
+  "release": "https://github.com/mandoworks/crew-board/releases/tag/v0.1.1",
+  "tarball": "https://github.com/mandoworks/crew-board/releases/download/v0.1.1/crew-board-v0.1.1.tar.gz",
+  "sha256": "c7a413d78e7fb461af66b9fbce8a3dd680ed99817ea2a5c502ed148965b032eb"
+}
