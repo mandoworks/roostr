@@ -57,7 +57,7 @@ if [ -d "$SOURCE_ROOT/.github" ]; then
 fi
 
 # Ensure executable bits
-chmod +x "$TARGET_DIR/bin/roostr" "$TARGET_DIR/verify.sh" "$TARGET_DIR/verify-linux.sh"
+chmod +x "$TARGET_DIR/bin/roostr" "$TARGET_DIR/verify.sh" "$TARGET_DIR/verify-linux.sh" "$TARGET_DIR/scripts/install.sh"
 if [ -f "$TARGET_DIR/bin/crew-board" ]; then
   chmod +x "$TARGET_DIR/bin/crew-board"
 fi

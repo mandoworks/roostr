@@ -21,31 +21,43 @@ Node 22 or newer, zero npm dependencies, no build step. Linux and macOS. Needs H
 
 ## Quickstart
 
-**1. Install.**
+### 1-Line Install (Automatic)
+
+Installs the Herdr plugin, symlinks `roostr` onto your PATH, and configures the `prefix + b` keybinding automatically:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mandoworks/roostr/main/scripts/install.sh | bash
+```
+
+### Manual Install
+
+If you prefer installing directly with Herdr:
 
 ```sh
 herdr plugin install mandoworks/roostr
-# or pin a release
-herdr plugin install mandoworks/roostr --ref v0.2.0
-# or, from a local checkout
-herdr plugin link /path/to/roostr
 ```
 
-**2. Open the board.** Run the **roostr: toggle board** action, or open it directly:
+Bind a shortcut in `~/.config/herdr/config.toml`:
 
+```toml
+[[keys.command]]
+key = "prefix+b"
+type = "plugin_action"
+command = "roostr.toggle-board"
+description = "roostr: toggle live board"
+```
+
+Reload Herdr config:
 ```sh
-herdr plugin pane open --plugin roostr --entrypoint board
+herdr server reload-config
 ```
 
-**3. Optional statusline.** For exact context, cost, tokens and model, wire your agent's statusline or plugin. The [reference](docs/reference.md#exact-usage-crew-board-report) has copy-paste snippets for Claude Code, agy, opencode and kilo.
+## Opening the Board
 
-Put `roostr` on your `PATH` for statuslines and shell use:
-
-```sh
-root="$(herdr plugin list --json | node -e 'const d=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(d.result.plugins.find((p)=>p.plugin_id==="roostr").plugin_root)')"
-mkdir -p ~/.local/bin
-ln -sf "$root/bin/roostr" ~/.local/bin/roostr
-```
+Once installed, open the board in any of three ways:
+* **Keybinding**: Press `prefix + b` to toggle the board beside your current work.
+* **Terminal**: Type `roostr` in any Herdr shell.
+* **Command Palette**: Press `Cmd+K` / `Ctrl+P`, type `roostr: toggle board`, and hit Enter.
 
 ## What you see
 
