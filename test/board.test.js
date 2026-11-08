@@ -309,6 +309,15 @@ test('render: wrap view puts every task line under its row', () => {
   assert.doesNotMatch(lines.find((l) => /^ +name /.test(l)), /task line/);
 });
 
+test('render: cards view renders multi-line agent cards with ctx bar and metrics', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const lines = board.render(m, { width: 100, view: 'cards' }).split('\n');
+  assert.ok(lines.some((l) => /docs \(claude\) · w1:p1/.test(l)));
+  assert.ok(lines.some((l) => /ctx.*tokens.*ram/.test(l)));
+  assert.ok(lines.some((l) => /task:.*write the API guide/.test(l)));
+});
+
 test('agent column: short model name and effort letter', () => {
   assert.equal(board.shortModel('claude-opus-5-5'), 'Opus 5.5');
   assert.equal(board.shortModel('claude-sonnet-5-5[1m]'), 'Sonnet 5.5');

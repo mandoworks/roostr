@@ -482,7 +482,7 @@ const COLUMNS = [
 // start to go. "auto" puts a task beside its row when it fits, else under it;
 // "wrap" always puts it under.
 const MIN_TASK = 24;
-const VIEWS = ['auto', 'line', 'wrap'];
+const VIEWS = ['auto', 'line', 'wrap', 'cards'];
 const TAG_MODES = ['tokens', 'label', 'metadata', 'off'];
 
 // Reasoning effort as it fits in the eff column.
@@ -744,7 +744,7 @@ function menuBar(menu, width) {
   const orchKeys = menu.orchestration ? ' S O K M C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
-    : ` click to select · double click jump · ↑↓ ↵ f e t v s R o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
+    : ` click to select · double click jump · ↑↓ ↵ f e t v w s R o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
   if (x + ui.strWidth(hint) <= width) line += (menu.notice ? hint : C.dim(hint));
   return { line, hits };
 }
@@ -1140,7 +1140,7 @@ function helpLines(menu, sources, width = 100) {
     views: ['VIEWS', [
       ['d', 'today: spend per agent and hour'],
       ['$', 'tokens or cost (in today)'],
-      ['v', `layout: ${VIEWS.join(' ▸ ')} (${menu.view})`],
+      ['v / w', `layout: ${VIEWS.join(' ▸ ')} (${menu.view}) · w cards`],
       ['s', `scope: here ▸ all (${menu.scope})`],
       ['p / P', usage],
     ]],
@@ -1569,7 +1569,7 @@ function optionsLines(model, menu, width = 100, metric = 'tokens') {
   const viewMode = menu ? menu.view : 'auto';
   const scopeMode = menu ? menu.scope : 'here';
   lines.push(field('tags (t)', C.text(`${tagMode}  ${C.dim('(cycle: label ▸ tokens ▸ metadata ▸ off)')}`)));
-  lines.push(field('layout (v)', C.text(`${viewMode}  ${C.dim('(cycle: auto ▸ line ▸ wrap)')}`)));
+  lines.push(field('layout (v)', C.text(`${viewMode}  ${C.dim('(cycle: auto ▸ line ▸ wrap ▸ cards)')}`)));
   lines.push(field('scope (s)', C.text(`${scopeMode}  ${C.dim('(cycle: here ▸ all)')}`)));
   lines.push(field('metric ($)', C.text(`${metric}  ${C.dim('(cycle: tokens ▸ cost)')}`)));
   const budgetStr = model.dailyBudget ? fmtCost(model.dailyBudget) : 'none';
@@ -1986,6 +1986,56 @@ function render(model, {
     lines.push(...backupLines(backups, width, model.now));
   } else if (options) {
     lines.push(...optionsLines(model, menu, width, metric));
+  } else if (view === 'cards') {
+    const multiWs = new Set(model.rows.map((r) => r.workspace)).size > 1;
+    let lastWs = null;
+    model.rows.forEach((r, i) => {
+      if (multiWs && r.workspace !== lastWs) {
+        regions.push({ action: 'fold', workspace: r.workspace, y: lines.length, x0: 0, x1: width - 1 });
+        lines.push(wsHeader(r.workspace, model.rows.filter((x) => x.workspace === r.workspace), folded.has(r.workspace), wsPaint(r.workspace)));
+        lastWs = r.workspace;
+      }
+      if (multiWs && folded.has(r.workspace)) return;
+
+      const isSel = i === selected;
+      const bg = isSel ? BG.selected : (r.status === 'blocked' ? BG.alarm : null);
+      const c = rowCells(r, false);
+      const tagStr = r.tag ? `${r.tag} ` : '';
+      const nameText = c.name.paint(r.name);
+      const effStr = r.effort ? ` (${r.effort})` : '';
+      const modelStr = r.model.v ? `${shortModel(r.model.v)}${effStr}` : '?';
+      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)} · ${C.text(modelStr)}`;
+      const headRight = c.state.paint(c.state.text);
+      const gap1 = Math.max(2, width - 4 - ui.strWidth(headLeft) - ui.strWidth(headRight));
+      const line1 = `  ${headLeft}${' '.repeat(gap1)}${headRight}`;
+
+      let ctxMeter = '';
+      if (r.ctx && typeof r.ctx.v === 'number') {
+        const fill = Math.max(0, Math.min(10, Math.round(r.ctx.v / 10)));
+        const paintCtx = r.ctx.v >= 85 ? C.red : (r.ctx.v >= 50 ? C.amber : C.green);
+        ctxMeter = `ctx ${paintCtx('█'.repeat(fill))}${C.dim('░'.repeat(10 - fill))} ${paintCtx(`${Math.round(r.ctx.v)}%`)} · `;
+      }
+      const line2 = `    ${ctxMeter}${c.tokens.paint(c.tokens.text)} tokens · ${c.cost.paint(c.cost.text)} · ram ${c.ram.paint(c.ram.text)}`;
+
+      const taskContent = r.task ? C.text(ui.clean(r.task)) : C.dim('no task assigned');
+      const line3 = `    ${C.dim('task:')} ${taskContent}`;
+
+      regions.push({ action: 'copy-id', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
+      regions.push({ action: 'jump', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
+      regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
+      lines.push(bgLine(ui.clip(line1, width), bg, width));
+
+      regions.push({ action: 'detail', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
+      regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
+      lines.push(bgLine(ui.clip(line2, width), bg, width));
+
+      regions.push({ action: 'edit', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
+      regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
+      lines.push(bgLine(ui.clip(line3, width), bg, width));
+
+      lines.push('');
+    });
+    if (model.rows.length === 0) lines.push(C.dim('  no agent panes'));
   } else {
     const { cols, cells, taskW } = fitColumns(model.rows, width, view);
     const indent = 3;
@@ -2340,7 +2390,7 @@ function parseArgs(argv) {
     else if (a === '--subview') o.subview = val();
     else if (a === '--view') {
       o.view = val();
-      if (!VIEWS.includes(o.view)) throw new Error('--view must be auto, line or wrap');
+      if (!VIEWS.includes(o.view)) throw new Error('--view must be auto, line, wrap or cards');
     }
     else if (a === '--budget') {
       o.budget = Number(val());
@@ -3072,6 +3122,18 @@ function runLive(opts) {
     else if (action === 'scope') {
       opts.workspace = null;
       opts.scope = opts.scope === 'here' ? 'all' : 'here';
+    } else if (action === 'workspace') {
+      if (opts.view === 'cards') {
+        opts.view = mem.prefs.view && mem.prefs.view !== 'cards' ? mem.prefs.view : 'auto';
+      } else {
+        opts.view = 'cards';
+        if (opts.scope !== 'here') {
+          opts.workspace = null;
+          opts.scope = 'here';
+        }
+      }
+      remember('view', opts.view);
+      tick();
     } else if (action === 'edit' && row) edit = { text: row.task || '' };
     else if (action === 'help') help = !help;
     else if (action === 'today') {
@@ -3242,6 +3304,7 @@ function runLive(opts) {
       else if (k === '\x03') return quit();
       else if (k === 't') act('tags');
       else if (k === 'v') act('view');
+      else if (k === 'w') act('workspace');
       else if (k === 's') act('scope');
       else if (k === '$') act('metric');
       else if (k === 'r') tick();
@@ -3260,6 +3323,7 @@ function runLive(opts) {
     else if (k === 'e') act('edit');
     else if (k === 't') act('tags');
     else if (k === 'v') act('view');
+    else if (k === 'w') act('workspace');
     else if (k === 's') act('scope');
     else if (k === 'p') act('provider');
     else if (k === 'P') act('subview');
