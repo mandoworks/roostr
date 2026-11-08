@@ -499,6 +499,12 @@ function loadCrew(file) {
   return crew;
 }
 
+// The hash a trust grant pins: the sha256 of the file's bytes, matching what
+// loadCrew records on crew.hash.
+function hashFile(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file, 'utf8')).digest('hex');
+}
+
 function canonicalizePath(p) {
   const abs = path.resolve(p);
   if (fs.existsSync(abs)) {
@@ -535,4 +541,4 @@ function writeCrewJson(workspaceDir, crewData) {
   return targetFile;
 }
 
-module.exports = { FILE_NAME, parseToml, parseCheckString, toCrew, findCrewFile, safeToRun, loadCrew, TomlError, verifySafePath, writeCrewJson };
+module.exports = { FILE_NAME, parseToml, parseCheckString, toCrew, findCrewFile, safeToRun, loadCrew, hashFile, TomlError, verifySafePath, writeCrewJson };

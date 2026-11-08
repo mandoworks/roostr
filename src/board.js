@@ -3008,6 +3008,7 @@ ${REPORT_USAGE.replace(/^usage: /, '       ')}
        roostr backups [show|restore <label|id>] [--version N] [--layout even|saved|columns|rows] [--yes]
        roostr analytics [--days N | --today] [--by pane|model|kind|batch] [--json]
        roostr arena [--share] | arena export [--days N] | arena import --from <file>
+       roostr init [--dir <path>] [--json]
        roostr sessions [--json]
        roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
 
