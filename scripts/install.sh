@@ -82,22 +82,21 @@ esac
 HERDR_CONFIG="$HOME/.config/herdr/config.toml"
 if [ -f "$HERDR_CONFIG" ]; then
   if ! grep -q "roostr.toggle-board" "$HERDR_CONFIG"; then
-    echo "   adding keybinding prefix+b to $HERDR_CONFIG..."
-    cat <<'TOML' >> "$HERDR_CONFIG"
+    echo "   adding keybinding prefix+r to $HERDR_CONFIG..."
+    cat >> "$HERDR_CONFIG" << 'TOML'
 
-# roostr: toggle live board split beside your work.
+# roostr: toggle the live agent board
 [[keys.command]]
-key = "prefix+b"
+key = "prefix+r"
 type = "plugin_action"
 command = "roostr.toggle-board"
-description = "roostr: toggle live board split"
+description = "roostr: toggle live agent board"
 
-# roostr: popup the board over the current tab.
 [[keys.command]]
-key = "prefix+B"
+key = "prefix+R"
 type = "plugin_action"
-command = "roostr.popup-board"
-description = "roostr: popup board overlay"
+command = "roostr.toggle-board"
+description = "roostr: toggle live agent board"
 TOML
     if command -v herdr > /dev/null 2>&1; then
       herdr server reload-config > /dev/null 2>&1 || true
@@ -116,6 +115,6 @@ if [ "$PATH_NEEDS_UPDATE" = true ]; then
 fi
 echo "How to use:"
 echo "  1. In any terminal pane, run 'roostr' to open the live board."
-echo "  2. Or press prefix + b in Herdr to toggle the split board."
+echo "  2. Or press prefix + r in Herdr to toggle the split board."
 echo "  3. From agent statuslines, report exact metrics via 'roostr report'."
 echo ""

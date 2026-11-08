@@ -25,7 +25,10 @@ ALLOWLIST=(
   "web"
   "herdr-plugin.toml"
   "README.md"
-  "FEATURE-LIST.md"
+  "CHANGELOG.md"
+  "CONTRIBUTING.md"
+  "docs/roadmap.md"
+  "docs/reference.md"
   "LICENSE"
   "verify.sh"
   "verify-linux.sh"
@@ -63,7 +66,7 @@ if [ -f "$TARGET_DIR/bin/crew-board" ]; then
 fi
 
 # Ensure docs/reference.md exists if needed
-if [ -f "$SOURCE_ROOT/docs/reference.md" ]; then
+if [ -f "$SOURCE_ROOT/docs/reference.md" ] && [ ! -e "$TARGET_DIR/docs/reference.md" ]; then
   mkdir -p "$TARGET_DIR/docs"
   cp -p "$SOURCE_ROOT/docs/reference.md" "$TARGET_DIR/docs/reference.md"
 fi

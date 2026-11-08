@@ -32,10 +32,10 @@ Roostr v0.2.0 is an observability board, flight recorder, and safety monitor for
   - Interactive backup browser (`R` key or `roostr backups`).
   - Safe restoration (`r` then `y`) creates a fresh `*restored` workspace without touching active panes.
 - **Live Options & Status Tab (`o` key)**:
-  - Tokscale connectivity, polling frequency, spend today, and active clients.
+  - Tokscale connectivity/status, latest poll age, spend today, and active clients.
   - Compaction threshold overview and safe pane status.
   - Board settings toggles (tags `t`, view `v`, scope `s`, metric `$`, daily budget).
-  - File storage paths (`config.json`, `ledger.jsonl`, `backups`).
+  - File storage paths (`config.json`, `orchestration.jsonl`, `backups`).
 - **Optional Tokscale Spend Integration**:
   - Auto-detects [tokscale](https://github.com/junhoyeo/tokscale) when on PATH for cross-agent spend today. Degrades cleanly when absent.
 
@@ -47,7 +47,7 @@ Autonomous multi-agent orchestration (Head Honcho planner, Secretary daemon, mon
 
 - The default UI hides all orchestration shortcuts (`S/O/K/M/C`).
 - CLI subcommands (`spawn`, `outcome`, `tasks`, `template`, `name`, `recommend`, `summary`) are excluded from public `--help`.
-- Orchestration features are gated behind `ROOSTR_EXPERIMENTAL=1` or `[orchestration] enabled = true` in config, scheduled for the v0.3.0 release.
+- Orchestration features are gated behind `ROOSTR_EXPERIMENTAL=1`, `ROOSTR_ORCHESTRATION=1`, the CLI `--orchestration`/`--experimental` flag, or `[orchestration] enabled = true` in config; scheduled for the v0.3.0 release.
 
 ---
 
@@ -56,7 +56,7 @@ Autonomous multi-agent orchestration (Head Honcho planner, Secretary daemon, mon
 - **SHA-256 Pinned Crewfiles**: `.roostr.toml` (and legacy `.crew-board.toml`) runs checks as code. A new or edited crewfile is ignored until you press `a` to approve its SHA-256 hash.
 - **Safe Command Execution**: Check commands are executed as argv arrays via `execFile`, never passed to a shell.
 - **Zero Secret Access**: Reads no `.env` files and no home directory credentials. Third-party keys come strictly from environment variables.
-- **Update Check**: Live board checks GitHub for release tags at most once per day via `git ls-remote`. No usage data is transmitted. Disable with `--no-update-check` or `ROOSTR_NO_UPDATE_CHECK=1`.
+- **Update Check**: Live board checks GitHub for release tags at most once per day via `git ls-remote`. No pane data, usage data, or reports are transmitted. Disable with `--no-update-check`, `ROOSTR_NO_UPDATE_CHECK=1`, or `CREW_BOARD_NO_UPDATE_CHECK=1`.
 
 ---
 
@@ -76,7 +76,7 @@ herdr plugin install mandoworks/roostr
 Bind shortcut in `~/.config/herdr/config.toml`:
 ```toml
 [[keys.command]]
-key = "prefix+b"
+key = "prefix+r"
 type = "plugin_action"
 command = "roostr.toggle-board"
 description = "roostr: toggle live board"
