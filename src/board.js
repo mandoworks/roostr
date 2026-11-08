@@ -1618,6 +1618,14 @@ function optionsLines(model, menu, width = 100, metric = 'tokens') {
   lines.push(field('config', C.dim(config.configPath())));
   lines.push(field('ledger', C.dim(ledger.ledgerPath())));
   lines.push(field('backups', C.dim(backup.backupsDir())));
+  lines.push('');
+
+  // 5. Community arena read path (explicit; never automatic)
+  lines.push(section('COMMUNITY LEADERBOARDS'));
+  lines.push(field('page', C.cyan('https://roostr.mando.works/leaderboards')));
+  lines.push(field('summary', C.dim('https://roostr.mando.works/arena/global-summary.json')));
+  lines.push(field('import', C.text('roostr arena import --from <file>')));
+  lines.push(field('note', C.dim('download/save the file yourself; no auto fetch or import')));
 
   return lines;
 }
