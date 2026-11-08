@@ -75,9 +75,11 @@ Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plug
    ```
 5. **Dispatch the brief pointer (never paste giant specs into the prompt)**:
    ```bash
+   # For full-screen TUIs like opencode, confirm the input box is mounted (--source detection) before prompting
+   herdr pane read "$PANE_ID" --source detection --lines 15
    herdr agent prompt diego "Read docs/orchestration/tasks/pkg-a.md and execute it. Write your report to docs/orchestration/reports/pkg-a.md ending with DIEGO_DONE or DIEGO_BLOCKED."
    ```
-   Use `--wait --timeout 120000` only when blocking on a synchronous step; for parallel workers, dispatch without `--wait` and let supervision handle transitions.
+   `herdr agent start` returns as soon as the process spawns (`revision: 0`), before OpenCode finishes mounting its alternate-screen TUI input box; always run `roostr report` / `roostr spawn` and verify the TUI screen (`--source detection`) before sending the first prompt so the prompt is not dropped during TUI boot. Use `--wait --timeout 120000` only when blocking on a synchronous step; for parallel workers, dispatch without `--wait` and let supervision handle transitions.
 
 ## Phase 4: Supervision (Daemon, Secretary & Board TUI)
 
