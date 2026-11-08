@@ -38,7 +38,8 @@ if command -v python3 > /dev/null && python3 -c 'import tomllib' 2>/dev/null; th
 import tomllib
 d = tomllib.load(open('herdr-plugin.toml', 'rb'))
 assert d['id'] in ('roostr', 'crew-board')
-assert 'build' not in d, 'zero dependency plugin: no [[build]] step'
+if 'build' in d:
+    assert d['build'][0]['command'] == ['node', 'scripts/postinstall.js'], 'build hook only allowed for CLI auto-link'
 panes = {p['id']: p for p in d['panes']}
 assert panes['board']['placement'] == 'split' and panes['board']['command'] in (['node', 'bin/roostr'], ['node', 'bin/crew-board'])
 assert panes['board-popup']['placement'] == 'popup'

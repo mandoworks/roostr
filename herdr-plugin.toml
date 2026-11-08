@@ -1,13 +1,18 @@
 # roostr: a live board of every agent pane in the Herdr session.
 #
-# Plain Node (v22), zero npm dependencies, no [[build]] step. Herdr runs each
-# command with the plugin root as cwd, so the relative paths resolve as is.
+# Plain Node (v22), zero npm dependencies. Herdr runs each command with the
+# plugin root as cwd, so relative paths resolve as is.
 
 id = "roostr"
 name = "roostr"
 version = "0.2.0"
 description = "Live board of every agent pane: colour tag, name, agent and model, status and time in status, context, tokens, cost, task line, and check badges."
 min_herdr_version = "0.9.1"
+platforms = ["linux", "macos"]
+
+# Auto-link the CLI binary into ~/.local/bin on install.
+[[build]]
+command = ["node", "scripts/postinstall.js"]
 platforms = ["linux", "macos"]
 
 # The board beside your work.
