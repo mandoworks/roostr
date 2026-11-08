@@ -35,11 +35,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "roostr-$GITHUB_REF_NAME.tar.gz" SHA256SUMS \
-            --title "roostr $GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "roostr-$GITHUB_REF_NAME.tar.gz" SHA256SUMS --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "roostr-$GITHUB_REF_NAME.tar.gz" SHA256SUMS \
+              --title "roostr $GITHUB_REF_NAME" \
+              --generate-notes \
+              --verify-tag
+          fi
 
   feed:
     needs: release
@@ -49,7 +54,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - name: Update the plugin feed
+      - name: Attach plugin manifest to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -57,11 +62,11 @@ jobs:
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
           commit=$(git rev-parse "$tag^{commit}")
-          mkdir -p dist web
+          mkdir -p dist
           gh release download "$tag" --pattern 'roostr-*.tar.gz' --dir dist --clobber
           sha=$(sha256sum dist/roostr-*.tar.gz | awk '{print $1}')
           released=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          cat > web/plugin.json <<EOF
+          cat > plugin.json <<EOF
           {
             "schema": 1,
             "id": "roostr",
@@ -77,13 +82,4 @@ jobs:
             "sha256": "$sha"
           }
           EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/plugin.json
-          if git diff --cached --quiet; then
-            echo "plugin feed already current"
-            exit 0
-          fi
-          git commit -m "Release $tag feed"
-          git pull --rebase origin main
-          git push origin HEAD:main
+          gh release upload "$tag" plugin.json --clobber
