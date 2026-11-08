@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>roostr v0.2.0 Jury Dashboard (Re-run 2)</title>
+  <title>roostr v0.2.0 Jury Dashboard (Re-run 3)</title>
   <style>
     :root {
       --bg: #0b1020; --panel: #131a2a; --panel2: #182238; --border: #26314f;
@@ -17,7 +17,7 @@
     .grid { display: grid; gap: 14px; } .grid.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 18px; }
     .grid.jury { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } .grid.two { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
     .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 15px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
-    .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; } .stat .v { font-size: 19px; font-weight: 700; margin-top: 4px; }
+    .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; } .stat .v { font-size: 18px; font-weight: 700; margin-top: 4px; }
     .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid var(--border); background: var(--panel2); white-space: nowrap; }
     .go { color: #d7ffe6; background: rgba(46,204,113,.14); border-color: rgba(46,204,113,.35); }
     .hold { color: #fff3d6; background: rgba(243,156,18,.14); border-color: rgba(243,156,18,.35); }
@@ -39,34 +39,34 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>roostr v0.2.0 Jury Dashboard (Re-run 2)</h1>
-    <div class="sub">10-person release readiness review · 2026-11-07 19:54 -04:00 · Sources: <code>docs/launch-readiness-design.md</code>, <code>RELEASE_NOTES.md</code>, <code>docs/smoke-report.md</code>, git status, <code>./verify.sh</code>, <code>node --test</code></div>
+    <h1>roostr v0.2.0 Jury Dashboard (Re-run 3)</h1>
+    <div class="sub">10-person release readiness review · 2026-11-07 20:21 AST · Sources: git state, GitHub Actions, GitHub Release, <code>RELEASE_NOTES.md</code>, <code>docs/smoke-report.md</code>, <code>docs/launch-readiness-design.md</code>, <code>./verify.sh</code>, <code>node --test</code></div>
 
     <div class="verdict-banner" style="border-color: rgba(46,204,113,.35); background: rgba(46,204,113,.10);">
-      <strong style="color: #d7ffe6;">Verdict: GO (Ready for v0.2.0 public release)</strong>: automated checks pass (418/418 unit tests, syntax, manifest, zero-deps, hygiene, live smoke), manual Herdr smoke recorded (<code>docs/smoke-report.md</code>), GitHub Release notes drafted (<code>RELEASE_NOTES.md</code>), tree curated and clean, scope pruned to pure observability core, attribution wording perfected, and public repository confirmed for <code>mandoworks/roostr</code>.
+      <strong style="color: #d7ffe6;">Verdict: GO (Published, verified, and release workflow fixed)</strong>: GitHub release <code>v0.2.0</code> is live with canonical tarball, <code>SHA256SUMS</code>, <code>plugin.json</code>, and scoped release notes; working tree is clean; local verify/tests pass (418/418); CI verify workflows passed green on Ubuntu and macOS; release workflow idempotency fix committed to <code>main</code>. Ready for Herdr marketplace submission.
     </div>
 
-    <div class="evidence"><strong>Fresh evidence:</strong> <code>./verify.sh --public</code> passed (all checks; live smoke read 23 agent panes). <code>node --test test/*.test.js</code> passed: <strong>418/418</strong>. Manual Herdr 0.9.1+ smoke verified and recorded in <code>docs/smoke-report.md</code>. Public release notes drafted in <code>RELEASE_NOTES.md</code>. Scope pruned to pure observability. Clean release commit staged for <code>mandoworks/roostr</code>.</div>
+    <div class="evidence"><strong>Fresh evidence:</strong> Working tree clean. <code>main</code> at <code>e65907d</code>. Tag <code>v0.2.0</code> published to <code>mandoworks/roostr</code>. Local <code>./verify.sh --public</code> passed (live smoke: 23 agent panes). <code>node --test test/*.test.js</code>: <strong>418 pass, 0 fail</strong>. GitHub Actions: verify workflows succeeded. Release workflow idempotency fixed. Release assets (<code>roostr-v0.2.0.tar.gz</code>, <code>SHA256SUMS</code>, <code>plugin.json</code>) confirmed live on GitHub release.</div>
 
     <div class="grid stats">
-      <div class="card stat"><div class="k">Automated Gate</div><div class="v"><span class="badge go">PASS 418/418</span></div></div>
-      <div class="card stat"><div class="k">Smoke Report</div><div class="v"><span class="badge go">PASS (recorded)</span></div></div>
-      <div class="card stat"><div class="k">Release Notes</div><div class="v"><span class="badge go">Drafted</span></div></div>
-      <div class="card stat"><div class="k">Release Tree</div><div class="v"><span class="badge go">Clean / Ready</span></div></div>
+      <div class="card stat"><div class="k">Working Tree</div><div class="v"><span class="badge go">Clean</span></div></div>
+      <div class="card stat"><div class="k">Local Verify/Tests</div><div class="v"><span class="badge go">PASS 418/418</span></div></div>
+      <div class="card stat"><div class="k">GitHub Release</div><div class="v"><span class="badge go">Published</span></div></div>
+      <div class="card stat"><div class="k">Release Workflow</div><div class="v"><span class="badge go">Fixed / Idempotent</span></div></div>
     </div>
 
     <h2>10-Person Jury</h2>
     <div class="grid jury">
-      <div class="card"><div class="head"><div><div class="role">Engineering</div><h3>Core implementation</h3></div><span class="badge go">Pass</span></div><p>Automated verification is green. Finalize by reviewing the exact release diff as a coherent set (24 modified files across CLI, board, backup/restore/report, integrations, tests, docs/workflow).</p><ul><li>Keep orchestration/gating behavior intentional for v0.2.0.</li><li>Confirm release commit contains only intended changes.</li></ul></div>
-      <div class="card"><div class="head"><div><div class="role">Security</div><h3>Execution & privacy</h3></div><span class="badge go">Evidence present</span></div><p>Release notes and smoke report cover crewfile SHA-256 allow, <code>execFile</code> argv execution, no secrets from <code>.env</code>/home keys, and update-check controls. Keep these claims in GitHub Release notes.</p><ul><li>Do not tag if final diff changes command execution or privacy paths without recheck.</li></ul></div>
-      <div class="card"><div class="head"><div><div class="role">DX / Product</div><h3>Scope clarity</h3></div><span class="badge go">Scope clean</span></div><p>Direction is observability-only. Release notes clearly gate orchestration; README, FEATURE-LIST, UI and CLI help confirmed free of orchestration promises.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Docs</div><h3>Release contract</h3></div><span class="badge go">Drafts ready</span></div><p><code>RELEASE_NOTES.md</code> covers scope, gated features, security/privacy, install/rollback, verification, known limits, acknowledgements. <code>docs/smoke-report.md</code> records manual checks.</p></div>
-      <div class="card"><div class="head"><div><div class="role">QA</div><h3>Verification</h3></div><span class="badge go">Verified</span></div><p>Local verify/test and smoke report are strong. All 418 unit tests and verify script pass; commit ready for GitHub CI.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Operations</div><h3>Packaging hygiene</h3></div><span class="badge go">Clean / Ready</span></div><p>Release tree curated. Intentional files staged: 24 modified, 5 deleted <code>web/*</code>, and untracked docs/integrations accounted for.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Legal / Licensing</div><h3>Attribution</h3></div><span class="badge go">Good</span></div><p>Acknowledgements are factual and scoped: <a href="https://herdr.dev">Herdr</a> platform; <a href="https://github.com/junhoyeo/tokscale">tokscale</a> (Junho Yeo) optional shipped integration; <a href="https://github.com/jasonku09/grill-with-ui">grill-with-ui</a> (jasonku09) inspiration for future orchestration intake, not supported in v0.2.0.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Support</div><h3>Issue surface</h3></div><span class="badge go">Scoped</span></div><p>Release notes set expectations (observability core supported; orchestration gated; known limits). Keep GitHub/marketplace copy identical in scope.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Release Manager</div><h3>Artifacts & sequence</h3></div><span class="badge go">Ready for commit</span></div><p>Required path: clean release commit -> tag <code>v0.2.0</code> -> publish to <code>mandoworks/roostr</code> with release notes -> Herdr marketplace submission checklist/follow-up.</p></div>
-      <div class="card"><div class="head"><div><div class="role">Lead Maintainer</div><h3>Intent</h3></div><span class="badge go">Aligned</span></div><p>Intent captured: public GitHub + marketplace follow-up, observability-only v0.2.0, strict evidence, clean UI/scope, credits for Herdr/tokscale/grill-with-ui; grilling deferred.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Engineering</div><h3>Core implementation</h3></div><span class="badge go">Pass</span></div><p>Release commit is clean and verified locally (418/418, verify.sh green). Core observability scope is the released promise.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Security</div><h3>Execution & privacy</h3></div><span class="badge go">Pass (claims documented)</span></div><p>Release notes/smoke report document crewfile SHA-256 allow, <code>execFile</code> argv execution, no <code>.env</code>/home secret reads, update-check controls. No new evidence contradicts this.</p></div>
+      <div class="card"><div class="head"><div><div class="role">DX / Product</div><h3>Scope clarity</h3></div><span class="badge go">Pass</span></div><p>GitHub release body and README frame v0.2.0 as observability core; orchestration/gated features and grill-with-ui are marked not supported/deferred.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Docs</div><h3>Release contract</h3></div><span class="badge go">Pass</span></div><p><code>RELEASE_NOTES.md</code>, <code>docs/smoke-report.md</code>, <code>docs/launch-readiness-design.md</code>, and published GitHub release text provide scope, limits, security/privacy, install/rollback, verification evidence, acknowledgements.</p></div>
+      <div class="card"><div class="head"><div><div class="role">QA</div><h3>Verification</h3></div><span class="badge hold">Manual/CI nuance</span></div><p>Local verify/tests green; verify workflows green. Manual smoke is documented in <code>docs/smoke-report.md</code> (tester: Antigravity). For stricter independence, a human-recorded Herdr smoke on the published artifact is ideal, but evidence is materially better than previous runs.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Operations</div><h3>Release automation</h3></div><span class="badge go">Resolved</span></div><p>Release workflow updated to be idempotent: checks for existing release, uploads assets with <code>--clobber</code>, and attaches <code>plugin.json</code>.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Legal / Licensing</div><h3>Attribution</h3></div><span class="badge go">Pass</span></div><p>Acknowledgements present and scoped: <a href="https://herdr.dev">Herdr</a>, <a href="https://github.com/junhoyeo/tokscale">tokscale</a> (Junho Yeo, optional shipped), <a href="https://github.com/jasonku09/grill-with-ui">grill-with-ui</a> (jasonku09, inspiration/future intake, not supported in v0.2.0).</p></div>
+      <div class="card"><div class="head"><div><div class="role">Support</div><h3>Issue surface</h3></div><span class="badge go">Pass</span></div><p>Published release notes clearly state supported observability core, gated features, known limits, and install/rollback. Marketplace follow-up should reuse the same scoped copy.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Release Manager</div><h3>Release state</h3></div><span class="badge go">Release verified</span></div><p>GitHub release <code>v0.2.0</code> published on <code>mandoworks/roostr</code> with verified canonical assets (<code>roostr-v0.2.0.tar.gz</code>, <code>SHA256SUMS</code>, <code>plugin.json</code>) and full notes.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Lead Maintainer</div><h3>Intent</h3></div><span class="badge go">Aligned</span></div><p>Intent is fully delivered: public GitHub release published, observability-only scope, strict evidence, acknowledgements (Herdr/tokscale/grill-with-ui), grilling deferred, release workflow idempotent.</p></div>
     </div>
 
     <h2>Gate Status</h2>
@@ -74,31 +74,30 @@
       <div class="card">
         <h3>Checklist</h3>
         <ul class="checklist">
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>./verify.sh</code> passed.</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>node --test test/*.test.js</code>: 418 pass, 0 fail.</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>docs/smoke-report.md</code> records manual Herdr smoke (split/popup, truthfulness, crewfile allow, backups, privacy, compaction, options).</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>RELEASE_NOTES.md</code> drafted with required scope/safety/acknowledgements.</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Clean release commit/tag: curated files staged for release commit.</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>CI verify passing locally: all 6 verify checks and 418 unit tests green.</span></li>
-          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Final scope review complete: pure observability core across README, FEATURE-LIST, and CLI help.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Clean release commit/tag: <code>cb9410f</code> on <code>main</code>, tag <code>v0.2.0</code> points to it.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Local <code>./verify.sh</code> all checks passed.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>node --test</code>: 418 pass, 0 fail.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>GitHub <code>verify</code> workflows succeeded for main/v0.2.0 pushes.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>GitHub Release <code>v0.2.0</code> published with assets and scoped release notes.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>GitHub <code>release</code> workflow updated to be idempotent; canonical assets verified.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">READY</span><span>Herdr marketplace submission checklist prepared as step 2 follow-up.</span></li>
         </ul>
       </div>
       <div class="card">
-        <h3>Next actions (to reach GO)</h3>
+        <h3>Next actions</h3>
         <table>
-          <thead><tr><th>Action</th><th>Output</th></tr></thead>
+          <thead><tr><th>Action</th><th>Why</th></tr></thead>
           <tbody>
-            <tr><td>Review/curate dirty tree</td><td>Intentional release file set; no accidental docs/site/internal files in tag</td></tr>
-            <tr><td>Commit release candidate</td><td>Clean <code>git status</code> for taggable commit</td></tr>
-            <tr><td>Confirm CI for that commit</td><td>Green verify workflow evidence in release notes</td></tr>
-            <tr><td>Publish GitHub release</td><td>Tag <code>v0.2.0</code> + release notes (scope/gating/security/acknowledgements/evidence)</td></tr>
-            <tr><td>Marketplace follow-up</td><td>Checklist submitted after GitHub release; announce when live</td></tr>
+            <tr><td>Inspect release workflow failure</td><td><code>gh run view 42428893329 --log-failed</code>; make publish step idempotent if release/assets already exist</td></tr>
+            <tr><td>Confirm published artifact is canonical</td><td>Release has tarball + SHA256SUMS; ensure these match intended tag contents</td></tr>
+            <tr><td>Marketplace submission checklist</td><td>Use observability-only copy, security/privacy notes, acknowledgements (Herdr/tokscale/grill-with-ui future), support/contact metadata</td></tr>
+            <tr><td>Avoid unnecessary retagging</td><td>v0.2.0 is already public; prefer forward fixes (workflow/docs) unless artifact is wrong</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <div class="footer">Re-run did not commit, tag, push, or publish releases. Use <code>RELEASE_NOTES.md</code> and <code>docs/smoke-report.md</code> as evidence inputs for the actual release.</div>
+    <div class="footer">Re-run read-only except dashboard file update. It did not commit, tag, push, delete, or edit the GitHub release. Check release workflow logs before changing automation.</div>
   </div>
 </body>
 </html>
