@@ -12,6 +12,7 @@
 //   roostr name [...]        draw worker names from the head language
 //   roostr backups [...]     list, show or restore a workspace backup
 //   roostr analytics [...]   query continuous usage and cost attribution
+//   roostr arena [...]       the shareable first-try pass leaderboard
 //   roostr sessions [...]    list the sessions saved before a restart
 //   roostr restore [...]     print the restore plan
 
@@ -47,6 +48,8 @@ if (argv[0] === 'report') {
   process.exitCode = require(path.join(src, 'summary.js')).main(argv.slice(1));
 } else if (argv[0] === 'analytics') {
   process.exitCode = require(path.join(src, 'analytics.js')).main(argv.slice(1));
+} else if (argv[0] === 'arena') {
+  process.exitCode = require(path.join(src, 'arena.js')).runCli(argv.slice(1));
 } else if (argv[0] === 'tasks') {
   process.exitCode = require(path.join(src, 'tasks.js')).main(argv.slice(1));
 } else if (argv[0] === 'template') {

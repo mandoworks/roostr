@@ -547,6 +547,7 @@ function helpText() {
     '  --by VIEW       grouping: model (default), pane, kind, or batch',
     '  --tasks <path>  tasks.json path for batch view (default: docs/orchestration/tasks.json)',
     '  --json          emit clean machine-readable JSON',
+    '  --share         print the shareable Arena leaderboard card instead',
     '  -h, --help      show this help',
     '',
     'Privacy line:',
@@ -561,6 +562,7 @@ function main(argv = []) {
     return 0;
   }
   const json = argv.includes('--json');
+  const share = argv.includes('--share');
   const today = argv.includes('--today');
   let days = 30;
   let by = 'model';
@@ -586,6 +588,11 @@ function main(argv = []) {
   }
 
   const result = query({ days, today, by, tasksFile });
+  if (share) {
+    const arena = require('./arena');
+    process.stdout.write(arena.formatShareCard(result) + '\n');
+    return 0;
+  }
   if (json) {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   } else {

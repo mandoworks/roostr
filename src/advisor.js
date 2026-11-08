@@ -171,6 +171,38 @@ function modelStat(model, entry) {
   };
 }
 
+// A (kind, model) pair with too few local runs borrows the community pass rate
+// from the arena global summary, when that file exists and holds >= 5 runs.
+// Loaded lazily so advisor and arena never form a require cycle.
+function communityModelStat(kind, model, opts = {}) {
+  if (!kind || !model) return null;
+  let arena;
+  try {
+    arena = require('./arena');
+  } catch {
+    return null;
+  }
+  const file = opts.file || arena.globalSummaryPath();
+  const data = arena.readGlobalSummary(file);
+  const byKind = data && data.by_kind_model;
+  if (!byKind || !byKind[kind]) return null;
+  const entry = byKind[kind][model];
+  if (!entry) return null;
+  const count = Number.isFinite(entry.count) ? entry.count : 0;
+  if (count < 5) return null;
+  const rate = Number.isFinite(entry.first_try_pass_rate) ? entry.first_try_pass_rate : null;
+  if (rate === null) return null;
+  return {
+    kind,
+    model,
+    count,
+    passRate: rate,
+    avgCost: Number.isFinite(entry.avg_cost_usd) ? entry.avg_cost_usd : null,
+    confidence: 'community',
+    source: 'community',
+  };
+}
+
 function findKindStats(summary, kind) {
   if (!summary || !summary.by_kind) return null;
   if (summary.by_kind[kind]) return { kind, stats: summary.by_kind[kind] };
@@ -264,11 +296,25 @@ function recommend(task, currentEffort = null, currentModel = null, options = {}
   const confidence = confidenceFor(samples);
 
   const byModel = (kindStats && kindStats.by_model) || {};
-  const configured = recommendedModel ? modelStat(recommendedModel, byModel[recommendedModel]) : null;
+  let configured = recommendedModel ? modelStat(recommendedModel, byModel[recommendedModel]) : null;
+  let communityStat = null;
+  if (recommendedModel && (!configured || configured.count < 5)) {
+    communityStat = communityModelStat(found ? found.kind : kind, recommendedModel);
+    if (communityStat && configured) {
+      configured = {
+        ...configured,
+        passRate: communityStat.passRate,
+        avgCost: communityStat.avgCost !== null ? communityStat.avgCost : configured.avgCost,
+        confidence: 'community',
+        source: 'community',
+      };
+    }
+  }
   const bestName = kindStats && kindStats.best_model && kindStats.best_model !== 'unknown' ? kindStats.best_model : null;
   const bestEntry = bestName ? byModel[bestName] : null;
   const modelStats = {
     configured,
+    community: communityStat,
     best: bestName
       ? {
         model: bestName,
@@ -321,6 +367,7 @@ function recommend(task, currentEffort = null, currentModel = null, options = {}
     source,
     modelWarning,
     modelStats,
+    community: communityStat,
   };
 }
 
@@ -403,7 +450,11 @@ function main(args) {
     : rec.modelStats.configured && rec.modelStats.configured.count >= 3 ? rec.modelStats.configured : null;
   if (recorded) {
     const cost = recorded.avgCost === null ? '' : `, $${recorded.avgCost} avg`;
-    out.push(`recorded:    ${recorded.model} ${recorded.count} runs, ${recorded.passRate ?? '?'}% first try${cost}`);
+    const from = recorded.source === 'community' ? ' (community)' : '';
+    out.push(`recorded:    ${recorded.model} ${recorded.count} runs, ${recorded.passRate ?? '?'}% first try${cost}${from}`);
+  }
+  if (rec.community && (!recorded || recorded.source !== 'community')) {
+    out.push(`community:   ${rec.community.count} runs, ${rec.community.passRate}% first try for ${rec.community.model}`);
   }
 
   if (rec.advisory) {
@@ -418,6 +469,7 @@ module.exports = {
   detectKind,
   kindSettings,
   recommend,
+  communityModelStat,
   loadSummary,
   loadModelMap,
   summaryPath,
