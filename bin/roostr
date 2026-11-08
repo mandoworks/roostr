@@ -3,6 +3,13 @@
 // roostr entry point.
 //   roostr [board options]   the live board (see --help)
 //   roostr report ...        report exact usage for a pane
+//   roostr recommend ...     recommend optimal model and effort for a task
+//   roostr spawn ...         record a spawn recommendation
+//   roostr outcome ...       record how a run ended
+//   roostr summary [...]     aggregate the orchestration ledger
+//   roostr tasks [...]       validate the machine readable task list
+//   roostr template <role>   print a role template
+//   roostr name [...]        draw worker names from the head language
 //   roostr backups [...]     list, show or restore a workspace backup
 //   roostr analytics [...]   query continuous usage and cost attribution
 //   roostr sessions [...]    list the sessions saved before a restart
@@ -24,7 +31,17 @@ if (argv[0] === 'report') {
   process.exitCode = require(path.join(src, 'report.js')).main(argv.slice(1));
 } else if (argv[0] === 'recommend') {
   process.exitCode = require(path.join(src, 'advisor.js')).main(argv.slice(1));
-} else if (argv[0] === 'spawn' || argv[0] === 'outcome') {
+} else if (argv[0] === 'spawn') {
+  const p = require(path.join(src, 'orchestrator.js')).mainSpawn(argv.slice(1));
+  if (p && typeof p.then === 'function') {
+    p.then((code) => { process.exitCode = code || 0; }).catch((e) => {
+      process.stderr.write(`roostr spawn: ${e.message}\n`);
+      process.exitCode = 1;
+    });
+  } else {
+    process.exitCode = p || 0;
+  }
+} else if (argv[0] === 'outcome') {
   process.exitCode = require(path.join(src, 'ledger.js')).main(argv);
 } else if (argv[0] === 'summary') {
   process.exitCode = require(path.join(src, 'summary.js')).main(argv.slice(1));
