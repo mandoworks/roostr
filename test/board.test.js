@@ -1470,7 +1470,7 @@ test('buildModel: unnamed agent uses pane id as handle and marks isNamed false',
   });
   assert.equal(m.rows[0].name, 'w1:p9');
   assert.equal(m.rows[0].isNamed, false);
-  assert.equal(m.rows[1].name, 'w1:p8');
+  assert.equal(m.rows[1].name, 'opencode');
   assert.equal(m.rows[1].isNamed, false);
 });
 

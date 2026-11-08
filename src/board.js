@@ -285,7 +285,7 @@ function buildModel({
     // the human name and wins when it is not just the agent kind.
     const agentName = ui.clean(a.name) || null;
     const humanName = !isDefaultAgentLabel && parsed.name ? parsed.name : null;
-    const displayName = humanName || agentName || a.pane_id;
+    const displayName = humanName || agentName || parsed.name || a.pane_id;
     const isNamed = Boolean(humanName || agentName);
     const name = displayName;
     const crew = crewFor(a.cwd || pane.cwd) || null;
@@ -1204,7 +1204,7 @@ function detailBox(r, width, ts = null, notice = null) {
   const hits = [];
   const title = ` ${r.name} `;
   const modelText = r.model.v ? shortModel(r.model.v) : '?';
-  const who = r.isNamed
+  const who = r.isNamed || r.name !== r.paneId
     ? ` ${modelText} (${r.kind}) · ${r.paneId} `
     : ` ${modelText} (${r.kind}) `;
   const copied = Boolean(notice && notice.includes(r.paneId));
@@ -1213,7 +1213,7 @@ function detailBox(r, width, ts = null, notice = null) {
   const btnW = buttons.reduce((n, [, t]) => n + ui.strWidth(t) + 1, 0);
   const rule = Math.max(2, width - 2 - ui.strWidth(title) - ui.strWidth(who) - btnW);
   let head = C.dim('──') + (r.isNamed ? bold(C.title(ui.clean(title))) : C.dim(ui.clean(title))) + C.dim(ui.clean(who)) + C.dim('─'.repeat(rule));
-  if (!r.isNamed) {
+  if (!r.isNamed && r.name === r.paneId) {
     hits.push({ action: 'copy-id', paneId: r.paneId, y: 0, x0: 2, x1: 2 + ui.strWidth(title) - 1 });
   } else {
     const idX0 = 2 + ui.strWidth(title) + ui.strWidth(who.slice(0, who.indexOf(r.paneId)));
@@ -2004,7 +2004,8 @@ function render(model, {
       const nameText = c.name.paint(r.name);
       const effStr = r.effort ? ` (${r.effort})` : '';
       const modelStr = r.model.v ? `${shortModel(r.model.v)}${effStr}` : '?';
-      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)} · ${C.text(modelStr)}`;
+      const surgeBadge = (r.surge || r.surgeMarker) ? ` ${bold(C.amber('▲ 2× SURGE'))}` : '';
+      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)} · ${C.text(modelStr)}${surgeBadge}`;
       const headRight = c.state.paint(c.state.text);
       const gap1 = Math.max(2, width - 4 - ui.strWidth(headLeft) - ui.strWidth(headRight));
       const line1 = `  ${headLeft}${' '.repeat(gap1)}${headRight}`;

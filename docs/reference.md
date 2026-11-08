@@ -1,14 +1,18 @@
-# crew-board reference
+# roostr reference
 
 Deep reference for the board. The [README](../README.md) is the quick start.
 
-## Exact usage: `crew-board report`
+`roostr` is the primary command. `crew-board` remains supported as a legacy alias.
+
+## Exact usage: `roostr report`
 
 ```sh
-crew-board report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--role S] [--about S] [--task T] [--session ID] [--from claude|agy]
+roostr report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--role S] [--about S] [--task T] [--session ID] [--from claude|agy]
 ```
 
-Writes `~/.crew-board/state/<pane>.json`, named for the pane id with `:` replaced by `_`, and an existing `_` escaped as `__`, so `w1:p2` is `w1_p2.json`. Set `CREW_BOARD_STATE_DIR` to move the state directory. The file is `0600` and written atomically. It keeps the latest report for that pane: `pane`, `at`, `ctx`, `tokens`, `input`, `output`, `cost`, `model`, `effort`, `task`, `taskSource`, `role`, `about`, `session` and any usage limits. A flag with an empty value is ignored, so a missing field never erases an earlier one. Reports older than 12 hours are ignored and dead pane reports are pruned.
+`crew-board report` remains supported as a legacy alias.
+
+Writes `~/.roostr/state/<pane>.json`, named for the pane id with `:` replaced by `_`, and an existing `_` escaped as `__`, so `w1:p2` is `w1_p2.json`. If `~/.roostr/state` is not present, roostr falls back to `~/.crew-board/state` for compatibility. Set `ROOSTR_STATE_DIR` (or `CREW_BOARD_STATE_DIR`) to move the state directory. The file is `0600` and written atomically. It keeps the latest report for that pane: `pane`, `at`, `ctx`, `tokens`, `input`, `output`, `cost`, `model`, `effort`, `task`, `taskSource`, `role`, `about`, `session` and any usage limits. A flag with an empty value is ignored, so a missing field never erases an earlier one. Reports older than 12 hours are ignored and dead pane reports are pruned.
 
 `--effort` takes `low medium high xhigh max`, or the short forms `L M H XH MAX`, in any case. `--input` and `--output` carry the split that Gemini estimates need.
 
@@ -25,26 +29,30 @@ Every agent has four values:
 
 The pane label is the display name only. The board row shows the display name and the role, for example `Diego · board core and CLI`. The detail box adds the role and about. The task stays separate and changes with the work.
 
-Worker names are randomly generated from the language the Head Honcho is using with the user. The head draws them once with `crew-board name --language <code> --count N --exclude <names>` and keeps them. A Spanish conversation draws Spanish names. An English conversation draws English names. The setup language row defaults to `en`, and `es`, `pt` and `fr` are supported.
+Worker names are randomly generated from the language the Head Honcho is using with the user. The head draws them once with `roostr name --language <code> --count N --exclude <names>` (or `crew-board name` as a legacy alias) and keeps them. A Spanish conversation draws Spanish names. An English conversation draws English names. The setup language row defaults to `en`, and `es`, `pt` and `fr` are supported.
 
-The secretary is the fixed exception: display name `Secretary - <workspace>`, Herdr name `secretary-<workspace>`, role `secretary`. The board finds the secretary by role first. Press `K` in the board to create one; it picks a shell pane or splits one. Worker names use `~/.crew-board/names.json` (override with `CREW_BOARD_NAMES`) so recent names do not repeat.
+The secretary is the fixed exception: display name `Secretary - <workspace>`, Herdr name `secretary-<workspace>`, role `secretary`. The board finds the secretary by role first. Press `K` in the board to create one; it picks a shell pane or splits one. Worker names use `~/.roostr/names.json` (override with `ROOSTR_NAMES` or `CREW_BOARD_NAMES`, with fallback to `~/.crew-board/names.json`) so recent names do not repeat.
 
 ### Claude Code statusline snippet
 
-Add this block to your statusline script after it reads the input (`input=$(cat)`). It needs `crew-board` on `PATH`, runs only inside a Herdr pane, and prints nothing:
+Add this block to your statusline script after it reads the input (`input=$(cat)`). It needs `roostr` on `PATH` (`crew-board` remains supported as a legacy alias), runs only inside a Herdr pane, and prints nothing:
 
 ```sh
-# ---- crew-board: paste this block into your own statusline script ----
-if [ -n "${HERDR_PANE_ID:-}" ] && command -v crew-board >/dev/null 2>&1; then
-  printf '%s' "$input" | crew-board report --pane "$HERDR_PANE_ID" --from claude >/dev/null 2>&1 &
+# ---- roostr: paste this block into your own statusline script ----
+if [ -n "${HERDR_PANE_ID:-}" ]; then
+  if command -v roostr >/dev/null 2>&1; then
+    printf '%s' "$input" | roostr report --pane "$HERDR_PANE_ID" --from claude >/dev/null 2>&1 &
+  elif command -v crew-board >/dev/null 2>&1; then
+    printf '%s' "$input" | crew-board report --pane "$HERDR_PANE_ID" --from claude >/dev/null 2>&1 &
+  fi
 fi
-# ---- end of crew-board block ----
+# ---- end of roostr block ----
 ```
 
 A complete minimal script is in [examples/claude-statusline.sh](../examples/claude-statusline.sh). Point Claude Code at it:
 
 ```json
-"statusLine": { "type": "command", "command": "sh /path/to/crew-board/examples/claude-statusline.sh" }
+"statusLine": { "type": "command", "command": "sh /path/to/roostr/examples/claude-statusline.sh" }
 ```
 
 ### Antigravity (agy) statusline
@@ -52,16 +60,16 @@ A complete minimal script is in [examples/claude-statusline.sh](../examples/clau
 agy hands its statusline JSON on stdin too: the model with its effort, context tokens, and its quotas. Use `--from agy`, or [examples/agy-statusline.sh](../examples/agy-statusline.sh):
 
 ```json
-"statusLine": { "type": "command", "command": "sh /path/to/crew-board/examples/agy-statusline.sh" }
+"statusLine": { "type": "command", "command": "sh /path/to/roostr/examples/agy-statusline.sh" }
 ```
 
-agy gives no session title, so its task line comes from the pane label or `crew-board report --task`.
+agy gives no session title, so its task line comes from the pane label or `roostr report --task` (`crew-board report --task` remains supported).
 
 ### Gemini API estimates
 
 agy reports tokens but no dollar cost, so the board estimates the API equivalent for Gemini panes from the input and output counts, at published paid tier rates. An estimate carries a tilde, for example `~$0.11`. An exact `--cost` always wins, and a pane without both counts shows `?` rather than a partial number.
 
-Default rates are built in for Gemini 3.8 Flash and Gemini 4 Argon. Override them in `~/.crew-board/prices.json` or `$CREW_BOARD_PRICES`, keyed by model name:
+Default rates are built in for Gemini 3.8 Flash and Gemini 4 Argon. Override them in `~/.roostr/prices.json` (or `$ROOSTR_PRICES`, with fallback to `~/.crew-board/prices.json` / `$CREW_BOARD_PRICES`), keyed by model name:
 
 ```json
 { "gemini-3.8-flash": { "input": 0.75, "output": 3.75 } }
@@ -71,16 +79,16 @@ A key matches after lowercasing and dropping spaces, hyphens and underscores. An
 
 ### opencode and kilo plugin
 
-[integrations/opencode/crew-board.mjs](../integrations/opencode/crew-board.mjs) reports the session title as the task line, plus the model, tokens, cost and session id, at most every 2 seconds and only inside a Herdr pane. It does not report context or effort: context still comes from the footer adapter and effort stays `?`. It needs `crew-board` on `PATH`, or `CREW_BOARD_BIN=/path/to/bin/crew-board`.
+[integrations/opencode/crew-board.mjs](../integrations/opencode/crew-board.mjs) reports the session title as the task line, plus the model, tokens, cost and session id, at most every 2 seconds and only inside a Herdr pane. It does not report context or effort: context still comes from the footer adapter and effort stays `?`. It needs `roostr` on `PATH` (`crew-board` remains supported), or `ROOSTR_BIN` / `CREW_BOARD_BIN=/path/to/bin/roostr`.
 
 ```jsonc
 // ~/.config/opencode/opencode.json
-"plugin": ["/path/to/crew-board/integrations/opencode/crew-board.mjs"]
+"plugin": ["/path/to/roostr/integrations/opencode/crew-board.mjs"]
 // ~/.config/kilo/kilo.jsonc
-"plugin": ["file:///path/to/crew-board/integrations/opencode/crew-board.mjs"]
+"plugin": ["file:///path/to/roostr/integrations/opencode/crew-board.mjs"]
 ```
 
-A manual `crew-board report --task` is never overwritten by the plugin's session title.
+A manual `roostr report --task` (`crew-board report --task` remains supported) is never overwritten by the plugin's session title.
 
 ## Screen adapters
 
@@ -104,7 +112,7 @@ The board shows usage limits above its footer for one provider at a time, one li
 
 Limits belong to the account, so every pane of one kind reports the same numbers. The newest report wins, and a window drops off once it resets.
 
-**Burn rate and pace.** When a window would fill before it resets, its bar warns, for example `⚡ 2.4× ⚠ out in ~1h12`. The pace is measured from your own usage against the steady pace that lasts to the reset. History lives in `~/.crew-board/state/burn.json`.
+**Burn rate and pace.** When a window would fill before it resets, its bar warns, for example `⚡ 2.4× ⚠ out in ~1h12`. The pace is measured from your own usage against the steady pace that lasts to the reset. History lives in `~/.roostr/state/burn.json` (with fallback to `~/.crew-board/state/burn.json`).
 
 ## Spend today with tokscale
 
@@ -112,7 +120,7 @@ If [tokscale](https://github.com/junhoyeo/tokscale) by Junho Yeo is on your `PAT
 
 ## The crew file
 
-`crew-board` finds `.crew-board.toml` above each pane's cwd. The file is code: it runs commands, so the board ignores it until you allow its content hash.
+`roostr` finds `.roostr.toml` (or `.crew-board.toml`) above each pane's cwd. The file is code: it runs commands, so the board ignores it until you allow its content hash.
 
 ```toml
 [board]
@@ -176,20 +184,22 @@ rows = [
 ## Command line
 
 ```sh
-crew-board --help
-crew-board [board options]
-crew-board report --pane <id> [--ctx N] [--tokens N] [--cost N] [--model S] [--effort E] [--role S] [--about S] [--task T]
-crew-board recommend "<task>" [--kind <kind>] [--effort <eff>] [--model <mod>] [--json]
-crew-board spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]
-crew-board tasks [--file <path>] [--crew <file>] [--json]
-crew-board outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
-crew-board summary [--json] [--days 30] [--from <path>] [--no-write]
-crew-board template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
-crew-board name --language <code> [--count N] [--exclude <names>]
-crew-board sessions [--json]
-crew-board restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
-crew-board backups [show|restore <label|id>] [--version N] [--yes]
+roostr --help
+roostr [board options]
+roostr report --pane <id> [--ctx N] [--tokens N] [--cost N] [--model S] [--effort E] [--role S] [--about S] [--task T]
+roostr recommend "<task>" [--kind <kind>] [--effort <eff>] [--model <mod>] [--json]
+roostr spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]
+roostr tasks [--file <path>] [--crew <file>] [--json]
+roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
+roostr summary [--json] [--days 30] [--from <path>] [--no-write]
+roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
+roostr name --language <code> [--count N] [--exclude <names>]
+roostr sessions [--json]
+roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
+roostr backups [show|restore <label|id>] [--version N] [--yes]
 ```
+
+`crew-board` remains supported as a legacy alias for these commands.
 
 Board options:
 
@@ -226,7 +236,7 @@ Every pane keeps `paneId`, `name`, `agentName`, `displayName`, `role`, `about`, 
 
 ## Setup config
 
-`~/.crew-board/config.json`, override `CREW_BOARD_CONFIG`, mode `0600`:
+`~/.roostr/config.json` as primary (override with `ROOSTR_CONFIG`), with fallback to `~/.crew-board/config.json` / `CREW_BOARD_CONFIG`, mode `0600`:
 
 ```json
 {
@@ -257,13 +267,13 @@ Every pane keeps `paneId`, `name`, `agentName`, `displayName`, `role`, `about`, 
 }
 ```
 
-The setup screen writes it. `headLanguage` defaults to `en` and accepts `en`, `es`, `pt` and `fr`. `crew-board recommend` reads `models` as the tier map unless `CREW_BOARD_MODELS` is set. A model in `disabledModels` is never recommended. A task kind may pin `tool`, `model`, `fallbacks` and `effort`; an empty value means auto. The board never silently substitutes a disabled preferred model: it returns the ordered fallbacks and asks for a choice. The secretary is always `Secretary - <workspace>` / `secretary-<workspace>` with the role `secretary`.
+The setup screen writes it. `headLanguage` defaults to `en` and accepts `en`, `es`, `pt` and `fr`. `roostr recommend` (or `crew-board recommend`) reads `models` as the tier map unless `ROOSTR_MODELS` or `CREW_BOARD_MODELS` is set. A model in `disabledModels` is never recommended. A task kind may pin `tool`, `model`, `fallbacks` and `effort`; an empty value means auto. The board never silently substitutes a disabled preferred model: it returns the ordered fallbacks and asks for a choice. The secretary is always `Secretary - <workspace>` / `secretary-<workspace>` with the role `secretary`.
 
 The OpenCode TUI on the tested version rejects `--variant`. The role `args` are the escape hatch, and the board never passes `--variant` to OpenCode. The effort is recorded in the report, not claimed as an internal variant.
 
 ## Backups
 
-On each refresh the board saves a backup of every workspace that has an agent, in `~/.crew-board/backups/<workspace id>/`. A backup holds every tab, each tab's split tree, every pane's directory and label, and for agent panes the kind, name, task, effort, exact model and session id. A layout, directory, agent kind or session change makes a new version, and the last 4 are kept.
+On each refresh the board saves a backup of every workspace that has an agent, in `~/.roostr/backups/<workspace id>/` (with fallback to `~/.crew-board/backups`). A backup holds every tab, each tab's split tree, every pane's directory and label, and for agent panes the kind, name, task, effort, exact model and session id. A layout, directory, agent kind or session change makes a new version, and the last 4 are kept.
 
 Press `R` to review them. `↑` `↓` pick a workspace, `←` `→` a version, `r` then `y` rebuilds it as a new workspace named `<label> *restored`. The old workspace is never touched. A restore needs explicit confirmation before it starts any agent.
 
@@ -273,13 +283,13 @@ The feedback loop has three stores: the per-pane report, the durable attempt led
 
 ### The attempt ledger
 
-`crew-board spawn` writes one attempt to `~/.crew-board/orchestration.jsonl`. Override the path with `CREW_BOARD_LEDGER`. The parent directory is `0700`, the file is `0600`, and every line is one JSON object. The file is append only: an attempt is never rewritten. The store is bounded by automatic rotation when exceeding 5 MB or the retention days setting.
+`roostr spawn` (or `crew-board spawn`) writes one attempt to `~/.roostr/orchestration.jsonl` (override with `ROOSTR_LEDGER` or `CREW_BOARD_LEDGER`, with fallback to `~/.crew-board/orchestration.jsonl`). The parent directory is `0700`, the file is `0600`, and every line is one JSON object. The file is append only: an attempt is never rewritten. The store is bounded by automatic rotation when exceeding 5 MB or the retention days setting.
 
 ```sh
-crew-board spawn --pane <id> --task "<task>" [--role worker] [--name <name>] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]
+roostr spawn --pane <id> --task "<task>" [--role worker] [--name <name>] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]
 ```
 
-`spawn` calls `crew-board recommend` on the task and fills a missing `tier`, `effort` and `model` from the recommendation. It prints the `runId`, tier, effort, model, tool, fallbacks and rationale. It writes the record only. It does not start, rename or prompt an agent. The recommendation merges the project `.crew-board.toml` `[tasks.<kind>]` overrides by finding the file from the current directory.
+`spawn` calls `roostr recommend` on the task and fills a missing `tier`, `effort` and `model` from the recommendation. It prints the `runId`, tier, effort, model, tool, fallbacks and rationale. It writes the record only. It does not start, rename or prompt an agent. The recommendation merges the project `.roostr.toml` (or `.crew-board.toml`) `[tasks.<kind>]` overrides by finding the file from the current directory.
 
 ## Task list
 
@@ -341,10 +351,10 @@ A spawn entry:
 - `recommendedTier` and `recommendedEffort` keep the recommendation even when a flag overrides it.
 - `outcome`, `rework`, `cost`, `durationMs` and `note` stay empty until the outcome.
 
-`crew-board outcome` closes one attempt:
+`roostr outcome` (or `crew-board outcome`) closes one attempt:
 
 ```sh
-crew-board outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
+roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
 ```
 
 It finds the newest spawn with that run id and writes an outcome entry. An unknown run id is an error. A second outcome for the same run is refused. `durationMs` is measured from the spawn time. `rework` defaults to `0` and `cost` stays `null` when omitted.
@@ -364,10 +374,10 @@ It finds the newest spawn with that run id and writes an outcome entry. An unkno
 
 ### The team ledger bridge
 
-`crew-board summary --from <path>` accepts the existing team ledger JSONL as well as the plugin ledger:
+`roostr summary --from <path>` (or `crew-board summary`) accepts the existing team ledger JSONL as well as the plugin ledger:
 
 ```sh
-crew-board summary --from ./team-ledger.jsonl
+roostr summary --from ./team-ledger.jsonl
 ```
 
 The global schema is one JSON object per line with these fields:
@@ -376,7 +386,7 @@ The global schema is one JSON object per line with these fields:
 - `model`, `effort`, `kind`
 - `outcome`, `rework`, `cost_usd`, `notes`
 
-Both schemas normalize into one row before aggregation. The plugin schema keeps `at`, `event`, `runId`, `paneId`, `name`, `role`, `kind`, `task`, `tier`, `effort`, `model`, `recommendedTier`, `recommendedEffort`, `outcome`, `rework`, `cost`, `durationMs` and `note`. A missing path is an error. A malformed line is skipped with a warning. `CREW_BOARD_LEDGER` may point at the team ledger. The plugin never assumes a private path.
+Both schemas normalize into one row before aggregation. The plugin schema keeps `at`, `event`, `runId`, `paneId`, `name`, `role`, `kind`, `task`, `tier`, `effort`, `model`, `recommendedTier`, `recommendedEffort`, `outcome`, `rework`, `cost`, `durationMs` and `note`. A missing path is an error. A malformed line is skipped with a warning. `ROOSTR_LEDGER` or `CREW_BOARD_LEDGER` may point at the team ledger. The plugin never assumes a private path.
 
 ### Data quality
 
@@ -397,17 +407,17 @@ A first try pass means an accepted run with no rework. A run that needed a rewor
 
 Do not describe a model as bad from one aggregate or from a similar name. A real team ledger records `deepseek-v4.1-flash-1017` at 95% first try over 22 tasks. That is not a bad code model. Another model with a similar name or another kind with a small sample can look much worse. Read the exact model name, kind, effort and sample count before drawing a conclusion.
 
-### `crew-board summary`
+### `roostr summary` (legacy alias: `crew-board summary`)
 
 ```sh
-crew-board summary [--json] [--days 30] [--from <path>] [--no-write]
+roostr summary [--json] [--days 30] [--from <path>] [--no-write]
 ```
 
 `summary` reads the ledger, joins spawn and outcome by `runId`, and aggregates. A spawn without an outcome is excluded from pass rates. A duplicate outcome is ignored after the first and reported as a warning. The default window is 30 days, which bounds the aggregation, not the file. A ledger that does not exist returns zeros and leaves the advisor on its defaults.
 
-`summary` writes `~/.crew-board/summary.json` unless `--no-write` is passed. Override the path with `CREW_BOARD_SUMMARY`. The file is `0600`.
+`summary` writes `~/.roostr/summary.json` (with fallback to `~/.crew-board/summary.json`) unless `--no-write` is passed. Override the path with `ROOSTR_SUMMARY` or `CREW_BOARD_SUMMARY`. The file is `0600`.
 
-`~/.crew-board/summary.json`:
+`~/.roostr/summary.json` (primary):
 
 ```json
 {
@@ -488,11 +498,11 @@ samples store numbers and names, never prompts, transcripts or screens.
 
 #### Stores
 
-1. `~/.crew-board/usage.jsonl` (override with `CREW_BOARD_USAGE`):
+1. `~/.roostr/usage.jsonl` (override with `ROOSTR_USAGE` or `CREW_BOARD_USAGE`, with fallback to `~/.crew-board/usage.jsonl`):
    Append-only compact samples `{at, pane, model, effort, tokens, input, output, cost, ctx, src}`. Written on every accepted pane report (`src: "report"`), and during live board ticks for panes without exact reports (`src: "screen"`).
-2. `~/.crew-board/transitions.jsonl` (override with `CREW_BOARD_TRANSITIONS`):
+2. `~/.roostr/transitions.jsonl` (override with `ROOSTR_TRANSITIONS` or `CREW_BOARD_TRANSITIONS`, with fallback to `~/.crew-board/transitions.jsonl`, where supported):
    Append-only status transitions `{at, pane, status}` recorded on every `pane.agent_status_changed` lifecycle event.
-3. `~/.crew-board/orchestration.jsonl` (override with `CREW_BOARD_LEDGER`):
+3. `~/.roostr/orchestration.jsonl` (override with `ROOSTR_LEDGER` or `CREW_BOARD_LEDGER`, with fallback to `~/.crew-board/orchestration.jsonl`):
    The spawn and outcome attempt ledger.
 
 #### Store rotation
@@ -502,10 +512,10 @@ All three JSONL stores use a shared atomic rotation helper:
 - Rotation uses atomic rename, guaranteeing zero lost writes across rotation boundaries.
 - New appends automatically start in a fresh active file.
 
-#### `crew-board analytics`
+#### `roostr analytics` (legacy alias: `crew-board analytics`)
 
 ```sh
-crew-board analytics [--days N] [--by pane|model|kind|batch] [--tasks <path>] [--json]
+roostr analytics [--days N] [--by pane|model|kind|batch] [--tasks <path>] [--json]
 ```
 
 Views:
@@ -523,16 +533,16 @@ Epistemics:
 ### Two attempts, one pass and one rework
 
 ```sh
-crew-board spawn --pane w1:p2 --task "add pagination to the orders endpoint" --effort medium --model balanced-model
+roostr spawn --pane w1:p2 --task "add pagination to the orders endpoint" --effort medium --model balanced-model
 # run 815bb0ad-dcd2-464c-8e02-3b00956f080f
-crew-board outcome --run 815bb0ad-dcd2-464c-8e02-3b00956f080f --result fail --rework 1 --cost 0.30 --note "tests red, second attempt needed"
+roostr outcome --run 815bb0ad-dcd2-464c-8e02-3b00956f080f --result fail --rework 1 --cost 0.30 --note "tests red, second attempt needed"
 
-crew-board spawn --pane w1:p3 --task "add pagination to the orders endpoint" --effort medium --model balanced-model
+roostr spawn --pane w1:p3 --task "add pagination to the orders endpoint" --effort medium --model balanced-model
 # run eb7e89c5-25c7-465f-9fec-d68210fe3a1a
-crew-board outcome --run eb7e89c5-25c7-465f-9fec-d68210fe3a1a --result pass --cost 0.42 --note "tests green first try"
+roostr outcome --run eb7e89c5-25c7-465f-9fec-d68210fe3a1a --result pass --cost 0.42 --note "tests green first try"
 ```
 
-The resulting row for the `feature` kind in `~/.crew-board/summary.json`:
+The resulting row for the `feature` kind in `~/.roostr/summary.json` (or `~/.crew-board/summary.json` fallback):
 
 ```json
 { "count": 2, "first_try_pass_rate": 50, "avg_cost_usd": 0.36, "avg_rework": 0.5 }
@@ -542,7 +552,7 @@ The two attempts produce four ledger lines: two `spawn` entries and two `outcome
 
 ### The advisor
 
-`crew-board recommend` uses `by_kind_effort` for the task's kind, never the global effort average:
+`roostr recommend` (or `crew-board recommend`) uses `by_kind_effort` for the task's kind, never the global effort average:
 
 - The archetype tier and effort stay the default until the kind has at least 5 finished runs.
 - With 5 or more, it chooses the lowest effort in the kind with a first try pass rate of at least 80%. `low` maps to `fast`, `medium` to `balanced`, `high` to `reasoning`.
@@ -553,17 +563,17 @@ The two attempts produce four ledger lines: two `spawn` entries and two `outcome
 - `modelStats` reports the configured model and the best recorded model for the kind, with count, pass rate, average cost and average rework.
 - `recommendedModel` still comes from the setup config or the explicit env map. The ledger informs tier, effort and the model note, not the user's model choice.
 - A model in `disabledModels` is never recommended. The advisor returns `recommendedModel: null` and `modelWarning: "configure an available model"`. It never silently switches to a model from the ledger.
-- The board and `crew-board recommend` show `recorded: fast-model 12 runs, 83% first try, $0.12 avg` only when the sample count is at least 3.
+- The board and `roostr recommend` (or `crew-board recommend`) show `recorded: fast-model 12 runs, 83% first try, $0.12 avg` only when the sample count is at least 3.
 
-Workers report their effort and model at the start with `crew-board report --pane "$HERDR_PANE_ID" --effort <effort> --model <model>`. The head reads `crew-board summary` before writing the next plan. The secretary records outcomes. The worker does not grade itself.
+Workers report their effort and model at the start with `roostr report --pane "$HERDR_PANE_ID" --effort <effort> --model <model>` (`crew-board report` remains supported). The head reads `roostr summary` before writing the next plan. The secretary records outcomes. The worker does not grade itself.
 
 ## Troubleshooting
 
 - **No exact numbers**: wire the statusline or plugin. A pane with no report shows `?`.
-- **`crew-board` not on PATH**: link the plugin bin as the README shows.
+- **`roostr` (or `crew-board`) not on PATH**: link the plugin bin as the README shows.
 - **Crew file ignored**: press `a` to allow a new or changed file. The file is code.
 - **Read only state dir**: the board still renders; it cannot write reports, memory or backups.
-- **Update check**: off with `--no-update-check` or `CREW_BOARD_NO_UPDATE_CHECK=1`.
+- **Update check**: off with `--no-update-check` or `ROOSTR_NO_UPDATE_CHECK=1` (`CREW_BOARD_NO_UPDATE_CHECK=1` remains supported).
 
 ## Glossary
 
@@ -571,12 +581,12 @@ Workers report their effort and model at the start with `crew-board report --pan
 - **pane**: one Herdr pane, named by a pane id such as `w1:p3`.
 - **task line**: the one line description of what an agent pane is doing now.
 - **colour tag**: the coloured mark the board assigns to a pane. In the default `label` mode it is the leading emoji in the pane name.
-- **exact report**: a value an agent or its statusline reported with `crew-board report`.
+- **exact report**: a value an agent or its statusline reported with `roostr report` (`crew-board report` remains supported).
 - **screen read**: a value read from the pane's own footer when no exact report exists.
 - **unknown**: a value the board could not establish, shown as `?` and never guessed.
-- **crew file**: the optional `.crew-board.toml` with per pane extras and checks.
+- **crew file**: the optional `.roostr.toml` (or `.crew-board.toml`) with per pane extras and checks.
 - **trust**: the content hash you allowed for a crew file. A changed file runs nothing until you allow it again.
-- **backup**: a saved workspace layout under `~/.crew-board/backups/`.
+- **backup**: a saved workspace layout under `~/.roostr/backups/` (with fallback to `~/.crew-board/backups/`).
 - **restore**: building a new workspace from a backup, named `<label> *restored`.
 - **agent name**: the lowercase Herdr name, for example `diego`.
 - **display name**: the capitalized pane label, for example `Diego`.
@@ -587,7 +597,7 @@ Workers report their effort and model at the start with `crew-board report --pan
 - **secretary**: the fast monitoring role. It is always `Secretary - <workspace>` / `secretary-<workspace>` and runs monitor passes. It does not implement.
 - **task kind**: `docs`, `review`, `tests`, `tooling`, `complex` or `feature`. It selects the settings row and the ledger bucket.
 - **fallbacks**: the ordered backup models for a task kind or task. The board never uses them silently.
-- **task list**: `docs/orchestration/tasks.json`, the machine readable plan. `crew-board tasks` validates it and prints a recommendation per task.
-- **name history**: `~/.crew-board/names.json`, the recent-name list used to avoid repeats.
+- **task list**: `docs/orchestration/tasks.json`, the machine readable plan. `roostr tasks` (or `crew-board tasks`) validates it and prints a recommendation per task.
+- **name history**: `~/.roostr/names.json` (with fallback to `~/.crew-board/names.json`), the recent-name list used to avoid repeats.
 - **worker**: one work package in a fresh context. It never changes the plan, its role or its about.
 - **flock**: the whole crew of one Head Honcho, one secretary, workers and optional reviewers.
