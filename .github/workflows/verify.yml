@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: ./verify.sh
+      - run: ./verify.sh --public
       - name: Headless smoke and load tests
         run: node --test test/headless.test.js test/load.test.js
       - name: Load numbers

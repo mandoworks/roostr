@@ -1,6 +1,12 @@
 # roostr
 
-A [Herdr](https://herdr.dev) plugin that opens a live **board** of every agent pane in the session. One row per agent: its colour tag, name, model and reasoning effort, status and how long it has been in that status, context, tokens and cost, its **task line**, check badges such as `REPORT READY`, and workspace backups.
+[![verify](https://github.com/mandoworks/roostr/actions/workflows/verify.yml/badge.svg)](https://github.com/mandoworks/roostr/actions/workflows/verify.yml)
+[![release](https://img.shields.io/github/v/release/mandoworks/roostr)](https://github.com/mandoworks/roostr/releases)
+[![node >= 22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-blue)](herdr-plugin.toml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+
+A [Herdr](https://herdr.dev) plugin that opens a live **board** and **multi-agent orchestration hub** for every agent pane in your session. One row per agent: its colour tag, name, model and reasoning effort, status and duration, context window and compaction risk, tokens and cost, **task line**, check badges (`REPORT READY`, `COMPACT`), and workspace backups.
 
 ```
 🐓ROOSTR🐓  example crew                                                  14:30  load 1.50 1.25 1.00
@@ -69,6 +75,24 @@ Once installed, open the board in any of three ways:
 - **`◼` blocked** rows sort first in their workspace, and the banner shows the blocked and over budget panes.
 
 See the live board preview at [roostr.mando.works](https://roostr.mando.works/). Press `?` in the board for the key list.
+
+## Multi-Agent Orchestration & Empirical Routing (`[O orchestrate]`)
+
+Roostr includes a data-driven orchestration engine and canonical agent skill ([`skills/roostr/SKILL.md`](skills/roostr/SKILL.md)) for planning, routing, and supervising multi-agent crews inside Herdr:
+
+- **3-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
+  1. **`1 tasks · advisor`**: Bind your active plan (`docs/orchestration-plan.md` + `docs/orchestration/tasks.json`), inspect per-task tool/effort/model recommendations backed by historical pass rates, override effort (`Space`) or model (`Enter`) in place, and copy ready-to-run `roostr spawn` commands (`c`).
+  2. **`2 analytics · summary`**: Track spend, tokens, first-try pass rates, rework rates, and delegation efficiency (`>=80%` worker token share target) by `model`, `pane`, `kind`, or `batch` across `1d`, `7d`, and `30d` windows.
+  3. **`3 setup`**: Configure enabled coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), and per-kind defaults.
+- **CLI Subcommands**:
+  ```sh
+  roostr recommend "<task>" --kind <kind>   # empirical model, tier, and effort recommendation
+  roostr tasks                              # validate docs/orchestration/tasks.json and recommend per task
+  roostr summary                            # refresh first-try pass rates in ~/.roostr/summary.json
+  roostr analytics --days 7 --by model      # cost, token, and pass-rate breakdown
+  ```
+
+See [docs/orchestration.md](docs/orchestration.md) and [skills/roostr/SKILL.md](skills/roostr/SKILL.md) for the complete Head Honcho, event-driven Daemon, and warm-pane context reset workflow.
 
 ## Backups and Workspace Recovery
 

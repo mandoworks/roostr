@@ -1,19 +1,46 @@
-# Roostr v0.2.0 Release Notes
+# Changelog
 
-**Release Date**: 2026-11-07  
-**Artifact**: GitHub Release tag `v0.2.0`  
-**Target Channel**: Public GitHub release (`herdr plugin install mandoworks/roostr`) followed by Herdr Marketplace listing.
+All notable changes to **roostr** are documented in this file.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## 1. Supported Scope: Observability Core
+## [Unreleased] (v0.3.0 Preview)
 
-Roostr v0.2.0 is an observability board, flight recorder, and safety monitor for AI coding agent swarms running inside [Herdr](https://herdr.dev).
+### Added
+- **Consolidated 3-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
+  - **Tab 1 (`1 tasks · advisor`)**: Assign or spawn the workspace Orchestrator (`o`), bind the active plan repository (`p`), start or trigger the Secretary monitor (`k` / `m`), inspect every task in `docs/orchestration/tasks.json` alongside empirical advisor recommendations, override `tool`, `effort`, `model`, and `fallbacks` in place, or press `c` to copy the ready-to-run `roostr spawn` command.
+  - **Tab 2 (`2 analytics · summary`)**: Live interactive breakdown of spend, tokens, first-try pass rates, rework rates, and **Delegation Efficiency Share (`>=80%` worker target bar)** across `model`, `pane`, `kind`, and `batch` over `1d`, `7d`, and `30d` windows (`b`, `d`, `s`).
+  - **Tab 3 (`3 setup`)**: Interactive configuration for coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), role defaults, and per-kind routing rules.
+- **4-Zone Top Status Bar & Automatic `🐓ROOSTR🐓` Pane Naming**:
+  - Automatically renames the Herdr board pane to `🐓ROOSTR🐓` via `herdr pane rename` on launch and toggle.
+  - Dedicates Line 0 of the board to four live, clickable zones: Workspace/Crew title, Live Crew Pulse (`● working · ○ idle · ◼ blocked`), Orchestration & Today Spend + `⚡` burn pace bolt, and Clock + CPU load.
+- **Interactive Click Tooltips Across All Badges & Bars**:
+  - Click `⚡` (burn pace multiplier), `⚠` (projected quota run-out ETA), quota usage bars, `▲ 2×` (peak-hour quota surge), `COMPACT` / `ctx%` (context dilution status), `load` (CPU load averages), or crew check pills (`●` / `○` / `?`) for instant explanations in the top notice bar.
+- **Full Mouse Navigation Inside Drawers**:
+  - Click tab pills (`[1]`, `[2]`, `[3]`, `[esc close]`), task rows, inline `effort`/`model` cells, and analytics filter pills directly with the mouse.
+  - Active top-bar drawer pill highlights (`[▾ O orchestrate]`, `[▾ d today]`, `[▾ R backups]`, `[▾ o options]`) and toggles closed when clicked again.
+- **Canonical `roostr` Agent Skill (`skills/roostr/SKILL.md`)**:
+  - Automatically installed to `~/.herdr/skills/roostr`, `~/.claude/skills/roostr`, and `~/.config/opencode/skills/roostr` via `scripts/postinstall.js`.
+  - Encodes the **Event-Woken Planner Rule** (`<20%` orchestrator token share, `<30%` orchestrator context ceiling, single-agent threshold for `<30-line` fixes) and the **Warm-Pane Subagent Context Reset Protocol** (`/clear` or `/new` before assigning a new task to an idle worker pane below `30%` context).
+  - Includes [`skills/roostr/references/schemas-and-config.md`](skills/roostr/references/schemas-and-config.md) documenting `tasks.json`, `.roostr.toml`, `~/.roostr/config.json`, `summary.json`, and worker report schemas.
+- **Smart Spawner Execution & Daemon Escalation Triggers**:
+  - `roostr spawn --execute` automates worktree pane splitting, agent initialization, pane labeling, board reporting, and ledger tracking.
+  - `src/daemon.js` evaluates five deterministic procedural escalation triggers (`loop-3x`, `stalled-180s`, `blocked`, `context-ceiling` at `85%`, and `test-regression-2x`) at zero LLM token cost.
+- **Symlink Path Guards & `.bak` State Recovery**:
+  - `fs.realpathSync` boundary verification in `src/crewfile.js` and `src/report.js` plus automatic `.bak` fallback in `src/state.js`.
 
-### Core Features
+---
+
+## [0.2.0] - 2026-11-07
+
+**Artifact**: GitHub Release tag `v0.2.0`  
+**Target Channel**: Public GitHub release (`herdr plugin install mandoworks/roostr`) followed by Herdr Marketplace listing.
+
+### Added
 - **Live TUI Observability Board**:
   - Persistent split pane or popup overlay (`q` / `Esc` to dismiss).
-  - Single-line compact view or expanded task card view (`v` key).
+  - Multiple responsive layouts (`v` key: `auto`, `columns`, `cards`, `table`, `compact`, `line`; `w` key for `cards`).
   - Multi-workspace aggregation (`--all` or `s` key).
   - Quick pane navigation: one click selects, double click jumps to agent pane, click or `y` copies pane ID.
 - **Truthful 3-Tier Data Hierarchy**:
@@ -23,10 +50,10 @@ Roostr v0.2.0 is an observability board, flight recorder, and safety monitor for
 - **Attention Degradation & Context Compaction Guardrails**:
   - 4-tier progressive indicators:
     - `< 30%`: Pristine context (dim grey text, quiet).
-    - `30% - 49%`: Warming (subtle cyan text, ambient awareness).
-    - `50% - 74%`: Attention dilution risk (amber text, amber `COMPACT` row badge, detail box advice).
-    - `75% - 84%`: High context alarm (bold amber text, bold amber badge, top alarm banner).
-    - `≥ 85%`: Critical threshold (bold red text, bold red badge, urgent top banner).
+    - `30% to 49%`: Warming (subtle cyan text, ambient awareness).
+    - `50% to 74%`: Attention dilution risk (amber text, amber `COMPACT` row badge, detail box advice).
+    - `75% to 84%`: High context alarm (bold amber text, bold amber badge, top alarm banner).
+    - `>= 85%`: Critical threshold (bold red text, bold red badge, urgent top banner).
 - **Workspace Resilience & Backups**:
   - Automatic layout archives under `~/.roostr/backups` on every refresh.
   - Interactive backup browser (`R` key or `roostr backups`).
@@ -39,20 +66,7 @@ Roostr v0.2.0 is an observability board, flight recorder, and safety monitor for
 - **Optional Tokscale Spend Integration**:
   - Auto-detects [tokscale](https://github.com/junhoyeo/tokscale) when on PATH for cross-agent spend today. Degrades cleanly when absent.
 
----
-
-## 2. Gated Features (Not in v0.2.0)
-
-Autonomous multi-agent orchestration (Head Honcho planner, Secretary daemon, monitor pass loops, and task intake) is implemented under an internal gate pending multi-pane live soak testing.
-
-- The default UI hides all orchestration shortcuts (`S/O/K/M/C`).
-- CLI subcommands (`spawn`, `outcome`, `tasks`, `template`, `name`, `recommend`, `summary`) are excluded from public `--help`.
-- Orchestration features are gated behind `ROOSTR_EXPERIMENTAL=1`, `ROOSTR_ORCHESTRATION=1`, the CLI `--orchestration`/`--experimental` flag, or `[orchestration] enabled = true` in config; scheduled for the v0.3.0 release.
-
----
-
-## 3. Security & Privacy
-
+### Security & Privacy
 - **SHA-256 Pinned Crewfiles**: `.roostr.toml` (and legacy `.crew-board.toml`) runs checks as code. A new or edited crewfile is ignored until you press `a` to approve its SHA-256 hash.
 - **Safe Command Execution**: Check commands are executed as argv arrays via `execFile`, never passed to a shell.
 - **Zero Secret Access**: Reads no `.env` files and no home directory credentials. Third-party keys come strictly from environment variables.
@@ -60,60 +74,7 @@ Autonomous multi-agent orchestration (Head Honcho planner, Secretary daemon, mon
 
 ---
 
-## 4. Installation & Upgrades
+## [0.1.0] - 2026-10-22
 
-### Automatic Install (Recommended)
-```sh
-curl -fsSL https://raw.githubusercontent.com/mandoworks/roostr/main/scripts/install.sh | bash
-```
-*Note for Linux / Ubuntu*: If `roostr: command not found` appears in your active shell, run `export PATH="$HOME/.local/bin:$PATH"`. The installer automatically appends this to your shell profile for future sessions.
-
-### Manual Install via Herdr
-```sh
-herdr plugin install mandoworks/roostr
-```
-
-Bind shortcut in `~/.config/herdr/config.toml`:
-```toml
-[[keys.command]]
-key = "prefix+r"
-type = "plugin_action"
-command = "roostr.toggle-board"
-description = "roostr: toggle live board"
-```
-
-Reload Herdr config:
-```sh
-herdr server reload-config
-```
-
-### Rollback / Uninstall
-```sh
-herdr plugin remove roostr
-```
-
----
-
-## 5. Verification Evidence
-
-- **Platform**: Tested on macOS Darwin 24.3.0 (Apple Silicon) and Linux x86_64.
-- **Herdr Version**: Herdr 0.9.1+.
-- **Pure Node 22 stdlib**: Zero npm dependencies, no build step, no native addons.
-- **Syntax check**: All 42 scripts passed `node --check`.
-- **Unit test suite**: 418 unit tests passed via `node:test` (0 failures, 0 skipped).
-- **Live smoke**: Verified against 23 active agent panes in live Herdr swarm session.
-
----
-
-## 6. Known Limits
-
-- **Tokscale requirement for historical totals**: Without tokscale installed on PATH, the `d today` view shows open panes and agent breakdown, but cannot read closed session history across past days.
-- **Terminal width**: Best viewed in terminal windows with 80 or more columns. Narrower panes automatically drop lower-priority columns.
-
----
-
-## 7. Acknowledgements
-
-- [Herdr](https://herdr.dev): The terminal multiplexer platform roostr is built for.
-- [tokscale](https://github.com/junhoyeo/tokscale) by Junho Yeo: Powers optional daily spend tracking (`--today`) with clean fallback when absent.
-- [grill-with-ui](https://github.com/jasonku09/grill-with-ui) by jasonku09: Inspiration for future orchestration intake; not supported in v0.2.0.
+### Added
+- Initial open-source release of the Herdr agent observability board (`herdr-plugin.toml`), screen-footer adapters (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), TOML `.roostr.toml` crewfile parser, and `roostr report` CLI.

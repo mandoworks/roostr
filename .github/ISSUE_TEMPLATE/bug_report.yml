@@ -1,0 +1,29 @@
+name: Bug Report
+description: Report a rendering issue, adapter parsing bug, or orchestration failure in roostr
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Clear description of the unexpected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open Herdr and run `roostr ...`
+        2. Press `...`
+        3. Observe `...`
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment (OS, Node version, Herdr version, Agent CLI)
+      placeholder: "macOS 15.1 / Ubuntu 24.04, Node v22.11.0, Herdr 0.9.5, Claude Code / OpenCode"
+    validations:
+      required: true
