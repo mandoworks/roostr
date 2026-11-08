@@ -41,10 +41,10 @@ The Head Honcho is the very expensive advisor. Default to not waking it. You own
 
 ## Recover a stuck pane
 
-A blocked pane is usually a permission prompt. Read the visible screen first:
+A blocked pane is usually a permission prompt. Read the recent unwrapped output or visible screen first:
 
 ```sh
-herdr pane read <pane> --source visible --format text
+herdr agent read <agent-name> --source recent-unwrapped --lines 120
 ```
 
 Allow it yourself only when the screen shows an allow, approve, continue, proceed or yes prompt and the action is safe: a read-only check, a test, a build, a status command, or a command already named in the brief.
@@ -52,7 +52,7 @@ Allow it yourself only when the screen shows an allow, approve, continue, procee
 Send the key the prompt expects, usually Enter:
 
 ```sh
-herdr pane send-keys <pane> Return
+herdr agent send-keys <agent-name> Return
 ```
 
 Escalate instead when the screen mentions push, force push, reset, delete, remove, chmod, chown, drop, truncate, kill, install, deploy, commit, secrets, credentials, `.env`, tokens, passwords, ssh, scp or rsync. Also escalate when the prompt is unclear or the command is not in the brief.

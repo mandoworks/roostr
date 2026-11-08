@@ -1,184 +1,112 @@
 ---
 name: roostr
-description: Use when planning, spawning, supervising, or reviewing worker agents in Herdr panes, running the Head Honcho and daemon secretary workflow, or checking agent status, costs, and blocked states via the JSON board.
+description: Orchestrate multi-agent coding crews in Herdr with the roostr board (`roostr` / `crew-board`). Use whenever planning, spawning, supervising, or reviewing worker panes in Herdr, routing tasks by empirical pass-rate data (`roostr recommend`, `roostr tasks`, `roostr summary`, `roostr analytics`), running the Head Honcho and Daemon/Secretary workflow, or inspecting agent status, context, and costs via the JSON board.
 ---
 
-# roostr
+# Roostr Orchestration Skill
 
-The Roostr board provides full observability and orchestration over agent panes in Herdr. It tracks each pane with its color tag, name, model, state, metrics, and active task line. Nothing is guessed: agents report their own status via `roostr report`, and uninspected panes display `?`.
+Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plugin and CLI (`roostr`, or `./bin/roostr` inside the plugin repo). Load the `herdr` skill alongside this skill for cross-machine or advanced pane operations.
 
-## Orchestration Architecture
+## Critical Traps (Read First)
 
-The orchestration architecture separates planning, mechanical supervision, and execution:
+1. **Require Herdr (`HERDR_ENV=1`)**: Always verify `test "${HERDR_ENV:-}" = 1` before calling `herdr`. Never run `opencode run` or headless background subshells; every worker must run interactively inside a visible Herdr pane so the human and board can watch and intervene.
+2. **Never guess metrics or models**: Unreported fields stay `?`. Never pick worker models by intuition; run `roostr summary` and `roostr tasks` (or `roostr recommend`) so routing uses empirical pass rates from `~/.roostr/summary.json`.
+3. **Warm-pane context hygiene (subagent reset protocol)**: Keep each worker's pane and `.worktrees/<name>` alive across tasks in a batch. Never start a new task in a dirty context. Before dispatching the next task brief, reset the agent's context with its native clear command (`herdr agent prompt <name> "/clear"` for Claude Code, `herdr agent prompt <name> "/new"` for OpenCode, or the CLI's native new-session command) and re-seed only the compact brief pointer. Trigger a full pane recycle (`herdr pane close` + fresh split) only on contamination signals (wrong-task edits, repeated tool loops, ignored stop hooks, or context `>= 75%` where compaction fails).
+4. **Worktree asset boundary**: `git worktree add` does not copy gitignored files (`.env*`, `node_modules/`, build caches). Symlink or copy required gitignored assets into `.worktrees/<name>` during setup and run one smoke command before prompting the worker.
+5. **No redundant `agent rename`**: `herdr agent start <name> --kind <kind> --pane <pane-id> -- <args>` already sets the lowercase `[a-z][a-z0-9_-]{0,31}` agent handle and waits up to 30s for readiness. Only call `herdr pane rename <pane-id> "<Display> · <task>"` to set the visible pane title.
 
-1. **Head Honcho (Planner)**: One lead reasoning agent owns architecture, scoping, decomposition, and review.
-2. **Daemon Secretary (Supervisor)**: A deterministic background daemon (`src/daemon.js`, triggered by `scripts/status-event.js`) bound to Herdr socket events. It requires zero LLM tokens and no dedicated LLM pane. It dispatches approved plans, checks circuit breakers, sends structural nudges, records metrics, and wakes the lead only when human escalation is required.
-3. **Workers (Executors)**: Autonomous workers (running Kilo, OpenCode, or agy) executing single, self-contained work packages inside isolated git worktrees.
+## Phase 1: Pre-Planning Grill & Empirical Summary
 
-## Phase 0: Pre-Plan Grilling Interview
+1. **Verify Herdr & inspect board**:
+   ```bash
+   test "${HERDR_ENV:-}" = 1
+   roostr --json --here   # or --all for every workspace
+   ```
+2. **Warm the empirical advisor**:
+   ```bash
+   roostr summary
+   # If ~/.roostr/summary.json is missing or cold (<5 runs) and an external team ledger exists:
+   roostr summary --from "${ROOSTR_LEDGER:-/path/to/team-ledger.jsonl}"
+   ```
+3. **Lock the plan**: Interview the user (via `grill-with-ui` when `[grill] mode = "recommended"`, or the 7-question pre-plan grill: Goal, Non-goals, Done check, Touched areas, Constraints, Parallelism, Verification) and write `docs/orchestration-plan.md`. Do not spawn workers until the human approves the plan.
 
-Before writing any implementation plan or code, run the 7-question interview:
+## Phase 2: Machine Task List & Data-Driven Model Routing
 
-1. The problem, in one sentence.
-2. What done looks like and how we check it.
-3. Scope: in, and explicitly out.
-4. File boundaries: allowed and forbidden paths.
-5. Verification command: exact command and exit criteria.
-6. Budget or token ceiling.
-7. Failure recovery: policy on failure and escalation paths.
+1. **Write `docs/orchestration/tasks.json` and briefs (`docs/orchestration/tasks/<id>.md`)**:
+   See [`references/schemas-and-config.md`](references/schemas-and-config.md) for the exact `tasks.json`, `.roostr.toml`, and brief/report schemas. Every task must declare its `id`, `title`, `kind` (`architecture`, `complex-impl`, `surgical-code`, `refactor`, `ui`, `docs`, `review`, `test-gen`, `research`), `brief`, `report`, `owns`, and `depends_on`.
+2. **Validate & enrich with `roostr tasks`**:
+   ```bash
+   roostr tasks
+   roostr tasks --json
+   ```
+   `roostr tasks` validates dependencies (rejecting cycles and duplicate file ownership), queries `advisor.recommend` per task against `~/.roostr/summary.json`, `.roostr.toml`, and `~/.roostr/config.json`, and prints the recommended `effort`, `tier`, `model`, `confidence`, and fallbacks.
+3. **Human allocation sign-off**: Present the `roostr tasks` table (or open the board's `[O orchestrate]` TUI drawer with `O` / `T` to tweak tool, effort, or model overrides interactively) and get explicit approval before spawning.
 
-The interview generates `docs/orchestration-plan.md` with explicit human approval. Execution remains locked until the plan is approved.
+## Phase 3: Naming, Worktrees & Exact `herdr` Spawning
 
-## Phase 1: Crew Setup
+1. **Draw human worker names once per batch**:
+   ```bash
+   roostr name --language es --count 3 --json
+   ```
+   Use the lowercase `agent` slug (`diego`) for `herdr agent start` and `.worktrees/diego`, and the capitalized `display` name (`Diego`) for the pane label.
+2. **Create isolated git worktree**:
+   ```bash
+   git worktree add .worktrees/diego -b crew/diego
+   ```
+   Link any required gitignored files (`.env`, `node_modules`) into `.worktrees/diego`.
+3. **Check geometry, split without stealing focus, and start the worker**:
+   ```bash
+   # 1. Check layout: split 'right' when wide (width >= height * 2), 'down' when tall
+   herdr pane layout --pane "$HERDR_PANE_ID"
+   # 2. Split pane in the worker's worktree without stealing focus
+   PANE_ID=$(herdr pane split --current --direction right --cwd "$PWD/.worktrees/diego" --no-focus | jq -r '.result.pane.pane_id')
+   # 3. Start agent with native model/effort args after --
+   herdr agent start diego --kind opencode --pane "$PANE_ID" -- -m openrouter/xiaomi/mimo-v2-pro
+   # 4. Set human-readable pane label
+   herdr pane rename "$PANE_ID" "Diego · <short task>"
+   ```
+4. **Report metadata to the board & record the ledger spawn**:
+   ```bash
+   roostr report --pane "$PANE_ID" --role "worker" --about "<one-line scope>" --task "<short task>" --effort medium --model "xiaomi/mimo-v2-pro"
+   RUN_ID=$(roostr spawn --pane "$PANE_ID" --task "<short task>" --kind surgical-code --effort medium --model "xiaomi/mimo-v2-pro" | awk '{print $1}')
+   ```
+5. **Dispatch the brief pointer (never paste giant specs into the prompt)**:
+   ```bash
+   herdr agent prompt diego "Read docs/orchestration/tasks/pkg-a.md and execute it. Write your report to docs/orchestration/reports/pkg-a.md ending with DIEGO_DONE or DIEGO_BLOCKED."
+   ```
+   Use `--wait --timeout 120000` only when blocking on a synchronous step; for parallel workers, dispatch without `--wait` and let supervision handle transitions.
 
-Start the Head Honcho prompt from the canonical template:
+## Phase 4: Supervision (Daemon, Secretary & Board TUI)
 
-```sh
-roostr template head-honcho --name my-project --plan docs/orchestration-plan.md
-```
+- **Event-Driven Daemon (Default, Zero LLM Tokens)**: `scripts/status-event.js` hooks Herdr's `pane.agent_status_changed` event and invokes `src/daemon.js`. On `idle`/`done`, it checks `docs/orchestration/reports/<id>.md` for `<NAME>_DONE` or `<NAME>_BLOCKED`. On `blocked`, it classifies the screen via `src/recover.js` (`herdr agent read <name> --source recent-unwrapped --lines 120`), auto-approves safe prompts when configured, or escalates up the `[daemon.ladder]`.
+- **Board TUI Drawer (`[O orchestrate]`, key `O` or `T`)**:
+  - **Tab 1 (Orchestrate & Tasks)**: Pick or spawn the **Orchestrator** (`o`), bind the **Active Plan & `tasks.json`** (`p`), start or poke the **Secretary Monitor** (`k` / `m`), and inspect or override every task's `tool`, `effort`, `model`, and `fallbacks` in-place.
+  - **Tab 2 (Analytics & Summary)**: Interactive TUI for `roostr analytics` (`b` cycles `model ▸ pane ▸ kind ▸ batch`, `d` cycles `1d ▸ 7d ▸ 30d`, `s` refreshes `roostr summary`).
+  - **Tab 3 (Setup)**: Configure enabled tools, tier models (`fast`, `balanced`, `reasoning`), and per-kind defaults.
+  - Press `C` (or click a `◼ blocked` state cell) on the main board to allow or continue a stuck pane.
 
-Configuration lives in `.roostr.toml`:
+## Phase 5: Tiered Review, Outcome Recording & Warm Reuse
 
-```toml
-[roles.head-honcho]
-name = "Jefa"
-model = "deepseek-v4.1-flash-1017"
-effort = "high"
-
-[roles.secretary]
-mode = "daemon"
-
-[limits]
-max_concurrent_workers = 3
-wakes_per_day = 12
-
-[analytics]
-rotation_days = 30
-```
-
-Inspect available CLI options at any time:
-
-```sh
-roostr --help
-```
-
-## Phase 2: Risk Tiering and Negotiation Protocol
-
-Every work package receives an explicit risk tier:
-
-- **Tier 1 (Trivial / Boilerplate)**: Fast models, minimal review.
-- **Tier 2 (Standard Feature / Bugfix)**: Balanced models, standard verification.
-- **Tier 3 (Architecture / Security / Core Logic)**: High reasoning models, dual review.
-
-Consult empirical history before choosing effort:
-
-```sh
-roostr recommend "<task>"
-```
-
-The recommendation engine reads historical pass rates and rework counts from `~/.roostr/summary.json`. It never uses ungrounded guesses.
-
-### Interactive Model and Effort Review Protocol
-
-When presenting recommendations to the human, the Head Honcho must present the full allocation table and explicitly prompt:
-
-> "Review the proposed tools, models, and efforts. Reply with 'Approve' to proceed as proposed, or specify your overrides (for example: 'Set WP-2 to Claude Sonnet, high effort'). Do not dispatch until overrides are applied or confirmed."
-
-Never assume recommendations are immutable or treat a table presentation as an implicit dispatch mandate.
-
-## Phase 3: Autonomous Spawning and Worktree Isolation
-
-### Autonomous Execution Mandate
-
-The Head Honcho or Daemon executes all Herdr spawning commands (`herdr pane split`, `herdr agent start`, `herdr agent rename`, `herdr pane rename`, `roostr spawn`, `herdr agent prompt`) directly through tool calls.
-
-Never output shell snippets (such as `opencode run`) for the human to copy-paste. Never invoke `opencode run` headless in a terminal: headless runs lack interactive permission handling and auto-reject on security boundaries.
-
-```sh
-herdr pane split <pane-id> --direction right --cwd "$PWD/.worktrees/<name>"
-herdr agent start diego --kind opencode --pane <new-pane-id>
-herdr agent rename <new-pane-id> diego
-herdr pane rename <new-pane-id> "Diego"
-roostr report --pane <new-pane-id> --task "<task>" --effort medium --model deepseek-v4.1-flash-1017
-roostr spawn --pane <new-pane-id> --task "<task>" --role worker
-```
-
-### Worktree Filesystem and Asset Boundaries
-
-1. **Prerequisite verification**: The planner must verify that all required input files, raw media, and datasets exist on disk before drafting worker briefs.
-2. **Git worktrees only check out tracked files**: Gitignored caches, `.env` files, or raw media directories do not exist in new worktrees automatically. If a task requires local media or cache directories, the planner must stage or symlink them into `.worktrees/<worker>/...` before dispatch.
-3. **Hermetic boundaries**: Workers must only read and write within their assigned worktree. Never instruct a worker to inspect or `cd` into sibling worktrees or the parent repo, which triggers OpenCode `external_directory` security rejections.
-4. **Inter-worker dependencies**: If Task B depends on Task A's output, Task A must finish and commit its artifact, or the planner must explicitly stage the artifact into Task B's worktree before launching Task B.
-5. **Brief delivery**: Write structured instructions to `.scratch-<name>-task.md` on disk, and send a single pointer prompt: `herdr agent prompt <name> "Read .scratch-<name>-task.md and execute it."`. Keep one work package per fresh context.
-
-## Phase 4: Deterministic Daemon Supervision
-
-The background daemon secretary monitors pane lifecycle events automatically:
-
-- **Circuit breakers**: Pauses dispatches if remaining pool falls below 15 percent; throttles to one worker if 1-hour burn reaches 80 percent.
-- **Structural nudges**: Automatically prompts panes if output stalls or repeated command errors occur.
-- **Operator hold**: Capped at 12 planner wakes per day. Non-critical excess alerts are held in `~/.roostr/operator-hold.json`.
-- **Live worker updates**: Workers update their own single-line task description during execution:
-
-```sh
-roostr report --pane "$HERDR_PANE_ID" --task "writing unit tests for auth module"
-```
-
-## Phase 5: Artifact-Pointer Review Protocol
-
-When a worker completes its package:
-1. The worker writes its report to `.scratch-<name>-report.md` on disk including exit codes and diff summaries.
-2. The worker never dumps raw transcripts into the prompt.
-3. The lead or reviewer audits the diff, verifies test outputs, and commits. Workers never commit directly.
-
-## Phase 6: Outcomes and Analytics
-
-Record the execution outcome in the attempt ledger:
-
-```sh
-roostr outcome --run <runId> --result pass --rework 0 --cost 0.12 --note "Clean pass"
-```
-
-Update historical summary data before the next planning cycle:
-
-```sh
-roostr summary
-```
-
-Query performance and cost views across models, panes, kinds, and timelines:
-
-```sh
-bin/roostr analytics --by model
-bin/roostr analytics --by pane
-bin/roostr analytics --by kind
-bin/roostr analytics --by timeline
-```
-
-## Inspecting Board State via JSON
-
-Always prefer JSON output over screen scraping for exact, token-efficient state reads:
-
-```sh
-roostr --json --all
-```
-
-The returned envelope includes version, scope, summary, and pane objects (`paneId`, `name`, `status`, `task`, `tokens`, `cost`, `model`).
-
-To check for blocked panes cleanly with Node:
-
-```sh
-node -e '
-  const fs = require("fs");
-  const data = JSON.parse(fs.readFileSync(0, "utf8"));
-  const blocked = data.panes.filter((p) => p.status === "blocked");
-  if (blocked.length) console.log(blocked.map((p) => `${p.paneId} ${p.name}: ${p.task || "?"}`).join("\n"));
-' < <(roostr --json --all)
-```
-
-## Operational Rules
-
-- Report only for panes you created or own.
-- Keep task descriptions strictly to one line.
-- Never write secrets, keys, or tokens to task lines or reports.
-- Workers never push or commit without lead authorization.
-- Zero external npm dependencies: all tools use pure Node builtins.
+1. **Verify completed work package**:
+   - Read `docs/orchestration/reports/<id>.md` and `git -C .worktrees/<name> diff --stat`.
+   - **Tier 1 (Mechanical)**: Targeted grep, syntax check, and file-ownership check (`owns` in `tasks.json`).
+   - **Tier 2 (Execution)**: Run package tests/build (`./verify.sh` or `npm test`).
+   - **Tier 3 (Semantic)**: Check behavior against `docs/orchestration-plan.md` acceptance criteria.
+2. **Record empirical outcome & refresh summary**:
+   ```bash
+   roostr outcome --run "$RUN_ID" --result pass --rework 0 --cost 0.04
+   roostr summary
+   roostr analytics --days 7 --by model
+   ```
+3. **Reuse warm pane for next task (subagent context reset)**:
+   ```bash
+   # 1. Clear previous task context inside the warm worker pane (/clear for Claude, /new for OpenCode)
+   herdr agent prompt diego "/new"
+   # 2. Update pane title, board task metadata, and ledger spawn for the new work package
+   herdr pane rename "$PANE_ID" "Diego · <next short task>"
+   roostr report --pane "$PANE_ID" --task "<next short task>"
+   RUN_ID=$(roostr spawn --pane "$PANE_ID" --task "<next short task>" --kind surgical-code | awk '{print $1}')
+   # 3. Dispatch the new brief pointer into the clean context
+   herdr agent prompt diego "Read docs/orchestration/tasks/pkg-b.md and execute it. Write your report to docs/orchestration/reports/pkg-b.md ending with DIEGO_DONE or DIEGO_BLOCKED."
+   ```
+   When the entire batch is merged, remove worktrees (`git worktree remove .worktrees/<name>`) and close worker panes.

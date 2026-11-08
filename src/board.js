@@ -39,6 +39,9 @@ const ui = require('./ui');
 const names = require('./names');
 const recover = require('./recover');
 const surge = require('./surge');
+const tasks = require('./tasks');
+const analytics = require('./analytics');
+const summary = require('./summary');
 
 const { C, bold } = ui;
 
@@ -714,11 +717,7 @@ function menuBar(menu, width) {
   ];
   if (menu.orchestration) {
     items.push(
-      ['setup', 'S setup'],
-      ['head-honcho', 'O head'],
-      ['secretary', 'K sec'],
-      ['monitor', 'M monitor'],
-      ['recover', 'C continue']
+      ['orchestrate', 'O orchestrate']
     );
   }
   if (provider) {
@@ -741,7 +740,7 @@ function menuBar(menu, width) {
     x += ui.strWidth(t) + 1;
   }
   const pKeys = provider ? (menu.hasSubviews ? ' p P' : ' p') : '';
-  const orchKeys = menu.orchestration ? ' S O K M C' : '';
+  const orchKeys = menu.orchestration ? ' O C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
     : ` click to select · double click jump · ↑↓ ↵ f e t v w s R o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
@@ -1146,8 +1145,8 @@ function helpLines(menu, sources, width = 100) {
     ]],
     more: ['MORE', [
       ...(menu && menu.orchestration ? [
+        ['O / T', 'orchestrate: plan, tasks, advisor, analytics, setup'],
         ['S', 'setup: tools and preferred models'],
-        ['O', 'start Head Honcho in a shell pane'],
         ['K', 'start a secretary in a shell pane'],
         ['M', 'prompt the secretary for a monitor pass'],
         ['C', 'allow or continue the selected stuck pane'],
@@ -1916,8 +1915,508 @@ function monitorScope(cfg, crew) {
   return cfg && cfg.secretary && cfg.secretary.scope === 'all' ? 'all' : 'workspace';
 }
 
-function monitorPrompt(scope) {
-  return scope === 'all' ? `${MONITOR_PROMPT} Read every workspace with --all.` : MONITOR_PROMPT;
+function monitorPrompt(scope, planDir = null) {
+  const base = scope === 'all' ? `${MONITOR_PROMPT} Read every workspace with --all.` : MONITOR_PROMPT;
+  return planDir ? `${base} Active plan directory: ${planDir}.` : base;
+}
+
+// ------------------------------------------------------------ orchestrate TUI
+
+const ORCHESTRATE_TABS = ['tasks', 'analytics', 'setup'];
+const ORCH_WINDOWS = [
+  { label: '7d', days: 7, today: false },
+  { label: 'today', days: 1, today: true },
+  { label: '30d', days: 30, today: false },
+];
+
+function shortDir(dir) {
+  if (!dir || typeof dir !== 'string') return '?';
+  return ui.clean(dir.replace(os.homedir(), '~'));
+}
+
+function resolveRepoRoot(dir) {
+  if (!dir || typeof dir !== 'string') return null;
+  let cur = path.resolve(dir);
+  for (let i = 0; i < 4; i++) {
+    try {
+      if (
+        fs.existsSync(path.join(cur, 'docs', 'orchestration', 'tasks.json')) ||
+        fs.existsSync(path.join(cur, 'docs', 'orchestration-plan.md')) ||
+        fs.existsSync(path.join(cur, '.roostr.toml')) ||
+        fs.existsSync(path.join(cur, '.crew-board.toml'))
+      ) {
+        return cur;
+      }
+    } catch {
+      // ignore unreadable path
+    }
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  return path.resolve(dir);
+}
+
+function discoverPlanDirs(model, preferredDir = null) {
+  const seen = new Set();
+  const candidates = [];
+  const add = (d) => {
+    const resolved = resolveRepoRoot(d);
+    if (!resolved || seen.has(resolved)) return;
+    seen.add(resolved);
+    candidates.push(resolved);
+  };
+  if (preferredDir) add(preferredDir);
+  if (model && Array.isArray(model.rows)) {
+    const home = model.home || null;
+    for (const r of model.rows) {
+      if ((!home || r.workspaceId === home) && r.cwd) add(r.cwd);
+    }
+    for (const r of model.rows) {
+      if (r.cwd) add(r.cwd);
+    }
+  }
+  if (model && Array.isArray(model.crews)) {
+    for (const c of model.crews) if (c && c.dir) add(c.dir);
+  }
+  add(process.cwd());
+  const score = (d) => {
+    try {
+      if (fs.existsSync(path.join(d, 'docs', 'orchestration', 'tasks.json'))) return 2;
+      if (fs.existsSync(path.join(d, 'docs', 'orchestration-plan.md'))) return 1;
+    } catch {}
+    return 0;
+  };
+  return candidates.sort((a, b) => score(b) - score(a));
+}
+
+function loadPlanTasks(planDir, cfg, crew = null) {
+  const dir = planDir || process.cwd();
+  const tasksFile = path.join(dir, 'docs', 'orchestration', 'tasks.json');
+  const planFile = path.join(dir, 'docs', 'orchestration-plan.md');
+  const hasTasksFile = fs.existsSync(tasksFile);
+  const hasPlanFile = fs.existsSync(planFile);
+  if (!hasTasksFile) {
+    return {
+      planDir: dir,
+      tasksFile,
+      hasTasksFile: false,
+      planFile,
+      hasPlanFile,
+      plan: hasPlanFile ? 'docs/orchestration-plan.md' : null,
+      rows: [],
+      errors: [],
+    };
+  }
+  try {
+    const raw = tasks.load(tasksFile);
+    const checked = tasks.validate(raw);
+    const rows = checked.tasks.length ? tasks.enrich(checked, { config: cfg, crew }) : [];
+    return {
+      planDir: dir,
+      tasksFile,
+      hasTasksFile: true,
+      planFile,
+      hasPlanFile,
+      plan: checked.plan || (hasPlanFile ? 'docs/orchestration-plan.md' : 'docs/orchestration/tasks.json'),
+      rows,
+      errors: checked.errors,
+    };
+  } catch (e) {
+    return {
+      planDir: dir,
+      tasksFile,
+      hasTasksFile: true,
+      planFile,
+      hasPlanFile,
+      plan: null,
+      rows: [],
+      errors: [(e && e.message) || String(e)],
+    };
+  }
+}
+
+function saveTaskOverride(tasksFile, taskId, patch) {
+  const raw = tasks.load(tasksFile);
+  if (!raw || !Array.isArray(raw.tasks)) throw new Error('invalid tasks.json');
+  const item = raw.tasks.find((t) => t && t.id === taskId);
+  if (!item) throw new Error(`task "${taskId}" not found`);
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === '' || v === null || v === undefined || (Array.isArray(v) && v.length === 0)) {
+      delete item[k];
+    } else {
+      item[k] = v;
+    }
+  }
+  fs.writeFileSync(tasksFile, JSON.stringify(raw, null, 2) + '\n', 'utf8');
+}
+
+function workspaceRows(model) {
+  if (!model || !Array.isArray(model.rows)) return [];
+  const home = model.home || null;
+  const inHome = home ? model.rows.filter((r) => r.workspaceId === home) : [];
+  return inHome.length ? inHome : model.rows;
+}
+
+function orchestrateState(model, cfg, warnings = [], initialTab = 'tasks', preferredDir = null) {
+  const c = cfg || config.defaultConfig();
+  const planDirs = discoverPlanDirs(model, preferredDir);
+  const wsRows = workspaceRows(model);
+  const headRow = wsRows.find((r) => r.role === 'head-honcho')
+    || wsRows.find((r) => config.HEAD_NAMES.some((h) => String(r.name || '').toLowerCase().startsWith(h.name)))
+    || wsRows[0]
+    || null;
+  return {
+    tab: ORCHESTRATE_TABS.includes(initialTab) ? initialTab : 'tasks',
+    planDirs,
+    planIndex: 0,
+    headPaneId: headRow ? headRow.paneId : null,
+    taskRow: 0,
+    kindRow: 0,
+    edit: null,
+    by: 'model',
+    windowIndex: 0,
+    setup: setupState(c, warnings),
+    notice: null,
+    error: null,
+  };
+}
+
+function orchestrateLines(st, model, width = 100) {
+  const hits = [];
+  const tabLabels = [
+    ['tasks', '1 tasks · advisor'],
+    ['analytics', '2 analytics · summary'],
+    ['setup', '3 setup'],
+  ];
+  let head = `${bold(C.title('orchestrate'))}  `;
+  let x = ui.strWidth(head);
+  for (const [key, label] of tabLabels) {
+    const active = st.tab === key;
+    const text = `[${label}]`;
+    if (x + ui.strWidth(text) < width) {
+      hits.push({ action: `orch-tab:${key}`, y: 0, x0: x, x1: x + ui.strWidth(text) - 1 });
+    }
+    head += (active ? bold(C.cyan(text)) : C.dim(text)) + ' ';
+    x += ui.strWidth(text) + 1;
+  }
+  const hint = ' tab/1-3 switch · esc close';
+  if (x + ui.strWidth(hint) <= width) head += C.dim(hint);
+  const lines = [head, ''];
+
+  const cfg = st.setup ? st.setup.config : config.defaultConfig();
+  const planDir = (st.planDirs && st.planDirs[st.planIndex]) || process.cwd();
+
+  if (st.tab === 'setup') {
+    const sub = setupLines(st.setup, width);
+    return { lines: [...lines, ...sub].map((l) => ui.clip(l, width)), hits };
+  }
+
+  if (st.tab === 'analytics') {
+    const byBar = analytics.VIEWS.map((v) => (v === st.by ? bold(C.cyan(`[${v}]`)) : C.text(v))).join(' ');
+    const winBar = ORCH_WINDOWS.map((w, i) => (i === st.windowIndex ? bold(C.cyan(`[${w.label}]`)) : C.text(w.label))).join(' ');
+    lines.push(`  ${C.dim('by (b/←→):')} ${byBar}   ${C.dim('window (d):')} ${winBar}   ${C.dim('s rebuild summary.json')}`);
+    const sumData = state.readJson(advisor.summaryPath());
+    if (sumData && Number.isFinite(sumData.runs)) {
+      const kindCount = Object.keys(sumData.by_kind || {}).length;
+      lines.push(`  ${C.dim('summary.json:')} ${C.text(`${sumData.runs} finished runs across ${kindCount} task kind${kindCount === 1 ? '' : 's'}`)}`);
+    } else {
+      lines.push(`  ${C.dim('summary.json:')} ${C.amber('no summary yet · press s to build from ledger')}`);
+    }
+    lines.push('');
+    const win = ORCH_WINDOWS[st.windowIndex] || ORCH_WINDOWS[0];
+    const tasksFile = path.join(planDir, 'docs', 'orchestration', 'tasks.json');
+    const res = analytics.query({ days: win.days, today: win.today, by: st.by, tasksFile });
+    for (const l of analytics.formatText(res).split('\n')) {
+      lines.push(`  ${C.text(ui.clean(l))}`);
+    }
+    if (st.notice) lines.push('', bold(C.green(`  ✓ ${ui.clean(st.notice)}`)));
+    if (st.error) lines.push('', C.red(`  ${ui.clean(st.error)}`));
+    return { lines: lines.map((l) => ui.clip(l, width)), hits };
+  }
+
+  // Tab 1: Launch & Plan Header + Tasks & Advisor Table
+  const wsRows = workspaceRows(model);
+  const headRow = wsRows.find((r) => r.paneId === st.headPaneId)
+    || wsRows.find((r) => r.role === 'head-honcho')
+    || wsRows[0]
+    || null;
+  const loaded = loadPlanTasks(planDir, cfg);
+  const secRow = secretaryTarget(model ? model.rows : [], model ? model.home : null);
+  const field = (k, v) => `  ${C.dim(ui.padEnd(k, 14))}${v}`;
+
+  const headDesc = headRow
+    ? `${bold(C.text(ui.clean(headRow.name)))} ${C.dim(`(${headRow.kind} · ${headRow.paneId})`)}${headRow.role === 'head-honcho' ? ` ${C.green('[head-honcho]')}` : ''}`
+    : C.amber('<none>');
+  lines.push(field('orchestrator', `${headDesc}   ${C.dim('o cycle pane · g assign head-honcho · N spawn shell')}`));
+
+  const counts = {
+    working: loaded.rows.filter((r) => r.status === 'working').length,
+    pending: loaded.rows.filter((r) => r.status === 'pending').length,
+    done: loaded.rows.filter((r) => r.status === 'done').length,
+  };
+  const planStatus = loaded.hasTasksFile
+    ? `${C.green('tasks.json')} ${C.text(`(${loaded.rows.length} tasks: ${counts.working} working, ${counts.pending} pending, ${counts.done} done)`)}`
+    : (loaded.hasPlanFile ? `${C.amber('orchestration-plan.md')} ${C.dim('(no tasks.json yet)')}` : C.dim('no plan file yet'));
+  const repoIdx = st.planDirs && st.planDirs.length > 1 ? ` (${st.planIndex + 1}/${st.planDirs.length})` : '';
+  lines.push(field('active plan', `${C.text(shortDir(planDir))}${C.dim(repoIdx)} · ${planStatus}   ${C.dim('p cycle repo · s summary')}`));
+
+  const secDesc = secRow
+    ? `${C.green(ui.clean(secRow.name))} ${C.dim(`(${secRow.status} · ${secRow.paneId})`)}`
+    : C.cyan('daemon active (event-driven, 0 tokens)');
+  lines.push(field('secretary', `${secDesc}   ${C.dim('k start/focus secretary · m run monitor pass')}`));
+  lines.push(C.dim('  ' + '─'.repeat(Math.max(10, width - 4))));
+
+  if (loaded.errors.length) {
+    for (const e of loaded.errors) lines.push(C.red(`  tasks.json: ${ui.clean(e)}`));
+  }
+
+  if (loaded.hasTasksFile && loaded.rows.length > 0) {
+    const selIdx = Math.max(0, Math.min(st.taskRow, loaded.rows.length - 1));
+    lines.push(`  ${bold(C.accent('TASKS & ADVISOR'))}  ${C.dim('↑↓ task · ←→ tool · space effort · ↵ model · f fallbacks')}`);
+    lines.push(C.dim(`    ${ui.padEnd('id', 16)} ${ui.padEnd('kind', 13)} ${ui.padEnd('tool', 9)} ${ui.padEnd('effort', 7)} ${ui.padEnd('tier', 10)} ${ui.padEnd('model', 22)} ${ui.padEnd('conf', 7)} status`));
+    loaded.rows.forEach((r, i) => {
+      const on = i === selIdx;
+      const rec = r.recommendation;
+      const mark = on ? bold(C.cyan('  › ')) : '    ';
+      const toolStr = rec.recommendedTool || 'auto';
+      const modelStr = rec.recommendedModel || (rec.requiresModelChoice ? '<choose>' : 'auto');
+      const rowText = [
+        ui.padEnd(ui.truncate(r.id, 16), 16),
+        ui.padEnd(ui.truncate(r.kind, 13), 13),
+        ui.padEnd(ui.truncate(toolStr, 9), 9),
+        ui.padEnd(ui.truncate(rec.recommendedEffort || '?', 7), 7),
+        ui.padEnd(ui.truncate(rec.recommendedTier || '?', 10), 10),
+        ui.padEnd(ui.truncate(modelStr, 22), 22),
+        ui.padEnd(ui.truncate(rec.confidence || '?', 7), 7),
+        ui.clean(r.status),
+      ].join(' ');
+      lines.push(mark + (on ? bold(C.text(rowText)) : C.text(rowText)));
+    });
+    const sel = loaded.rows[selIdx];
+    if (sel) {
+      const fb = sel.recommendation.fallbacks && sel.recommendation.fallbacks.length ? sel.recommendation.fallbacks.join(', ') : 'none';
+      lines.push(C.dim(`  title: ${ui.clean(sel.title)} · brief: ${ui.clean(sel.brief)} · fallbacks: ${ui.clean(fb)}`));
+    }
+  } else {
+    const selIdx = Math.max(0, Math.min(st.kindRow, config.TASK_KINDS.length - 1));
+    lines.push(`  ${bold(C.accent('ADVISOR MATRIX BY TASK KIND'))}  ${C.dim('(no tasks.json yet · ↑↓ kind · ←→ tool · space effort · ↵ model · f fallbacks)')}`);
+    lines.push(C.dim(`    ${ui.padEnd('kind', 15)} ${ui.padEnd('tool', 9)} ${ui.padEnd('effort', 7)} ${ui.padEnd('tier', 10)} ${ui.padEnd('recommended model', 24)} ${ui.padEnd('conf', 7)} recorded`));
+    config.TASK_KINDS.forEach((kind, i) => {
+      const on = i === selIdx;
+      const tk = (cfg.taskKinds && cfg.taskKinds[kind]) || {};
+      const rec = advisor.recommend('', tk.effort || null, tk.model || null, { kind, config: cfg });
+      const toolStr = tk.tool || rec.recommendedTool || cfg.defaultTool || 'auto';
+      const modelStr = tk.model || rec.recommendedModel || '<unset>';
+      const stat = st.setup && st.setup.modelStats && modelStr ? modelStatLine(st.setup.modelStats[modelStr]).trim() : '';
+      const mark = on ? bold(C.cyan('  › ')) : '    ';
+      const rowText = [
+        ui.padEnd(kind, 15),
+        ui.padEnd(ui.truncate(toolStr, 9), 9),
+        ui.padEnd(ui.truncate(rec.recommendedEffort || '?', 7), 7),
+        ui.padEnd(ui.truncate(rec.recommendedTier || '?', 10), 10),
+        ui.padEnd(ui.truncate(modelStr, 24), 24),
+        ui.padEnd(ui.truncate(rec.confidence || '?', 7), 7),
+        stat || '-',
+      ].join(' ');
+      lines.push(mark + (on ? bold(C.text(rowText)) : C.text(rowText)));
+    });
+  }
+
+  if (st.edit) {
+    lines.push('');
+    lines.push(`  ${C.gold(`editing ${st.edit.field}: `)}${C.text(st.edit.text)}${C.gold('█')}${C.dim('  ↵ save · esc cancel')}`);
+  }
+  if (st.notice) lines.push('', bold(C.green(`  ✓ ${ui.clean(st.notice)}`)));
+  if (st.error) lines.push('', C.red(`  ${ui.clean(st.error)}`));
+  return { lines: lines.map((l) => ui.clip(l, width)), hits };
+}
+
+function rebuildSummaryInPlace(st) {
+  try {
+    let data = summary.summarize();
+    if (!data.runs && process.env.ROOSTR_LEDGER && fs.existsSync(process.env.ROOSTR_LEDGER)) {
+      const ext = summary.readEntriesFromFile(process.env.ROOSTR_LEDGER);
+      data = summary.summarize({ entries: ext });
+    }
+    summary.writeSummary(data);
+    if (st.setup) st.setup.modelStats = summaryModelStats();
+    st.notice = `summary rebuilt (${data.runs} runs)`;
+    st.error = null;
+  } catch (e) {
+    st.error = (e && e.message) || String(e);
+  }
+}
+
+function orchestrateKey(st, key, model = null) {
+  if (st.tab === 'setup' && !st.edit) {
+    if (key === '\t') {
+      st.tab = ORCHESTRATE_TABS[(ORCHESTRATE_TABS.indexOf(st.tab) + 1) % ORCHESTRATE_TABS.length];
+      return null;
+    }
+    if (key === '1' && !st.setup.edit) { st.tab = 'tasks'; return null; }
+    if (key === '2' && !st.setup.edit) { st.tab = 'analytics'; return null; }
+    const r = setupKey(st.setup, key);
+    if (r && r.cancel) return { cancel: true };
+    if (r && r.save) return { saveSetup: true };
+    return null;
+  }
+
+  if (st.edit) {
+    const e = editChunk(key);
+    if (e.action === 'save') {
+      const v = String(st.edit.text).trim();
+      try {
+        if (st.edit.target === 'task-file') {
+          if (st.edit.field === 'model') saveTaskOverride(st.edit.tasksFile, st.edit.taskId, { model: v });
+          else if (st.edit.field === 'fallbacks') {
+            const list = v.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 5);
+            saveTaskOverride(st.edit.tasksFile, st.edit.taskId, { fallbacks: list });
+          }
+          st.notice = `saved ${st.edit.taskId} to tasks.json`;
+        } else if (st.edit.target === 'kind-config') {
+          const kind = st.edit.kind;
+          const c = st.setup.config;
+          if (!c.taskKinds[kind]) c.taskKinds[kind] = { tool: '', model: '', fallbacks: [], effort: '' };
+          if (st.edit.field === 'model') c.taskKinds[kind].model = v;
+          else if (st.edit.field === 'fallbacks') {
+            c.taskKinds[kind].fallbacks = v.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 5);
+          }
+          config.saveConfig(c);
+          st.notice = `saved task kind ${kind}`;
+        }
+        st.error = null;
+      } catch (err) {
+        st.error = (err && err.message) || String(err);
+      }
+      st.edit = null;
+    } else if (e.action === 'cancel') {
+      st.edit = null;
+    } else if (e.action === 'backspace') {
+      st.edit.text = Array.from(st.edit.text).slice(0, -1).join('');
+    } else if (e.action !== 'ignore') {
+      st.edit.text += e.text;
+    }
+    return null;
+  }
+
+  if (key === '\x1b' || key === '\x03' || key === 'q') return { cancel: true };
+  if (key === '\t') {
+    st.tab = ORCHESTRATE_TABS[(ORCHESTRATE_TABS.indexOf(st.tab) + 1) % ORCHESTRATE_TABS.length];
+    st.notice = null;
+    st.error = null;
+    return null;
+  }
+  if (key === '1') { st.tab = 'tasks'; return null; }
+  if (key === '2') { st.tab = 'analytics'; return null; }
+  if (key === '3' || key === 'S') { st.tab = 'setup'; return null; }
+  if (key === 's') {
+    rebuildSummaryInPlace(st);
+    return null;
+  }
+
+  if (st.tab === 'analytics') {
+    if (key === 'b' || key === '\x1b[C' || key === 'l') {
+      st.by = cycleValue(analytics.VIEWS, st.by);
+    } else if (key === '\x1b[D' || key === 'h') {
+      st.by = analytics.VIEWS[(analytics.VIEWS.indexOf(st.by) - 1 + analytics.VIEWS.length) % analytics.VIEWS.length];
+    } else if (key === 'd') {
+      st.windowIndex = (st.windowIndex + 1) % ORCH_WINDOWS.length;
+    }
+    return null;
+  }
+
+  // Tab 1: tasks & launcher
+  const cfg = st.setup ? st.setup.config : config.defaultConfig();
+  const planDir = (st.planDirs && st.planDirs[st.planIndex]) || process.cwd();
+  const loaded = loadPlanTasks(planDir, cfg);
+
+  if (key === 'o') {
+    const wsRows = workspaceRows(model);
+    if (wsRows.length) {
+      const idx = wsRows.findIndex((r) => r.paneId === st.headPaneId);
+      const next = wsRows[(idx + 1) % wsRows.length];
+      st.headPaneId = next.paneId;
+      st.notice = `selected orchestrator pane ${next.name} (${next.paneId})`;
+    }
+    return null;
+  }
+  if (key === 'p') {
+    if (st.planDirs && st.planDirs.length > 0) {
+      st.planIndex = (st.planIndex + 1) % st.planDirs.length;
+      st.taskRow = 0;
+      const nextDir = st.planDirs[st.planIndex];
+      st.notice = `bound active plan repo: ${shortDir(nextDir)}`;
+      return { bindPlanDir: nextDir };
+    }
+    return null;
+  }
+  if (key === 'g') {
+    return { assignOrchestrator: st.headPaneId, planDir };
+  }
+  if (key === 'N') {
+    return { spawnHeadInShell: true };
+  }
+  if (key === 'k' || key === 'K') {
+    return { startSecretary: true };
+  }
+  if (key === 'm' || key === 'M') {
+    return { runMonitor: true, planDir };
+  }
+
+  const tools = ['', ...cfg.tools, ...cfg.customTools];
+  if (loaded.hasTasksFile && loaded.rows.length > 0) {
+    const n = loaded.rows.length;
+    st.taskRow = Math.max(0, Math.min(st.taskRow, n - 1));
+    const cur = loaded.rows[st.taskRow];
+    if (key === '\x1b[A' || key === 'k') st.taskRow = (st.taskRow - 1 + n) % n;
+    else if (key === '\x1b[B' || key === 'j') st.taskRow = (st.taskRow + 1) % n;
+    else if (key === '\x1b[C' || key === 'l' || key === '\x1b[D' || key === 'h') {
+      const dir = (key === '\x1b[D' || key === 'h') ? -1 : 1;
+      const curTool = cur.tool || '';
+      const nextTool = tools[(tools.indexOf(curTool) + dir + tools.length) % tools.length];
+      try {
+        saveTaskOverride(loaded.tasksFile, cur.id, { tool: nextTool });
+        st.notice = `${cur.id} tool -> ${nextTool || 'auto'}`;
+      } catch (e) {
+        st.error = e.message;
+      }
+    } else if (key === ' ') {
+      const curEff = cur.effort || '';
+      const nextEff = cycleValue(KIND_EFFORTS, curEff);
+      try {
+        saveTaskOverride(loaded.tasksFile, cur.id, { effort: nextEff });
+        st.notice = `${cur.id} effort -> ${nextEff || 'auto'}`;
+      } catch (e) {
+        st.error = e.message;
+      }
+    } else if (key === '\r' || key === '\n') {
+      st.edit = { target: 'task-file', tasksFile: loaded.tasksFile, taskId: cur.id, field: 'model', text: cur.model || '' };
+    } else if (key === 'f') {
+      st.edit = { target: 'task-file', tasksFile: loaded.tasksFile, taskId: cur.id, field: 'fallbacks', text: (cur.fallbacks || []).join(', ') };
+    }
+  } else {
+    const n = config.TASK_KINDS.length;
+    st.kindRow = Math.max(0, Math.min(st.kindRow, n - 1));
+    const kind = config.TASK_KINDS[st.kindRow];
+    if (!cfg.taskKinds[kind]) cfg.taskKinds[kind] = { tool: '', model: '', fallbacks: [], effort: '' };
+    const tk = cfg.taskKinds[kind];
+    if (key === '\x1b[A') st.kindRow = (st.kindRow - 1 + n) % n;
+    else if (key === '\x1b[B' || key === 'j') st.kindRow = (st.kindRow + 1) % n;
+    else if (key === '\x1b[C' || key === 'l' || key === '\x1b[D' || key === 'h') {
+      const dir = (key === '\x1b[D' || key === 'h') ? -1 : 1;
+      tk.tool = tools[(tools.indexOf(tk.tool || '') + dir + tools.length) % tools.length];
+      try { config.saveConfig(cfg); st.notice = `${kind} tool -> ${tk.tool || 'auto'}`; } catch (e) { st.error = e.message; }
+    } else if (key === ' ') {
+      tk.effort = cycleValue(KIND_EFFORTS, tk.effort || '');
+      try { config.saveConfig(cfg); st.notice = `${kind} effort -> ${tk.effort || 'auto'}`; } catch (e) { st.error = e.message; }
+    } else if (key === '\r' || key === '\n') {
+      st.edit = { target: 'kind-config', kind, field: 'model', text: tk.model || '' };
+    } else if (key === 'f') {
+      st.edit = { target: 'kind-config', kind, field: 'fallbacks', text: (tk.fallbacks || []).join(', ') };
+    }
+  }
+  return null;
 }
 
 // options: width, height, error, load, view, `provider` (whose usage bars
@@ -1931,7 +2430,7 @@ function monitorPrompt(scope) {
 function render(model, {
   width = 100, height = 0, error = null, load = os.loadavg(), view = 'auto', menu = null, selected = -1, edit = null, hits = null,
   folded = new Set(), provider = null, subview = null, help = false, detail = false, today = false, metric = 'tokens',
-  backups = null, setup = null, headPicker = null, options = false,
+  backups = null, setup = null, headPicker = null, options = false, orchestrate = null,
 } = {}) {
   const lines = [];
   const regions = [];
@@ -1972,7 +2471,11 @@ function render(model, {
   for (const w of model.configWarnings || []) lines.push(C.amber(ui.clean(`config: ${w}`)));
   lines.push(C.dim('─'.repeat(width)));
 
-  if (setup) {
+  if (orchestrate) {
+    const orch = orchestrateLines(orchestrate, model, width);
+    for (const h of orch.hits) regions.push({ ...h, y: lines.length + h.y });
+    lines.push(...orch.lines);
+  } else if (setup) {
     lines.push(...setupLines(setup, width));
   } else if (help && menu) {
     lines.push(...helpLines(menu, providers(model.limits), width));
@@ -2105,7 +2608,8 @@ function render(model, {
       C.dim('? unknown  ≥ lower bound'),
     ].filter(Boolean).join('  ');
   }
-  if (setup) foot = C.dim('↑↓ row · space effort/toggle · ←→ tool · enter model · f fallbacks · esc cancel');
+  if (orchestrate) foot = C.dim('tab/1-3 switch · o orchestrator · p plan repo · ↑↓ row · ←→ tool · space effort · ↵ model · f fallbacks · s summary · esc close');
+  else if (setup) foot = C.dim('↑↓ row · space effort/toggle · ←→ tool · enter model · f fallbacks · esc cancel');
   else if (headPicker) foot = C.dim('↑↓ pick · enter confirm · y start · esc close');
   if (edit) {
     const r = model.rows[selected];
@@ -2145,7 +2649,7 @@ function render(model, {
         const nextSubPaint = nextSubHint ? C.dim(nextSubHint) : '';
         return ui.clip(line + nextProvPaint + nextSubPaint, width);
       });
-  const box = detail && !help && !today && !backups && !options && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
+  const box = detail && !help && !today && !backups && !options && !orchestrate && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
   const body = lines.map((l) => ui.clip(l, width));
   const footer = ui.clip(foot, width);
 
@@ -2734,6 +3238,8 @@ function runLive(opts) {
   let backups = null;
   let options = Boolean(opts.options);
   let setup = null;
+  let orchestrate = null;
+  let activePlanDir = mem.prefs.planDir || null;
   let headPicker = null;
   let updating = null; // { version, state: 'installing' | 'done' }
   let metric = 'tokens';
@@ -2789,7 +3295,7 @@ function runLive(opts) {
     const prov = shownProvider();
     const frame = render(model, {
       width: out.columns || 100, height: out.rows || 0, error, view: opts.view, menu: menu(), selected, edit, hits, folded,
-      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, setup, headPicker, options,
+      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, setup, headPicker, options, orchestrate,
     });
     // Erase each line before writing it: erasing after a full width line would
     // eat its last cell. Keep terminal and pane title locked to 🐓ROOSTR🐓.
@@ -3030,7 +3536,7 @@ function runLive(opts) {
     flash(row.status === 'idle' ? 'idle for less than 10m; no action yet' : 'pane is not blocked or stuck');
   };
 
-  const runMonitor = (auto) => {
+  const runMonitor = (auto, customPlanDir = null) => {
     if (!model) return;
     const cfg = currentConfig();
     if (auto && !orchestrationEnabled(cfg, opts)) return;
@@ -3055,7 +3561,7 @@ function runLive(opts) {
     }
     lastMonitor = Date.now();
     monitorNoticed = false;
-    herdr.promptAgent(target.paneId, monitorPrompt(scope)).then(() => {
+    herdr.promptAgent(target.paneId, monitorPrompt(scope, customPlanDir || activePlanDir)).then(() => {
       if (!auto) flash(`monitor pass sent to ${target.name || target.paneId}`);
     }, (e) => {
       if (!auto) flash(`monitor failed: ${(e.message || String(e)).split('\n')[0]}`);
@@ -3174,14 +3680,33 @@ function runLive(opts) {
     }
     else if (action === 'backups') openBackups();
     else if (action === 'refresh') tick();
-    else if (['setup', 'head-honcho', 'secretary', 'monitor', 'recover'].includes(action)) {
+    else if (action && action.startsWith('orch-tab:') && orchestrate) {
+      const nextTab = action.slice('orch-tab:'.length);
+      if (ORCHESTRATE_TABS.includes(nextTab)) {
+        orchestrate.tab = nextTab;
+        orchestrate.notice = null;
+        orchestrate.error = null;
+      }
+    }
+    else if (['orchestrate', 'setup', 'head-honcho', 'secretary', 'monitor', 'recover'].includes(action)) {
       if (!orchestrationEnabled(currentConfig(), opts)) {
         flash('orchestration is gated for v0.3.0 (set ROOSTR_EXPERIMENTAL=1)');
         return;
       }
-      if (action === 'setup') {
-        const loaded = config.loadConfig();
-        setup = setupState(loaded.config, loaded.warnings);
+      if (action === 'orchestrate') {
+        if (orchestrate) {
+          orchestrate = null;
+        } else {
+          const loaded = config.loadConfig();
+          orchestrate = orchestrateState(model, loaded.config, loaded.warnings, 'tasks', activePlanDir);
+        }
+      } else if (action === 'setup') {
+        if (orchestrate && orchestrate.tab === 'setup') {
+          orchestrate = null;
+        } else {
+          const loaded = config.loadConfig();
+          orchestrate = orchestrateState(model, loaded.config, loaded.warnings, 'setup', activePlanDir);
+        }
       } else if (action === 'head-honcho') openHeadPicker();
       else if (action === 'secretary') openSecretaryPicker();
       else if (action === 'monitor') runMonitor(false);
@@ -3235,6 +3760,53 @@ function runLive(opts) {
       else if (e.action === 'backspace') edit.text = Array.from(edit.text).slice(0, -1).join('');
       else if (e.action === 'ignore') return; // arrows and other escapes do nothing while typing
       else edit.text += e.text;
+      draw();
+      return;
+    }
+    if (orchestrate) {
+      const r = orchestrateKey(orchestrate, k, model);
+      if (r && r.cancel) orchestrate = null;
+      else if (r && r.saveSetup) {
+        if (setupReady(orchestrate.setup)) {
+          try {
+            const saved = config.saveConfig(orchestrate.setup.config);
+            if (model) {
+              model.config = saved.config;
+              model.configWarnings = saved.warnings;
+            }
+            orchestrate.setup.warnings = saved.warnings;
+            orchestrate.setup.error = null;
+            orchestrate.notice = 'setup saved';
+            flash('setup saved');
+          } catch (e) {
+            orchestrate.setup.error = (e.message || String(e)).split('\n')[0];
+          }
+        }
+      } else if (r && r.bindPlanDir) {
+        activePlanDir = r.bindPlanDir;
+        remember('planDir', activePlanDir);
+      } else if (r && r.assignOrchestrator) {
+        if (r.assignOrchestrator) {
+          try {
+            writeReport(r.assignOrchestrator, { role: 'head-honcho', about: 'Workspace orchestrator (roostr)' });
+            orchestrate.notice = `assigned head-honcho role to ${r.assignOrchestrator}`;
+            flash(`assigned head-honcho role to ${r.assignOrchestrator}`);
+            tick();
+          } catch (e) {
+            orchestrate.error = (e.message || String(e)).split('\n')[0];
+          }
+        }
+      } else if (r && r.spawnHeadInShell) {
+        orchestrate = null;
+        openHeadPicker();
+        return;
+      } else if (r && r.startSecretary) {
+        orchestrate = null;
+        openSecretaryPicker();
+        return;
+      } else if (r && r.runMonitor) {
+        runMonitor(false, r.planDir);
+      }
       draw();
       return;
     }
@@ -3337,7 +3909,7 @@ function runLive(opts) {
     else if (k === 'R') act('backups');
     else if (k === 'o') act('options');
     else if (k === 'S') act('setup');
-    else if (k === 'O') act('head-honcho');
+    else if (k === 'O' || k === 'T') act('orchestrate');
     else if (k === 'K') act('secretary');
     else if (k === 'M') act('monitor');
     else if (k === 'C') act('recover');
@@ -3350,7 +3922,11 @@ function runLive(opts) {
       draw();
       return;
     }
-    if (!h || edit || setup || headPicker) return;
+    if (orchestrate && h && (h.action === 'orchestrate' || (typeof h.action === 'string' && h.action.startsWith('orch-tab:')))) {
+      act(h.action);
+      return;
+    }
+    if (!h || edit || setup || orchestrate || headPicker) return;
     if (h.action !== 'row' && h.action !== 'jump') lastRowClick = null;
     if (typeof h.index === 'number' && model && model.rows[h.index]) {
       selected = h.index;
@@ -3470,4 +4046,5 @@ module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
   render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups, findTokscale, optionsLines,
   setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, secretaryTarget, monitorDue, monitorScope, monitorPrompt, surge, orchestrationEnabled,
+  orchestrateState, orchestrateLines, orchestrateKey, discoverPlanDirs, loadPlanTasks, saveTaskOverride, ORCHESTRATE_TABS,
 };

@@ -50,17 +50,18 @@ Never treat recommendations as immutable or assume silence is approval.
 You do not invent effort, model or task kind. Use these commands:
 
 ```sh
-crew-board recommend "<task>"          # kind, effort, tier, model, confidence
-crew-board tasks                       # validate tasks.json and recommend per task
-crew-board tasks --json                # the same data for the secretary
-crew-board name --language <code> --count N
-crew-board name --history              # recent names and boss titles
-crew-board spawn --pane <id> --task "<task>" --kind <kind>
-crew-board summary                     # first try rate by kind, effort, model
-crew-board outcome --run <runId> --result pass|fail|blocked ...
+roostr recommend "<task>" --kind <kind>   # kind, effort, tier, model, confidence
+roostr tasks                              # validate tasks.json and recommend per task
+roostr tasks --json                       # the same data for the secretary or daemon
+roostr name --language <code> --count N
+roostr name --history                     # recent names and boss titles
+roostr spawn --pane <id> --task "<task>" --kind <kind> --batch <batchId>
+roostr summary                            # first try rate by kind, effort, model
+roostr outcome --run <runId> --result pass|fail|blocked ...
+roostr analytics --by model --days 7
 ```
 
-The human sets tools, tier models, role defaults and task-kind settings in `S`. The board reads those settings, then the project `.crew-board.toml` `[tasks.<kind>]`, then `tasks.json`, then the per-run flags. Do not override a pinned setting without saying why.
+The human sets tools, tier models, role defaults and task-kind settings in the `[O orchestrate]` hub (`3 setup` tab) or `.roostr.toml`. The board reads those settings, then the project `.roostr.toml` `[tasks.<kind>]`, then `tasks.json`, then the per-run flags. Do not override a pinned setting without saying why.
 
 The secretary is the deterministic daemon (`src/daemon.js`), triggered automatically by Herdr lifecycle events with zero LLM tokens. You do not start an LLM secretary pane. If a preferred model is disabled or over quota, stop and ask the human to choose a fallback. Never pick one silently.
 
@@ -73,17 +74,18 @@ Draw the names randomly from the language you are speaking with the user. A Span
 Draw the names once, before the workers start, and keep them for the life of the crew:
 
 ```sh
-crew-board name --language es --count 3
+roostr name --language es --count 3
 ```
 
 Do not redraw a name on every tick or after a restart. The command prints lowercase names, one per line, and renames nothing.
 
-1. Set the Herdr agent name to the lowercase form, for example `herdr agent rename <pane-id> diego`.
-2. Set the pane label to the capitalized display name only, for example `herdr pane rename <pane-id> "Diego"`.
-3. Report the stable role and the one line about, then the current task:
+1. Inspect the workspace layout first (`herdr pane layout --pane "$HERDR_PANE_ID"`), then split without stealing focus (`herdr pane split --current --direction right --cwd "$PWD/.worktrees/diego" --no-focus`).
+2. Start the agent directly with its lowercase Herdr name (`herdr agent start diego --kind <tool> --pane <pane-id> -- <model-args>`). Do not run `herdr agent rename` right after `herdr agent start`, because `start` already sets the name. Use `herdr agent rename` only when repurposing an already-running agent.
+3. Set the pane label to the capitalized display name and brief task, for example `herdr pane rename <pane-id> "Diego · wire the spawn command"`.
+4. Report the stable role and the one line about, then the current task:
 
    ```sh
-   crew-board report --pane <pane-id> --role "board core and CLI" --about "Owns the board core and command line" --task "wire the spawn command"
+   roostr report --pane <pane-id> --role "board core and CLI" --about "Owns the board core and command line" --task "wire the spawn command"
    ```
 
 The role is the core job and stays for the life of the crew. The about is one line. The task changes with the work. Do not put the role or the task in the pane label.
@@ -94,7 +96,7 @@ Your head name is a boss title from the pool (`la-jefa`, `el-patron`, `il-capo`,
 
 ### Autonomous Spawning Mandate
 
-You or the Daemon must execute all Herdr commands (`herdr pane split`, `herdr agent start`, `herdr agent rename`, `herdr pane rename`, `crew-board spawn`, `herdr agent prompt`) directly through tool calls. Never output shell snippets (such as `opencode run`) for the human to copy-paste. Never invoke `opencode run` headless in a terminal: headless runs lack interactive permission handling and auto-reject on security boundaries.
+You or the Daemon must execute all Herdr commands (`herdr pane layout`, `herdr pane split --current --no-focus`, `herdr agent start`, `herdr pane rename`, `roostr spawn`, `herdr agent prompt`) directly through tool calls. Never output shell snippets (such as `opencode run`) for the human to copy-paste. Never invoke `opencode run` headless in a terminal: headless runs lack interactive permission handling and auto-reject on security boundaries.
 
 ### Worktree Filesystem and Asset Boundaries
 
@@ -135,19 +137,19 @@ Also write the machine readable task list at `docs/orchestration/tasks.json`. Th
 Rules for the task list:
 
 - `id` is lowercase letters, numbers and hyphens, and unique.
-- `kind` is one of `docs`, `review`, `tests`, `tooling`, `complex`, `feature`.
+- `kind` is one of `docs`, `review`, `tests`, `tooling`, `complex`, `feature` (or extended ledger kinds `ui-feature`, `integration`, `planning`).
 - `brief` and `report` are paths relative to the project root.
-- `tool`, `effort` and `model` are optional per-task overrides.
+- `tool`, `effort` and `model` are optional per-task overrides (editable directly in the `[O orchestrate]` TUI).
 - `fallbacks` is an optional ordered list of backup models.
 - `status` is `pending`, `working`, `done` or `blocked`.
 
 Validate the file before starting anyone:
 
 ```sh
-crew-board tasks
+roostr tasks
 ```
 
-The command prints the recommended effort, tier, model, confidence and fallbacks for every task. `crew-board tasks --json` gives the same data to a secretary.
+The command prints the recommended effort, tier, model, confidence and fallbacks for every task. `roostr tasks --json` gives the same data to a secretary or daemon.
 
 ## Pick effort from the task kind
 

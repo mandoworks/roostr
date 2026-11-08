@@ -529,7 +529,7 @@ test('render: menu bar and click regions', () => {
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
   assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[d today\] \[\? keys\]/);
   const outOrch = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
-  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
+  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[O orchestrate\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
   const tags = hits.find((h) => h.action === 'tags');
@@ -1704,15 +1704,13 @@ test('usage limits: Shift+P (P) toggles sub-views inside subscription, condensin
   assert.match(menuBarOut, /p P/);
 });
 
-test('menu: setup, head-honcho and monitor items have hit regions when orchestration enabled', () => {
+test('menu: orchestrate item has hit region when orchestration enabled', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, hits }).split('\n');
-  assert.match(out[1], /\[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\]/);
-  for (const action of ['setup', 'head-honcho', 'secretary', 'monitor', 'recover']) {
-    assert.ok(hits.some((h) => h.action === action), action);
-  }
+  assert.match(out[1], /\[O orchestrate\]/);
+  assert.ok(hits.some((h) => h.action === 'orchestrate'), 'orchestrate');
 });
 
 test('menu: orchestration items are hidden by default', () => {
@@ -1720,14 +1718,8 @@ test('menu: orchestration items are hidden by default', () => {
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits }).split('\n');
-  assert.doesNotMatch(out[1], /\[S setup\]/);
-  assert.doesNotMatch(out[1], /\[O head\]/);
-  assert.doesNotMatch(out[1], /\[K sec\]/);
-  assert.doesNotMatch(out[1], /\[M monitor\]/);
-  assert.doesNotMatch(out[1], /\[C continue\]/);
-  for (const action of ['setup', 'head-honcho', 'secretary', 'monitor', 'recover']) {
-    assert.ok(!hits.some((h) => h.y === 1 && h.action === action), action);
-  }
+  assert.doesNotMatch(out[1], /\[O orchestrate\]/);
+  assert.ok(!hits.some((h) => h.y === 1 && h.action === 'orchestrate'));
 });
 
 test('menu: backups item is visible on the main board and clickable', () => {
@@ -1739,12 +1731,12 @@ test('menu: backups item is visible on the main board and clickable', () => {
   assert.ok(hits.some((h) => h.action === 'backups'));
 });
 
-test('help: setup, Head Honcho and monitor rows are listed when orchestration enabled', () => {
+test('help: orchestrate, setup, secretary and monitor rows are listed when orchestration enabled', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, help: true });
+  assert.match(out, /  O \/ T +orchestrate: plan, tasks, advisor, analytics, setup/);
   assert.match(out, /  S +setup: tools and preferred models/);
-  assert.match(out, /  O +start Head Honcho in a shell pane/);
   assert.match(out, /  K +start a secretary in a shell pane/);
   assert.match(out, /  M +prompt the secretary for a monitor pass/);
   assert.match(out, /  C +allow or continue the selected stuck pane/);
@@ -1754,8 +1746,8 @@ test('help: orchestration rows are hidden by default', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all' }, help: true });
+  assert.doesNotMatch(out, /  O \/ T +orchestrate:/);
   assert.doesNotMatch(out, /  S +setup:/);
-  assert.doesNotMatch(out, /  O +start Head Honcho/);
   assert.doesNotMatch(out, /  K +start a secretary/);
   assert.doesNotMatch(out, /  M +prompt the secretary/);
   assert.doesNotMatch(out, /  C +allow or continue/);
@@ -1927,4 +1919,74 @@ test('render: options view shows tokscale, compaction, board settings and paths'
 test('parseArgs: --options flag is accepted', () => {
   const o = board.parseArgs(['--options']);
   assert.equal(o.options, true);
+});
+
+test('orchestrate TUI: renders 3 tabs, edits tasks.json overrides, cycles analytics and setup', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-tui-'));
+  try {
+    const orchDir = path.join(tmp, 'docs', 'orchestration');
+    fs.mkdirSync(orchDir, { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'docs', 'orchestration-plan.md'), '# Plan\n');
+    const tasksFile = path.join(orchDir, 'tasks.json');
+    fs.writeFileSync(tasksFile, JSON.stringify({
+      version: 1,
+      batchId: 'batch-tui-test',
+      tasks: [
+        { id: 't1', title: 'Build auth module', kind: 'feature', status: 'pending', brief: 'docs/orchestration/tasks/t1.md', report: 'docs/orchestration/reports/t1.md' },
+        { id: 't2', title: 'Review diff', kind: 'review', status: 'pending', brief: 'docs/orchestration/tasks/t2.md', report: 'docs/orchestration/reports/t2.md' },
+      ],
+    }, null, 2));
+
+    const input = sample();
+    input.snap.panes[0].cwd = tmp;
+    const m = board.buildModel(input);
+    m.home = 'w1';
+    ui.setColor(false);
+
+    const st = board.orchestrateState(m, null, [], 'tasks', tmp);
+    assert.equal(st.tab, 'tasks');
+    assert.ok(st.planDirs.includes(tmp));
+
+    // Render Tab 1 (tasks & advisor) with tasks.json present
+    const out1 = board.render(m, { width: 140, orchestrate: st });
+    assert.match(out1, /orchestrate +\[1 tasks · advisor\] \[2 analytics · summary\] \[3 setup\]/);
+    assert.match(out1, /orchestrator/);
+    assert.match(out1, /active plan/);
+    assert.match(out1, /TASKS & ADVISOR/);
+    assert.match(out1, /t1/);
+    assert.match(out1, /feature/);
+
+    // Override effort on t1 via spacebar and verify tasks.json is updated on disk
+    board.orchestrateKey(st, ' ', m);
+    const savedAfterEffort = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    assert.equal(savedAfterEffort.tasks[0].effort, 'low');
+
+    // Override model on t1 via Enter -> type model -> Enter
+    board.orchestrateKey(st, '\r', m);
+    assert.ok(st.edit);
+    board.orchestrateKey(st, 'claude-sonnet-4-6', m);
+    board.orchestrateKey(st, '\r', m);
+    assert.equal(st.edit, null);
+    const savedAfterModel = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    assert.equal(savedAfterModel.tasks[0].model, 'claude-sonnet-4-6');
+
+    // Switch to Tab 2 (analytics · summary) via '2'
+    board.orchestrateKey(st, '2', m);
+    assert.equal(st.tab, 'analytics');
+    const out2 = board.render(m, { width: 140, orchestrate: st });
+    assert.match(out2, /summary\.json:/);
+    assert.match(out2, /by \(b\/←→\):/);
+    board.orchestrateKey(st, 'b', m);
+    assert.equal(st.by, 'pane');
+    board.orchestrateKey(st, 'd', m);
+    assert.equal(st.windowIndex, 1);
+
+    // Switch to Tab 3 (setup) via Tab key
+    board.orchestrateKey(st, '\t', m);
+    assert.equal(st.tab, 'setup');
+    const out3 = board.render(m, { width: 140, orchestrate: st });
+    assert.match(out3, /setup +coding tools and preferred models/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });
