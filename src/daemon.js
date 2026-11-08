@@ -257,6 +257,118 @@ function checkTimers(dState, now = Date.now(), crewConfig = null) {
   return signals;
 }
 
+function evaluatePane(row = {}, report = {}, history = {}, now = Date.now()) {
+  const triggers = [];
+
+  // 1. loop-3x: 3 consecutive identical failing commands
+  const cmds = Array.isArray(history.commands) ? history.commands : [];
+  let isLoop3x = false;
+  if (cmds.length >= 3) {
+    const last3 = cmds.slice(-3);
+    const firstCmd = last3[0].command || last3[0].hash;
+    const allSame = last3.every((c) => (c.command || c.hash) === firstCmd);
+    const allFailed = last3.every((c) => c.failed === true || (typeof c.exitCode === 'number' && c.exitCode !== 0) || c.status === 'failed');
+    if (allSame && allFailed) isLoop3x = true;
+  }
+  if (!isLoop3x && (history.commandFailures >= 3 || (report && (report.commandFailures >= 3 || report.consecutiveFailingCommands >= 3)))) {
+    isLoop3x = true;
+  }
+  if (isLoop3x) {
+    triggers.push({
+      trigger: 'loop-3x',
+      action: 'escalate',
+      reason: '3 consecutive identical failing commands',
+    });
+  }
+
+  // 2. stalled-180s: Inactivity timeout (> 180s in working state with zero output delta)
+  const status = (row && row.status) || (report && report.status) || null;
+  if (status === 'working') {
+    const durMs = typeof row.statusFor === 'number'
+      ? row.statusFor
+      : (now - (row.lastOutputAt || row.since || now));
+    const inactivityLimitSec = (history && history.inactivityTimeoutSec) || 180;
+    const limitMs = inactivityLimitSec * 1000;
+    const zeroDelta = history.outputDelta === 0 || history.terminalUnchanged === true || (row.lastOutputAt && (now - row.lastOutputAt) >= limitMs) || (!history.hasNewOutput && durMs >= limitMs);
+    if (durMs >= limitMs && zeroDelta) {
+      triggers.push({
+        trigger: 'stalled-180s',
+        action: 'escalate',
+        durationSec: Math.round(durMs / 1000),
+        reason: 'inactivity timeout > 180s in working state with zero output delta',
+      });
+    }
+  }
+
+  // 3. blocked: Interactive permission or question prompt (blocked state)
+  if (status === 'blocked' || (report && report.isBlocked)) {
+    const screenText = history.screenText || (row && row.screenText) || '';
+    const classified = classifyPrompt(screenText);
+    const isSafe = (row && row.permissionPrompt && row.permissionPrompt.safe) || (report && report.promptSafe) || classified.safe;
+    if (isSafe) {
+      triggers.push({
+        trigger: 'blocked',
+        subtrigger: 'safe-continue',
+        action: 'safe-continue',
+        reason: 'permission prompt is safe to auto-continue',
+      });
+    } else {
+      triggers.push({
+        trigger: 'blocked',
+        subtrigger: 'escalate-to-honcho',
+        action: 'escalate',
+        reason: 'interactive prompt requires head-honcho escalation',
+      });
+    }
+  }
+
+  // 4. context-ceiling: Context ceiling (ctx >= 85% or turn budget exceeded)
+  const ctx = report && typeof report.ctx === 'number'
+    ? report.ctx
+    : (row && typeof row.ctx === 'number' ? row.ctx : (row && row.ctx && typeof row.ctx.v === 'number' ? row.ctx.v : null));
+  const turnBudgetExceeded = Boolean((report && report.turnsExceeded) || (history && history.turnsExceeded));
+  if ((ctx !== null && ctx >= 85) || turnBudgetExceeded) {
+    triggers.push({
+      trigger: 'context-ceiling',
+      action: 'recycle',
+      ctx,
+      reason: ctx !== null && ctx >= 85 ? `context dilution ceiling reached (${ctx}%)` : 'turn budget exceeded',
+    });
+  }
+
+  // 5. test-regression-2x: Two consecutive test regression cycles
+  const tests = Array.isArray(history.tests) ? history.tests : [];
+  let isTestReg2x = false;
+  if (tests.length >= 2) {
+    const last2 = tests.slice(-2);
+    if (last2.every((t) => t.failed || t.regression || (typeof t.exitCode === 'number' && t.exitCode !== 0))) {
+      isTestReg2x = true;
+    }
+  }
+  if (!isTestReg2x && (history.testFailures >= 2 || (report && (report.testFailures >= 2 || report.testRegressionCount >= 2 || report.testRegression === 2)))) {
+    isTestReg2x = true;
+  }
+  if (isTestReg2x) {
+    triggers.push({
+      trigger: 'test-regression-2x',
+      action: 'escalate',
+      reason: 'two consecutive test regression cycles',
+    });
+  }
+
+  if (triggers.length === 0) return null;
+  const primary = triggers[0];
+  return {
+    trigger: primary.trigger,
+    subtrigger: primary.subtrigger || null,
+    action: primary.action,
+    reason: primary.reason,
+    ctx: primary.ctx,
+    durationSec: primary.durationSec,
+    all: triggers,
+  };
+}
+
 // -----------------------------------------------------------------------------
 // D3: Plan Executor
 // -----------------------------------------------------------------------------
@@ -594,6 +706,7 @@ module.exports = {
   recordCommandFailure,
   recordTestFailure,
   checkTimers,
+  evaluatePane,
   executePlan,
   handleHygiene,
   queueEscalation,

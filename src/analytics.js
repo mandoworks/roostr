@@ -416,12 +416,25 @@ function query(options = {}) {
     data = analyzeByModel(samples, ledgerEntries);
   }
 
+  let workerTokens = 0;
+  let orchestratorTokens = 0;
+  for (const s of samples) {
+    if (s.tokens === null || !(s.tokens > 0)) continue;
+    const isOrch = /^(head-honcho|orchestrator|lead|la-jefa)/i.test(s.pane) ||
+      ledgerEntries.some((e) => (e.paneId === s.pane || e.pane === s.pane) && /^(head-honcho|orchestrator|lead)/i.test(e.role || ''));
+    if (isOrch) orchestratorTokens += s.tokens;
+    else workerTokens += s.tokens;
+  }
+  const totalTokens = workerTokens + orchestratorTokens;
+  const subagentTokenSharePct = totalTokens > 0 ? round((workerTokens / totalTokens) * 100, 1) : null;
+
   return {
     generated_at: new Date(now).toISOString(),
     days,
     window: isToday ? 'today' : `${days}d`,
     today: isToday,
     by,
+    subagent_token_share_pct: subagentTokenSharePct,
     data,
   };
 }
@@ -429,6 +442,9 @@ function query(options = {}) {
 function formatText(result) {
   const windowLabel = result.today ? 'today (00:00 local to now)' : `${result.days} days`;
   const lines = [`analytics: by ${result.by} · ${windowLabel}`];
+  if (result.subagent_token_share_pct !== null && result.subagent_token_share_pct !== undefined) {
+    lines.push(`subagent token share: ${result.subagent_token_share_pct}% workers (target ≥80%)`);
+  }
   const items = result.data;
 
   if (result.by === 'model') {

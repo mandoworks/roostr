@@ -193,6 +193,27 @@ test('analytics: query and CLI formatText execute without throw', () => {
   assert.ok(textOutput.includes('$0.0100'));
 });
 
+test('analytics: calculates subagent_token_share_pct between orchestrator and worker panes', () => {
+  const result = analytics.query({
+    now: Date.parse('2026-11-07T12:00:00Z'),
+    days: 1,
+    by: 'model',
+    samples: [
+      { at: '2026-11-07T10:00:00Z', pane: 'la-jefa-crew', model: 'claude-3-7-sonnet', tokens: 200, cost: 0.05 },
+      { at: '2026-11-07T10:05:00Z', pane: 'worker-1', model: 'gemini-3.8-flash', tokens: 800, cost: 0.02 },
+    ],
+    ledger: [
+      { paneId: 'la-jefa-crew', role: 'head-honcho', model: 'claude-3-7-sonnet' },
+      { paneId: 'worker-1', role: 'worker', model: 'gemini-3.8-flash' },
+    ],
+    transitions: [],
+  });
+
+  assert.equal(result.subagent_token_share_pct, 80.0);
+  const textOutput = analytics.formatText(result);
+  assert.ok(textOutput.includes('subagent token share: 80% workers (target ≥80%)'));
+});
+
 test('analytics: query with today: true bounds cutoff to midnight local and sets window today', () => {
   const mockNow = new Date('2026-11-07T15:30:00').getTime();
   const midnight = new Date(mockNow);

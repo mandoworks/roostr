@@ -563,3 +563,88 @@ test('D4: operator hold manifest written to operator-hold.json', () => {
   assert.equal(opManifest.type, 'operator_hold_manifest');
   assert.equal(opManifest.heldCount, 1);
 });
+
+// -----------------------------------------------------------------------------
+// Step 3.2: Procedural Escalation Triggers (evaluatePane)
+// -----------------------------------------------------------------------------
+
+test('evaluatePane: loop-3x detects 3 consecutive identical failing commands', () => {
+  const history = {
+    commands: [
+      { command: 'git status', exitCode: 0 },
+      { command: 'npm test', exitCode: 1, failed: true },
+      { command: 'npm test', exitCode: 1, failed: true },
+      { command: 'npm test', exitCode: 1, failed: true },
+    ],
+  };
+  const res = daemon.evaluatePane({ status: 'working' }, {}, history);
+  assert.ok(res);
+  assert.equal(res.trigger, 'loop-3x');
+  assert.equal(res.action, 'escalate');
+});
+
+test('evaluatePane: stalled-180s detects inactivity over 180s with zero output delta', () => {
+  const now = 200000;
+  const row = {
+    status: 'working',
+    since: 0,
+    lastOutputAt: 0,
+    statusFor: 190000,
+  };
+  const history = {
+    outputDelta: 0,
+  };
+  const res = daemon.evaluatePane(row, {}, history, now);
+  assert.ok(res);
+  assert.equal(res.trigger, 'stalled-180s');
+  assert.equal(res.action, 'escalate');
+  assert.equal(res.durationSec, 190);
+});
+
+test('evaluatePane: blocked separates safe-continue from escalate-to-honcho', () => {
+  const safeRes = daemon.evaluatePane(
+    { status: 'blocked', permissionPrompt: { safe: true } },
+    {},
+    {}
+  );
+  assert.ok(safeRes);
+  assert.equal(safeRes.trigger, 'blocked');
+  assert.equal(safeRes.subtrigger, 'safe-continue');
+  assert.equal(safeRes.action, 'safe-continue');
+
+  const escalateRes = daemon.evaluatePane(
+    { status: 'blocked', screenText: 'Do you want to drop database production (y/N)?' },
+    {},
+    { screenText: 'Do you want to drop database production (y/N)?' }
+  );
+  assert.ok(escalateRes);
+  assert.equal(escalateRes.trigger, 'blocked');
+  assert.equal(escalateRes.subtrigger, 'escalate-to-honcho');
+  assert.equal(escalateRes.action, 'escalate');
+});
+
+test('evaluatePane: context-ceiling triggers at ctx >= 85% or turn budget exceeded', () => {
+  const resCtx = daemon.evaluatePane({ status: 'working', ctx: 87 }, { ctx: 87 }, {});
+  assert.ok(resCtx);
+  assert.equal(resCtx.trigger, 'context-ceiling');
+  assert.equal(resCtx.action, 'recycle');
+  assert.equal(resCtx.ctx, 87);
+
+  const resTurns = daemon.evaluatePane({ status: 'working', ctx: 40 }, {}, { turnsExceeded: true });
+  assert.ok(resTurns);
+  assert.equal(resTurns.trigger, 'context-ceiling');
+  assert.equal(resTurns.action, 'recycle');
+});
+
+test('evaluatePane: test-regression-2x detects two consecutive failed test runs', () => {
+  const history = {
+    tests: [
+      { run: 1, failed: true },
+      { run: 2, failed: true },
+    ],
+  };
+  const res = daemon.evaluatePane({ status: 'working' }, {}, history);
+  assert.ok(res);
+  assert.equal(res.trigger, 'test-regression-2x');
+  assert.equal(res.action, 'escalate');
+});
