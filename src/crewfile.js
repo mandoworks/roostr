@@ -499,4 +499,40 @@ function loadCrew(file) {
   return crew;
 }
 
-module.exports = { FILE_NAME, parseToml, parseCheckString, toCrew, findCrewFile, safeToRun, loadCrew, TomlError };
+function canonicalizePath(p) {
+  const abs = path.resolve(p);
+  if (fs.existsSync(abs)) {
+    return fs.realpathSync(abs);
+  }
+  const parent = path.dirname(abs);
+  if (parent === abs) return abs;
+  return path.join(canonicalizePath(parent), path.basename(abs));
+}
+
+function verifySafePath(targetPath, baseDir) {
+  const realBase = canonicalizePath(baseDir);
+  const targetDir = path.dirname(path.resolve(targetPath));
+  const realTargetDir = canonicalizePath(targetDir);
+  const safeDir = realTargetDir === realBase || realTargetDir.startsWith(realBase + path.sep);
+  if (!safeDir) {
+    throw new Error(`path escapes base directory: ${targetPath}`);
+  }
+  if (fs.existsSync(targetPath)) {
+    const realFile = fs.realpathSync(targetPath);
+    if (realFile !== realBase && !realFile.startsWith(realBase + path.sep)) {
+      throw new Error(`path escapes base directory: ${targetPath}`);
+    }
+  }
+  return true;
+}
+
+function writeCrewJson(workspaceDir, crewData) {
+  const targetDir = path.join(workspaceDir, '.herdr');
+  const targetFile = path.join(targetDir, 'crew.json');
+  verifySafePath(targetFile, workspaceDir);
+  fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(targetFile, JSON.stringify(crewData, null, 2) + '\n', { mode: 0o600 });
+  return targetFile;
+}
+
+module.exports = { FILE_NAME, parseToml, parseCheckString, toCrew, findCrewFile, safeToRun, loadCrew, TomlError, verifySafePath, writeCrewJson };

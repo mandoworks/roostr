@@ -23,7 +23,8 @@ const EFFORT_ALIASES = {
   xhigh: 'xhigh', xh: 'xhigh', max: 'max',
 };
 
-const USAGE = 'usage: roostr report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--task T] [--role S] [--about S] [--session ID] [--from claude|agy]';
+const binName = path.basename(process.argv[1] || '').includes('roostr') ? 'roostr' : 'crew-board';
+const USAGE = `usage: ${binName} report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--task T] [--role S] [--about S] [--session ID] [--from claude|agy]`;
 
 const FLAG_HELP = [
   ['--pane <id>', 'Herdr pane id (required, for example w1:p2)'],
@@ -232,8 +233,38 @@ function appendUsage(sample, file = usagePath()) {
   return sample;
 }
 
+function canonicalizePath(p) {
+  const abs = path.resolve(p);
+  if (fs.existsSync(abs)) {
+    return fs.realpathSync(abs);
+  }
+  const parent = path.dirname(abs);
+  if (parent === abs) return abs;
+  return path.join(canonicalizePath(parent), path.basename(abs));
+}
+
+function verifyReportPath(filePath, baseDir = stateDir()) {
+  fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+  const realBase = canonicalizePath(baseDir);
+  const targetDir = path.dirname(path.resolve(filePath));
+  const realTargetDir = canonicalizePath(targetDir);
+  const safeDir = realTargetDir === realBase || realTargetDir.startsWith(realBase + path.sep);
+  if (!safeDir) {
+    throw new Error(`symlink or path escape outside allowed root: ${filePath}`);
+  }
+  if (fs.existsSync(filePath)) {
+    const realFile = fs.realpathSync(filePath);
+    if (realFile !== realBase && !realFile.startsWith(realBase + path.sep)) {
+      throw new Error(`symlink or path escape outside allowed root: ${filePath}`);
+    }
+  }
+  return true;
+}
+
 function writeReport(pane, values, now = Date.now()) {
-  const prev = readJson(paneFile(pane)) || {};
+  const target = paneFile(pane);
+  verifyReportPath(target);
+  const prev = readJson(target) || {};
   const next = { ...prev, ...values, pane, at: now };
   if (values.task !== undefined) {
     const source = values.taskSource === 'manual' ? 'manual' : 'agent';
@@ -340,7 +371,7 @@ function main(argv) {
     return 0;
   }
   if (p.error) {
-    process.stderr.write(`roostr report: ${p.error}\n${USAGE}\n`);
+    process.stderr.write(`${binName} report: ${p.error}\n${USAGE}\n`);
     return 2;
   }
   let values = p.values;
@@ -349,7 +380,7 @@ function main(argv) {
     try {
       d = JSON.parse(fs.readFileSync(0, 'utf8'));
     } catch (e) {
-      process.stderr.write(`roostr report: --from ${p.from} needs its JSON on stdin\n`);
+      process.stderr.write(`${binName} report: --from ${p.from} needs its JSON on stdin\n`);
       return 2;
     }
     values = { ...FROM[p.from](d || {}), ...values };
@@ -360,5 +391,5 @@ function main(argv) {
 
 module.exports = {
   parseArgs, fromClaude, fromAgy, writeReport, readReport, pruneReports, main,
-  MAX_AGE_MS, USAGE, usagePath, readUsage, appendUsage,
+  MAX_AGE_MS, USAGE, usagePath, readUsage, appendUsage, verifyReportPath,
 };
