@@ -13,6 +13,7 @@ const path = require('path');
 const advisor = require('./advisor');
 const crewfile = require('./crewfile');
 const rotate = require('./rotate');
+const log = require('./log');
 
 const TIERS = ['fast', 'balanced', 'reasoning'];
 const EFFORTS = ['low', 'medium', 'high'];
@@ -35,17 +36,21 @@ function readEntries(file = ledgerPath()) {
     return [];
   }
   const out = [];
-  for (const line of text.split('\n')) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line);
       if (entry && typeof entry === 'object' && !Array.isArray(entry)) out.push(entry);
     } catch {
-      // A partial or hand edited line is skipped, not fatal.
+      log.warn(`skipping corrupted ledger line ${i + 1} in ${file}`);
     }
   }
   return out;
 }
+
+const readAll = readEntries;
 
 function append(entry, file = ledgerPath()) {
   const dir = path.dirname(file);
@@ -209,6 +214,7 @@ function main(args = []) {
 module.exports = {
   ledgerPath,
   readEntries,
+  readAll,
   append,
   findSpawn,
   spawn,

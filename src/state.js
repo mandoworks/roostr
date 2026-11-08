@@ -6,6 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const log = require('./log');
 
 function stateDir() {
   if (process.env.ROOSTR_STATE_DIR) return process.env.ROOSTR_STATE_DIR;
@@ -37,10 +38,17 @@ function eventFile(id) {
 }
 
 function readJson(file) {
+  let fileExists = false;
   try {
-    const data = fs.readFileSync(file, 'utf8');
-    return JSON.parse(data);
+    if (fs.existsSync(file)) {
+      fileExists = true;
+      const data = fs.readFileSync(file, 'utf8');
+      return JSON.parse(data);
+    }
   } catch (e) {
+    if (fileExists) {
+      log.warn(`corrupted state file ${file}, falling back to .bak`);
+    }
     // Try backup if exists
     try {
       const bak = file + '.bak';
@@ -51,6 +59,7 @@ function readJson(file) {
     } catch (e2) {}
     return null;
   }
+  return null;
 }
 
 // Write to a temp file and rename, so a reader never sees half a file.
@@ -67,4 +76,7 @@ function writeJson(file, data) {
   fs.renameSync(tmp, file);
 }
 
-module.exports = { stateDir, validPaneId, paneFile, eventFile, readJson, writeJson };
+const load = readJson;
+const save = writeJson;
+
+module.exports = { stateDir, validPaneId, paneFile, eventFile, readJson, writeJson, load, save };
