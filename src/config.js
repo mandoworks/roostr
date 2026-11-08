@@ -57,6 +57,7 @@ function defaultConfig() {
     },
     secretary: { auto: true, intervalSeconds: 900, scope: 'workspace' },
     grillSkill: { mode: 'recommended', command: '' },
+    orchestration: { enabled: false },
   };
 }
 
@@ -245,6 +246,12 @@ function normalize(raw) {
     else warnings.push('grillSkill.mode must be recommended, none or custom; using recommended');
   }
   config.grillSkill.command = text(grill.command, 240);
+
+  const orchestration = plainObject(raw.orchestration) ? raw.orchestration : {};
+  if (orchestration.enabled !== undefined && typeof orchestration.enabled !== 'boolean') {
+    warnings.push('orchestration.enabled must be true or false; using false');
+  }
+  config.orchestration = { enabled: bool(orchestration.enabled, false) };
 
   return { config, warnings };
 }

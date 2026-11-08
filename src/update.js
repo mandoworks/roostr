@@ -3,7 +3,7 @@
 // GitHub for the plugin's release tags (`git ls-remote`, nothing is sent but
 // the request) and offers the newest one when it is newer than the installed
 // version. Installing is never automatic: an update is new code that runs as
-// you, so it waits for the `u` key. CREW_BOARD_NO_UPDATE_CHECK=1 or
+// you, so it waits for the `u` key. ROOSTR_NO_UPDATE_CHECK=1, CREW_BOARD_NO_UPDATE_CHECK=1, or
 // --no-update-check turns the check off.
 
 const fs = require('fs');
@@ -62,7 +62,9 @@ function latestTag(text) {
 }
 
 function disabled(opts) {
-  return Boolean(opts && opts.noUpdateCheck) || ['1', 'true', 'yes'].includes(String(process.env.CREW_BOARD_NO_UPDATE_CHECK || '').toLowerCase());
+  if (opts && opts.noUpdateCheck) return true;
+  const env = (process.env.ROOSTR_NO_UPDATE_CHECK || process.env.CREW_BOARD_NO_UPDATE_CHECK || '').toLowerCase();
+  return ['1', 'true', 'yes'].includes(env);
 }
 
 // The version to offer, or null. Reads the shared state file (so several
