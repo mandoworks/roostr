@@ -2672,6 +2672,7 @@ function runLive(opts) {
   let model = null;
   let error = null;
   let busy = false;
+  let queued = false;
   let timer = null;
   let selected = 0;
   let selectedPane = null;
@@ -2745,7 +2746,10 @@ function runLive(opts) {
   };
 
   const tick = async () => {
-    if (busy) return;
+    if (busy) {
+      queued = true;
+      return;
+    }
     busy = true;
     try {
       ensurePaneName();
@@ -2766,8 +2770,13 @@ function runLive(opts) {
     } catch (e) {
       error = (e && e.message ? e.message : String(e)).split('\n')[0];
       if (!model) model = { rows: [], crews: [], crewChecks: [], checkList: [], now: Date.now(), workspaces: new Map(), scopeLabel: 'all' };
+    } finally {
+      busy = false;
+      if (queued) {
+        queued = false;
+        tick();
+      }
     }
-    busy = false;
     draw();
     runMonitor(true);
   };
