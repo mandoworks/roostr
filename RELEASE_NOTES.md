@@ -66,6 +66,7 @@ Autonomous multi-agent orchestration (Head Honcho planner, Secretary daemon, mon
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mandoworks/roostr/main/scripts/install.sh | bash
 ```
+*Note for Linux / Ubuntu*: If `roostr: command not found` appears in your active shell, run `export PATH="$HOME/.local/bin:$PATH"`. The installer automatically appends this to your shell profile for future sessions.
 
 ### Manual Install via Herdr
 ```sh
