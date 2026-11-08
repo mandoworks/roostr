@@ -572,6 +572,16 @@ function ctxCell(r, cell) {
   return st ? { text: cell.text, paint: CTX_PAINT[st] } : cell;
 }
 
+// The line a click on a surge badge or a ctx cell flashes.
+const SURGE_TOOLTIP = '▲ 2× peak hours (14:00 to 18:00 UTC): 5h rolling quota burns twice as fast';
+function ctxTooltip(r) {
+  const v = Math.round(r.ctx.v);
+  const tail = r.ctx.v >= 85 ? 'critical context ceiling; hand off or split pane'
+    : r.ctx.v >= 50 ? 'context dilution zone (>50k tokens); run /clear before next task'
+      : 'healthy context window (<30% warm reuse threshold)';
+  return `ctx ${v}%: ${tail}`;
+}
+
 // An API estimate is not a bill: it carries a tilde and the screen tint.
 function estimatedCost(r, cell) {
   if (r.cost.src !== 'estimate' || r.cost.v === null) return cell;
@@ -2597,12 +2607,53 @@ function render(model, {
 } = {}) {
   const lines = [];
   const regions = [];
-  const right = `${clock(model.now)}  load ${load.map((n) => n.toFixed(2)).join(' ')}`;
   const wsList = [...new Set(model.rows.map((r) => r.workspace))];
   const wsPaint = (name) => ui.WS[Math.max(0, wsList.indexOf(name)) % ui.WS.length];
-  const left = `${bold(C.title('🐓ROOSTR🐓'))}  ${bold((wsList.length === 1 ? wsPaint(wsList[0]) : C.accent)(ui.clean(crewTitle(model))))}`;
-  const gap = Math.max(2, width - ui.strWidth(left) - ui.strWidth(right));
-  lines.push(left + ' '.repeat(gap) + C.text(right));
+  // Line 0 is a four-zone live status bar: the crew, the crew pulse, today's
+  // spend and burn pace, then the clock and load. The Herdr pane header already
+  // carries the board name, so the line does not repeat it.
+  const statusOf = (s) => model.rows.filter((r) => r.status === s).length;
+  const working = statusOf('working');
+  const idle = statusOf('idle');
+  const blocked = statusOf('blocked');
+  const done = statusOf('done');
+  const z1 = bold((wsList.length === 1 ? wsPaint(wsList[0]) : C.accent)(ui.clean(crewTitle(model))));
+  let z2 = `${C.green(`● ${working} working`)} · ${C.amber(`○ ${idle} idle`)}`;
+  if (blocked > 0) z2 += ` · ${bold(C.red(`◼ ${blocked} blocked`))}`;
+  if (done > 0) z2 += ` · ${C.cyan(`✓ ${done} done`)}`;
+  const ts0 = model.tokscale;
+  let z3 = ts0 ? C.text(`today ${fmtCost(ts0.total)}`) : '';
+  let maxPace = 0;
+  for (const l of (model.limits || [])) {
+    for (const w of (l.windows || [])) if (typeof w.pace === 'number' && w.pace > maxPace) maxPace = w.pace;
+  }
+  const paceLabel = maxPace >= 10 ? String(Math.round(maxPace)) : maxPace.toFixed(1);
+  if (maxPace >= 0.05) {
+    const paintPace = maxPace >= 2 ? C.red : maxPace >= 1 ? C.amber : C.green;
+    z3 += (z3 ? ' ' : '') + bold(paintPace(`⚡ ${paceLabel}×`));
+  }
+  const loads = load.map((n) => n.toFixed(2));
+  const z4 = width < 105 ? `${clock(model.now)} · load ${loads[0]}` : `${clock(model.now)}  load ${loads.join(' ')}`;
+  const zRight = (z3 ? z3 + '   ' : '') + z4;
+  const zLeft = `${z1}   ${z2}`;
+  const gap = Math.max(1, width - ui.strWidth(zLeft) - ui.strWidth(zRight));
+  lines.push(zLeft + ' '.repeat(gap) + zRight);
+  // Click regions on line 0: crew pulse, today spend, burn pace, and load.
+  const z2x = ui.strWidth(z1) + 3;
+  regions.push({ action: 'tooltip', y: 0, x0: z2x, x1: z2x + ui.strWidth(z2) - 1, text: `crew pulse: ${working} working, ${idle} idle${blocked ? `, ${blocked} blocked` : ''}${done ? `, ${done} done` : ''}` });
+  const z3x = ui.strWidth(zLeft) + gap;
+  if (ts0) {
+    regions.push({ action: 'today', y: 0, x0: z3x, x1: z3x + ui.strWidth(`today ${fmtCost(ts0.total)}`) - 1 });
+  }
+  if (maxPace >= 0.05) {
+    const bolt = `⚡ ${paceLabel}×`;
+    const boltX = z3x + ui.strWidth(z3) - ui.strWidth(bolt);
+    regions.push({ action: 'tooltip', y: 0, x0: boltX, x1: boltX + ui.strWidth(bolt) - 1, text: `⚡ burn pace: ${paceLabel}× sustainable rate (${maxPace >= 2 ? 'critically high burn' : maxPace >= 1 ? 'faster than sustainable pace' : 'healthy pace'})` });
+  }
+  const z4x = ui.strWidth(zLeft) + gap + ui.strWidth(zRight) - ui.strWidth(z4);
+  const loadAt = z4x + z4.indexOf('load ');
+  const cores = os.cpus ? os.cpus().length : 0;
+  regions.push({ action: 'tooltip', y: 0, x0: loadAt, x1: Math.min(width - 1, z4x + ui.strWidth(z4) - 1), text: `load 1m/5m/15m: ${loads.join(', ')} across ${cores} CPU core${cores === 1 ? '' : 's'}` });
   if (menu) {
     const activeDrawer = orchestrate ? 'orchestrate' : (today ? 'today' : (backups ? 'backups' : (options ? 'options' : (help ? 'help' : null))));
     const bar = menuBar(menu, width, activeDrawer);
@@ -2611,12 +2662,21 @@ function render(model, {
   }
 
   if (model.crewChecks.length) {
-    lines.push(model.crewChecks.map((c) => {
+    const pills = model.crewChecks.map((c) => {
       const name = ui.clean(c.name);
       if (c.state === true) return C.green(`● ${name}`);
       if (c.state === false) return C.dim(`○ ${name}`);
       return C.dim(`? ${name}`);
-    }).join('  '));
+    });
+    // Clicking a check pill flashes whether it is passing, failing, or not run.
+    let cx = 0;
+    model.crewChecks.forEach((c, i) => {
+      const w = ui.strWidth(pills[i]);
+      const state = c.state === true ? 'passing' : (c.state === false ? 'failing' : 'not yet evaluated');
+      regions.push({ action: 'tooltip', y: lines.length, x0: cx, x1: cx + w - 1, text: `check ${ui.clean(c.name)}: ${state}` });
+      cx += w + 2;
+    });
+    lines.push(pills.join('  '));
   }
   for (const crew of model.crews) {
     for (const e of crew.errors) lines.push(C.red(ui.clean(`crew file ${crew.file}: ${e}`)));
@@ -2688,11 +2748,19 @@ function render(model, {
       const taskContent = r.task ? C.text(ui.clean(r.task)) : C.dim('no task assigned');
       const line3 = `    ${C.dim('task:')} ${taskContent}`;
 
+      // Narrow regions first: they must win over the full-width row regions.
+      if (surgeBadge) {
+        const surgeX = 2 + ui.strWidth(headLeft) - ui.strWidth(surgeBadge);
+        regions.push({ action: 'tooltip', index: i, y: lines.length, x0: surgeX, x1: surgeX + ui.strWidth(surgeBadge) - 1, text: SURGE_TOOLTIP });
+      }
       regions.push({ action: 'copy-id', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
       regions.push({ action: 'jump', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
       regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
       lines.push(bgLine(ui.clip(line1, width), bg, width));
 
+      if (ctxMeter) {
+        regions.push({ action: 'tooltip', index: i, y: lines.length, x0: 4, x1: 4 + ui.strWidth(ctxMeter) - 1, text: ctxTooltip(r) });
+      }
       regions.push({ action: 'detail', paneId: r.paneId, index: i, y: lines.length, x0: 0, x1: width - 1 });
       regions.push({ action: 'row', index: i, y: lines.length, x0: 0, x1: width - 1 });
       lines.push(bgLine(ui.clip(line2, width), bg, width));
@@ -2731,6 +2799,10 @@ function render(model, {
         } else if (c.key === 'state' && colX < width) {
           const canRecover = r.status === 'blocked' && orchestrationEnabled(model.config, { menu });
           regions.push({ action: canRecover ? 'recover' : 'detail', paneId: r.paneId, index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w) });
+        } else if (c.key === 'agent' && (r.surge || r.surgeMarker) && colX < width) {
+          regions.push({ action: 'tooltip', index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w), text: SURGE_TOOLTIP });
+        } else if (c.key === 'ctx' && r.ctx && typeof r.ctx.v === 'number' && colX < width) {
+          regions.push({ action: 'tooltip', index: i, y: lines.length, x0: Math.max(0, colX - 1), x1: Math.min(width - 1, colX + c.w), text: ctxTooltip(r) });
         }
         colX += c.w + 1;
       }

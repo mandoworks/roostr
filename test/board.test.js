@@ -436,6 +436,55 @@ test('render: pace multiplier on the usage line, only while burning', () => {
   assert.ok(barHit, 'usage bar tooltip hit exists');
 });
 
+test('render: line 0 is a four-zone live status bar with click regions', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  m.tokscale = { total: 3.45 };
+  m.limits = [{ source: 'claude', windows: [{ name: '5h', used: 64, resets: 0, pace: 1.2 }] }];
+  const hits = [];
+  const out = board.render(m, { width: 200, height: 30, load: [2.14, 1.8, 1.1], hits }).split('\n');
+  assert.ok(!out[0].includes('🐓ROOSTR🐓'), 'the pane header carries the name now');
+  assert.ok(out[0].startsWith('example crew'), 'the crew title leads line 0');
+  assert.match(out[0], /● 2 working · ○ 1 idle · ◼ 1 blocked · ✓ 1 done/);
+  assert.match(out[0], /today \$3\.45 ⚡ 1\.2×/);
+  assert.match(out[0], /14:30 {2}load 2\.14 1\.80 1\.10/);
+  const pulse = hits.find((h) => h.action === 'tooltip' && h.text && h.text.includes('crew pulse'));
+  assert.ok(pulse && pulse.y === 0, 'crew pulse tooltip on line 0');
+  assert.match(pulse.text, /2 working, 1 idle, 1 blocked, 1 done/);
+  const bolt = hits.find((h) => h.action === 'tooltip' && h.y === 0 && h.text && h.text.includes('⚡ burn pace: 1.2×'));
+  assert.ok(bolt, 'burn pace tooltip on line 0');
+  const load = hits.find((h) => h.action === 'tooltip' && h.y === 0 && h.text && h.text.includes('load 1m/5m/15m'));
+  assert.ok(load, 'load tooltip on line 0');
+  assert.match(load.text, /2\.14, 1\.80, 1\.10 across \d+ CPU cores/);
+  assert.ok(hits.some((h) => h.action === 'today' && h.y === 0), 'today spend is clickable on line 0');
+});
+
+test('render: line 0 uses the short load form under 105 columns', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const out = board.render(m, { width: 90, load: [0.5, 0.5, 0.5] }).split('\n');
+  assert.match(out[0], /14:30 · load 0\.50/);
+  assert.ok(!/load 0\.50 0\.50 0\.50/.test(out[0]), 'the three load numbers collapse when narrow');
+});
+
+test('render: surge, ctx and crew check clicks flash tooltips', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const surging = m.rows.find((r) => r.paneId === 'w1:p1');
+  surging.surge = true;
+  surging.ctx = { v: 87, src: 'exact' };
+  const hits = [];
+  board.render(m, { width: 200, hits, view: 'line' });
+  assert.ok(hits.some((h) => h.action === 'tooltip' && h.text && h.text.includes('▲ 2× peak hours')), 'surge badge tooltip');
+  assert.ok(hits.some((h) => h.action === 'tooltip' && h.text && h.text.startsWith('ctx 87%: critical context ceiling')), 'ctx cell tooltip');
+  assert.ok(hits.some((h) => h.action === 'tooltip' && h.text === 'check Always: passing'), 'passing check tooltip');
+  assert.ok(hits.some((h) => h.action === 'tooltip' && h.text === 'check Never: failing'), 'failing check tooltip');
+  const cards = [];
+  board.render(m, { width: 200, hits: cards, view: 'cards' });
+  assert.ok(cards.some((h) => h.action === 'tooltip' && h.text && h.text.includes('▲ 2× peak hours')), 'surge badge tooltip in cards');
+  assert.ok(cards.some((h) => h.action === 'tooltip' && h.text && h.text.startsWith('ctx 87%')), 'ctx meter tooltip in cards');
+});
+
 test('render: detail box for the selected row, with its buttons', () => {
   const input = sample();
   const m = board.buildModel(input);
@@ -1039,7 +1088,7 @@ test('render: the frame always fits the pane height', () => {
         const where = `${width}x${height} ${name}`;
         assert.ok(lines.length <= height, `${where}: ${lines.length} lines`);
         assert.match(lines[lines.length - 1], /panes/, `${where}: footer is last`);
-        if (height >= 2) assert.ok(lines[0].startsWith('🐓ROOSTR🐓'), `${where}: title is first`);
+        if (height >= 2) assert.ok(lines[0].startsWith('example crew'), `${where}: status bar is first`);
         for (const h of hits) {
           assert.ok(h.y < lines.length, `${where}: hit y ${h.y}`);
           assert.ok(h.x1 < width, `${where}: hit x1 ${h.x1}`);
