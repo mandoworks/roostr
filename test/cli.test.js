@@ -16,6 +16,23 @@ test('help: the command list ends on the page, no truncation', () => {
   assert.match(r.stdout, /(roostr|crew-board) sessions \[--json\]/);
   assert.match(r.stdout, /(roostr|crew-board) restore \[--workspace <id\|label\|here\|all>\] \[--yes\] \[--dry-run\]/);
   assert.match(r.stdout.trimEnd(), /-h, --help +this help$/);
+  for (const cmd of ['recommend', 'spawn', 'outcome', 'summary', 'tasks', 'template', 'name', 'backups', 'analytics']) {
+    assert.match(r.stdout, new RegExp(`(roostr|crew-board) ${cmd}\\b`), `help documents ${cmd}`);
+  }
+});
+
+test('help: every flag in parseArgs is documented', () => {
+  const r = spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  const flags = [
+    '--workspace', '--crew', '--tags', '--tags-scope', '--budget', '--view',
+    '--all', '--here', '--provider', '--subview', '--interval', '--once',
+    '--backups', '--options', '--orchestration', '--json', '--json-rows',
+    '--no-update-check', '--help',
+  ];
+  for (const flag of flags) {
+    assert.match(r.stdout, new RegExp(`${flag}\\b`), `help documents ${flag}`);
+  }
 });
 
 test('version: --version and -v print the manifest version and exit 0', () => {

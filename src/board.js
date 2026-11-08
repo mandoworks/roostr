@@ -729,6 +729,7 @@ function menuBar(menu, width) {
   items.push(['today', 'd today']);
   if (menu.update) items.push(['update', menu.update]);
   items.push(['help', '? keys']);
+  items.push(['refresh', 'r refresh']);
   let line = '';
   let x = 0;
   const hits = [];
@@ -2834,6 +2835,13 @@ const HELP = `roostr: a live board of the agent panes in this Herdr workspace (-
 
 usage: roostr [board] [options]
 ${REPORT_USAGE.replace(/^usage: /, '       ')}
+       roostr recommend --task <text> [--json]
+       roostr spawn [--pane <id>] [--task <text>] [--kind <tool>]
+       roostr outcome --run <id> --result pass|fail
+       roostr summary [--json]
+       roostr tasks [--check]
+       roostr template <role>
+       roostr name [--language <lang>] [--count N]
        roostr backups [show|restore <label|id>] [--version N] [--layout even|saved|columns|rows] [--yes]
        roostr analytics [--days N | --today] [--by pane|model|kind|batch] [--json]
        roostr sessions [--json]
@@ -2851,7 +2859,8 @@ options:
                           (default: crew file [board] tag_scope, else here)
   --budget <dollars>      warn when a pane's cost nears this (a crew file
                           pane budget wins)
-  --view auto|line|wrap   task line beside its row when it fits, else under
+  --view auto|line|wrap|cards
+                          task line beside its row when it fits, else under
                           it (auto, the default); always beside (line); or
                           always under (wrap)
   --all                   show every workspace (default)
@@ -2862,6 +2871,7 @@ options:
   --once                  print one frame and exit (no colour tags written)
   --backups               open on the backups view (the restore action uses this)
   --options               open on the options view (settings, tokscale, compaction)
+  --orchestration         enable orchestration tools (or ROOSTR_ORCHESTRATION=1)
   --json                  print the JSON envelope (version, scope, summary, panes) and exit
   --json-rows             print only the pane rows array and exit (later flag wins)
   --no-update-check       never ask GitHub for a newer release (or ROOSTR_NO_UPDATE_CHECK=1)

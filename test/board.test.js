@@ -15,6 +15,7 @@ const checks = require('../src/checks');
 const config = require('../src/config');
 const { parseToml, toCrew } = require('../src/crewfile');
 const ui = require('../src/ui');
+const tokscale = require('../src/tokscale');
 const { decide } = require('../scripts/toggle');
 
 const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-proj-'));
@@ -1858,6 +1859,76 @@ test('head picker: lists shell panes and asks to confirm', () => {
   const out = board.headLines(st, 100).join('\n');
   assert.match(out, /w1:p9/);
   assert.match(out, /y to go/);
+});
+
+test('U1: menu bar registers backups and refresh hit regions', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const hits = [];
+  board.render(m, { width: 140, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits });
+  const backupsHit = hits.find((h) => h.action === 'backups');
+  assert.ok(backupsHit, 'backups action present in hits');
+  assert.ok(backupsHit.x0 >= 0 && backupsHit.x1 > backupsHit.x0);
+
+  const refreshHit = hits.find((h) => h.action === 'refresh');
+  assert.ok(refreshHit, 'refresh action present in hits');
+  assert.ok(refreshHit.x0 >= 0 && refreshHit.x1 > refreshHit.x0);
+});
+
+test('U1: row status and task clicks register recover, detail, and edit hit regions', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const hits = [];
+  board.render(m, { width: 140, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, hits });
+
+  // Blocked row registers recover action
+  const recoverHit = hits.find((h) => h.action === 'recover' && h.paneId === 'w2:p1');
+  assert.ok(recoverHit, 'blocked row registers recover hit region');
+  assert.equal(typeof recoverHit.index, 'number');
+
+  // Working/idle row registers detail action
+  const detailHit = hits.find((h) => h.action === 'detail' && h.paneId === 'w1:p1');
+  assert.ok(detailHit, 'active row status registers detail hit region');
+  assert.equal(typeof detailHit.index, 'number');
+
+  // Task column registers edit action
+  const editHits = hits.filter((h) => h.action === 'edit' && h.paneId);
+  assert.ok(editHits.length >= m.rows.length, 'every row task line registers edit hit region');
+  for (const eh of editHits) {
+    assert.equal(typeof eh.index, 'number');
+  }
+});
+
+test('U2: today view registers clickable metric and close hit regions', () => {
+  const m = board.buildModel(sample());
+  m.tokscale = tokscale.parse(JSON.stringify({
+    totalCost: 5,
+    entries: [{ client: 'claude', sessionId: 's1', model: 'claude-3-5', input: 100, cost: 5 }],
+  }), m.now);
+  ui.setColor(false);
+  const hits = [];
+  board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, today: true, hits });
+
+  const metricHits = hits.filter((h) => h.action === 'metric');
+  assert.ok(metricHits.length >= 2, 'header and footer metric toggles registered');
+
+  const closeHit = hits.find((h) => h.action === 'today');
+  assert.ok(closeHit, 'close today hit region registered');
+});
+
+test('U2: footer spend registers clickable today hit region', () => {
+  const m = board.buildModel(sample());
+  m.tokscale = tokscale.parse(JSON.stringify({
+    totalCost: 12.50,
+    entries: [{ client: 'claude', sessionId: 's1', model: 'claude-3-5', input: 100, cost: 12.50 }],
+  }), m.now);
+  ui.setColor(false);
+  const hits = [];
+  board.render(m, { width: 140, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits });
+
+  const todaySpendHit = hits.find((h) => h.action === 'today');
+  assert.ok(todaySpendHit, 'footer spend registers today hit region');
+  assert.ok(todaySpendHit.x0 >= 0 && todaySpendHit.x1 > todaySpendHit.x0);
 });
 
 test('compaction: context over 50% triggers badge and advice, over 75% alerts in banner', () => {
