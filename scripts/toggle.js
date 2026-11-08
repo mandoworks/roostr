@@ -40,12 +40,16 @@ async function main(argv) {
   if (d.action === 'close') return herdr.closeBoard(d.pane);
   if (d.action === 'focus') {
     try {
+      herdr.renamePane(d.pane, '🐓ROOSTR🐓').catch(() => {});
       return await herdr.focusBoard(d.pane);
     } catch (e) {
       // a pane Herdr will not focus by id: open a fresh board instead
     }
   }
-  return herdr.openBoard('board', true);
+  const opened = await herdr.openBoard('board', true);
+  const paneId = (opened && (typeof opened === 'string' ? opened : (opened.pane_id || opened.paneId || opened.id))) || null;
+  if (paneId) herdr.renamePane(paneId, '🐓ROOSTR🐓').catch(() => {});
+  return opened;
 }
 
 if (require.main === module) {

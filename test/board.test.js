@@ -2061,3 +2061,164 @@ test('orchestrate TUI: renders 3 tabs, edits tasks.json overrides, cycles analyt
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('orchestrate TUI: mouse hit regions for tabs, close, task rows, by and window', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-hits-'));
+  try {
+    const orchDir = path.join(tmp, 'docs', 'orchestration');
+    fs.mkdirSync(orchDir, { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'docs', 'orchestration-plan.md'), '# Plan\n');
+    const tasksFile = path.join(orchDir, 'tasks.json');
+    fs.writeFileSync(tasksFile, JSON.stringify({
+      version: 1,
+      batchId: 'batch-hit-test',
+      tasks: [
+        { id: 't1', title: 'Task one', kind: 'feature', status: 'pending', brief: 'docs/b1.md', report: 'docs/r1.md' },
+      ],
+    }, null, 2));
+
+    const input = sample();
+    input.snap.panes[0].cwd = tmp;
+    const m = board.buildModel(input);
+    ui.setColor(false);
+
+    const st = board.orchestrateState(m, null, [], 'tasks', tmp);
+    const hits1 = [];
+    board.render(m, { width: 120, orchestrate: st, hits: hits1 });
+
+    const tabHit = hits1.find((h) => h.action === 'orch-tab' && h.tab === 'tasks');
+    assert.ok(tabHit, 'must have orch-tab tasks hit');
+    const closeHit = hits1.find((h) => h.action === 'orch-close');
+    assert.ok(closeHit, 'must have orch-close hit');
+    const rowHit = hits1.find((h) => h.action === 'orch-task-row' && h.index === 0);
+    assert.ok(rowHit, 'must have orch-task-row hit');
+    const effHit = hits1.find((h) => h.action === 'orch-effort' && h.index === 0);
+    assert.ok(effHit, 'must have orch-effort hit');
+    const modelHit = hits1.find((h) => h.action === 'orch-model' && h.index === 0);
+    assert.ok(modelHit, 'must have orch-model hit');
+
+    // Tab 2 analytics hits
+    st.tab = 'analytics';
+    const hits2 = [];
+    board.render(m, { width: 140, orchestrate: st, hits: hits2 });
+    const byHit = hits2.find((h) => h.action === 'orch-by' && h.by === 'model');
+    assert.ok(byHit, 'must have orch-by hit');
+    const winHit = hits2.find((h) => h.action === 'orch-window' && h.index === 0);
+    assert.ok(winHit, 'must have orch-window hit');
+    const refHit = hits2.find((h) => h.action === 'orch-refresh-summary');
+    assert.ok(refHit, 'must have orch-refresh-summary hit');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('menu: active drawer highlight renders indicator and cyans label', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+
+  const outOrch = board.render(m, {
+    width: 160,
+    menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true },
+    orchestrate: { tab: 'tasks', planDirs: [], planIndex: 0, setup: null },
+  }).split('\n');
+  assert.match(outOrch[1], /\[▾ O orchestrate\]/);
+
+  const outToday = board.render(m, {
+    width: 160,
+    menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true },
+    today: true,
+  }).split('\n');
+  assert.match(outToday[1], /\[▾ d today\]/);
+
+  const outBackups = board.render(m, {
+    width: 160,
+    menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true },
+    backups: { list: [], sel: 0, ver: 0, confirm: false, status: null, layout: 'even' },
+  }).split('\n');
+  assert.match(outBackups[1], /\[▾ R backups\]/);
+});
+
+test('orchestrate TUI: responsive narrow (80 cols) vs wide (140 cols) layout', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-responsive-'));
+  try {
+    const orchDir = path.join(tmp, 'docs', 'orchestration');
+    fs.mkdirSync(orchDir, { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'docs', 'orchestration-plan.md'), '# Plan\n');
+    const tasksFile = path.join(orchDir, 'tasks.json');
+    fs.writeFileSync(tasksFile, JSON.stringify({
+      version: 1,
+      batchId: 'batch-resp-test',
+      tasks: [
+        { id: 't1', title: 'Implement narrow test', kind: 'feature', status: 'pending', brief: 'docs/b.md', report: 'docs/r.md' },
+      ],
+    }, null, 2));
+
+    const input = sample();
+    input.snap.panes[0].cwd = tmp;
+    const m = board.buildModel(input);
+    ui.setColor(false);
+    const st = board.orchestrateState(m, null, [], 'tasks', tmp);
+
+    // Wide layout: includes tier and conf columns
+    const outWide = board.render(m, { width: 140, orchestrate: st });
+    assert.match(outWide, /id +st +kind +eff +tier +model +conf +title/);
+
+    // Narrow layout: omits tier and conf columns
+    const outNarrow = board.render(m, { width: 80, orchestrate: st });
+    assert.match(outNarrow, /id +st +kind +eff +model +title/);
+    assert.doesNotMatch(outNarrow, /tier +model +conf/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('orchestrate TUI: delegation share bar in analytics tab', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-gauge-'));
+  try {
+    const input = sample();
+    input.snap.panes[0].cwd = tmp;
+    const m = board.buildModel(input);
+    // Assign head-honcho role to pane 0 and regular worker role to pane 1
+    m.rows[0].role = 'head-honcho';
+    m.rows[0].cost = { v: 2.0, src: 'exact' };
+    m.rows[1].role = 'worker';
+    m.rows[1].cost = { v: 8.0, src: 'exact' };
+    ui.setColor(false);
+
+    const st = board.orchestrateState(m, null, [], 'analytics', tmp);
+    const out = board.render(m, { width: 140, orchestrate: st });
+    assert.match(out, /delegation share: +[█░]+ +80% workers · 20% orchestrator +\(target ≥80% workers\)/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('orchestrate TUI: pressing c copies spawn command and sets notice', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-copy-'));
+  try {
+    const orchDir = path.join(tmp, 'docs', 'orchestration');
+    fs.mkdirSync(orchDir, { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'docs', 'orchestration-plan.md'), '# Plan\n');
+    const tasksFile = path.join(orchDir, 'tasks.json');
+    fs.writeFileSync(tasksFile, JSON.stringify({
+      version: 1,
+      batchId: 'batch-copy-test',
+      tasks: [
+        { id: 't1', title: 'Build login flow', kind: 'feature', status: 'pending', brief: 'docs/b.md', report: 'docs/r.md' },
+      ],
+    }, null, 2));
+
+    const input = sample();
+    input.snap.panes[0].cwd = tmp;
+    const m = board.buildModel(input);
+    ui.setColor(false);
+
+    const st = board.orchestrateState(m, null, [], 'tasks', tmp);
+    assert.equal(st.notice, null);
+
+    board.orchestrateKey(st, 'c', m);
+    assert.equal(st.notice, 'copied spawn command for t1');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

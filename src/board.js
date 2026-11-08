@@ -705,7 +705,29 @@ function orchestrationEnabled(cfg, opts) {
 }
 
 // The clickable menu bar. Returns the line and its hit regions.
-function menuBar(menu, width) {
+function menuBar(arg1, arg2, arg3, arg4, arg5, arg6) {
+  let menu;
+  let width;
+  let hitsArg = null;
+  let yArg = 0;
+  let activeDrawer = null;
+
+  if (typeof arg2 === 'number' && typeof arg1 === 'object' && arg1 && !arg1.rows) {
+    menu = arg1;
+    width = arg2;
+    activeDrawer = arg3 || (menu && menu.activeDrawer) || null;
+  } else if (typeof arg2 === 'number' && typeof arg3 === 'object' && arg3) {
+    menu = arg3;
+    width = arg2;
+    hitsArg = arg4;
+    yArg = typeof arg5 === 'number' ? arg5 : 0;
+    activeDrawer = arg6 || (menu && menu.activeDrawer) || null;
+  } else {
+    menu = (typeof arg1 === 'object' && arg1 && !arg1.rows) ? arg1 : (arg3 || {});
+    width = typeof arg2 === 'number' ? arg2 : 100;
+    activeDrawer = arg3 || (menu && menu.activeDrawer) || null;
+  }
+
   const provider = ui.clean(menu.provider);
   const items = [
     ['tags', `tags: ${menu.tags}`],
@@ -733,11 +755,15 @@ function menuBar(menu, width) {
   let line = '';
   let x = 0;
   const hits = [];
-  for (const [action, text] of items) {
+  for (const [action, rawText] of items) {
+    const isActive = Boolean(activeDrawer && activeDrawer === action);
+    const text = isActive ? `▾ ${rawText}` : rawText;
     const t = `[${text}]`;
     if (x + ui.strWidth(t) > width) break;
-    hits.push({ action, x0: x, x1: x + ui.strWidth(t) - 1 });
-    line += C.cyan(t) + ' ';
+    const h = { action, x0: x, x1: x + ui.strWidth(t) - 1 };
+    hits.push(h);
+    if (hitsArg && Array.isArray(hitsArg)) hitsArg.push({ ...h, y: yArg });
+    line += (isActive ? bold(C.cyan(t)) : C.cyan(t)) + ' ';
     x += ui.strWidth(t) + 1;
   }
   const pKeys = provider ? (menu.hasSubviews ? ' p P' : ' p') : '';
@@ -2083,8 +2109,35 @@ function orchestrateState(model, cfg, warnings = [], initialTab = 'tasks', prefe
   };
 }
 
-function orchestrateLines(st, model, width = 100) {
-  const hits = [];
+function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null, y0 = 0) {
+  let st;
+  let model;
+  let width;
+  let hitsArg;
+  let y0Arg;
+
+  if (stOrModel && Array.isArray(stOrModel.rows)) {
+    model = stOrModel;
+    width = typeof modelOrWidth === 'number' ? modelOrWidth : 100;
+    st = widthOrSt;
+    hitsArg = hits;
+    y0Arg = typeof y0 === 'number' ? y0 : 0;
+  } else {
+    st = stOrModel;
+    model = modelOrWidth;
+    width = typeof widthOrSt === 'number' ? widthOrSt : 100;
+    hitsArg = hits;
+    y0Arg = typeof y0 === 'number' ? y0 : 0;
+  }
+
+  const localHits = [];
+  const addHit = (h) => {
+    localHits.push(h);
+    if (hitsArg && Array.isArray(hitsArg)) {
+      hitsArg.push({ ...h, y: y0Arg + h.y });
+    }
+  };
+
   const tabLabels = [
     ['tasks', '1 tasks · advisor'],
     ['analytics', '2 analytics · summary'],
@@ -2095,13 +2148,21 @@ function orchestrateLines(st, model, width = 100) {
   for (const [key, label] of tabLabels) {
     const active = st.tab === key;
     const text = `[${label}]`;
-    if (x + ui.strWidth(text) < width) {
-      hits.push({ action: `orch-tab:${key}`, y: 0, x0: x, x1: x + ui.strWidth(text) - 1 });
+    const w = ui.strWidth(text);
+    if (x + w < width) {
+      addHit({ action: 'orch-tab', tab: key, y: 0, x0: x, x1: x + w - 1 });
     }
     head += (active ? bold(C.cyan(text)) : C.dim(text)) + ' ';
-    x += ui.strWidth(text) + 1;
+    x += w + 1;
   }
-  const hint = ' tab/1-3 switch · esc close';
+  const closePill = '[esc close]';
+  const cw = ui.strWidth(closePill);
+  if (x + cw < width) {
+    addHit({ action: 'orch-close', y: 0, x0: x, x1: x + cw - 1 });
+    head += C.dim(closePill) + ' ';
+    x += cw + 1;
+  }
+  const hint = 'tab/1-3 switch';
   if (x + ui.strWidth(hint) <= width) head += C.dim(hint);
   const lines = [head, ''];
 
@@ -2110,19 +2171,74 @@ function orchestrateLines(st, model, width = 100) {
 
   if (st.tab === 'setup') {
     const sub = setupLines(st.setup, width);
-    return { lines: [...lines, ...sub].map((l) => ui.clip(l, width)), hits };
+    return { lines: [...lines, ...sub].map((l) => ui.clip(l, width)), hits: localHits };
   }
 
   if (st.tab === 'analytics') {
-    const byBar = analytics.VIEWS.map((v) => (v === st.by ? bold(C.cyan(`[${v}]`)) : C.text(v))).join(' ');
-    const winBar = ORCH_WINDOWS.map((w, i) => (i === st.windowIndex ? bold(C.cyan(`[${w.label}]`)) : C.text(w.label))).join(' ');
-    lines.push(`  ${C.dim('by (b/←→):')} ${byBar}   ${C.dim('window (d):')} ${winBar}   ${C.dim('s rebuild summary.json')}`);
+    const barY = lines.length;
+    let byBar = '';
+    let bx = ui.strWidth('  by (b/←→): ');
+    for (const v of analytics.VIEWS) {
+      const active = v === st.by;
+      const pill = `[${v}]`;
+      const w = ui.strWidth(pill);
+      addHit({ action: 'orch-by', by: v, y: barY, x0: bx, x1: bx + w - 1 });
+      byBar += (active ? bold(C.cyan(pill)) : C.dim(pill)) + ' ';
+      bx += w + 1;
+    }
+    bx += ui.strWidth('  window (d): ');
+    let winBar = '';
+    for (let i = 0; i < ORCH_WINDOWS.length; i++) {
+      const wnd = ORCH_WINDOWS[i];
+      const active = i === st.windowIndex;
+      const pill = `[${wnd.label}]`;
+      const w = ui.strWidth(pill);
+      addHit({ action: 'orch-window', index: i, y: barY, x0: bx, x1: bx + w - 1 });
+      winBar += (active ? bold(C.cyan(pill)) : C.dim(pill)) + ' ';
+      bx += w + 1;
+    }
+    const refPill = '[s refresh summary]';
+    const rw = ui.strWidth(refPill);
+    addHit({ action: 'orch-refresh-summary', y: barY, x0: bx, x1: bx + rw - 1 });
+    lines.push(`  ${C.dim('by (b/←→):')} ${byBar}  ${C.dim('window (d):')} ${winBar}  ${C.dim(refPill)}`);
+
     const sumData = state.readJson(advisor.summaryPath());
     if (sumData && Number.isFinite(sumData.runs)) {
       const kindCount = Object.keys(sumData.by_kind || {}).length;
       lines.push(`  ${C.dim('summary.json:')} ${C.text(`${sumData.runs} finished runs across ${kindCount} task kind${kindCount === 1 ? '' : 's'}`)}`);
     } else {
       lines.push(`  ${C.dim('summary.json:')} ${C.amber('no summary yet · press s to build from ledger')}`);
+    }
+
+    let orchCost = 0;
+    let workerCost = 0;
+    let orchTokens = 0;
+    let workerTokens = 0;
+    if (model && Array.isArray(model.rows)) {
+      for (const r of model.rows) {
+        const isOrch = /^(head-honcho|orchestrator|lead)$/i.test(String(r.role || ''));
+        const cost = r.cost && typeof r.cost.v === 'number' ? r.cost.v : (typeof r.cost === 'number' ? r.cost : 0);
+        const tokens = r.tokens && typeof r.tokens.v === 'number' ? r.tokens.v : (typeof r.tokens === 'number' ? r.tokens : 0);
+        if (isOrch) {
+          if (cost > 0) orchCost += cost;
+          if (tokens > 0) orchTokens += tokens;
+        } else {
+          if (cost > 0) workerCost += cost;
+          if (tokens > 0) workerTokens += tokens;
+        }
+      }
+    }
+    const useCost = (orchCost + workerCost) > 0;
+    const orchVal = useCost ? orchCost : orchTokens;
+    const workerVal = useCost ? workerCost : workerTokens;
+    const totalVal = orchVal + workerVal;
+    if (totalVal > 0) {
+      const workerPct = Math.round((workerVal / totalVal) * 100);
+      const orchPct = 100 - workerPct;
+      const workerBlocks = Math.max(0, Math.min(10, Math.round((workerPct / 100) * 10)));
+      const bar = '█'.repeat(workerBlocks) + '░'.repeat(10 - workerBlocks);
+      const pctPaint = workerPct >= 80 ? C.green : (workerPct >= 60 ? C.yellow : C.red);
+      lines.push(`  ${C.dim('delegation share:')} ${C.cyan(bar)} ${pctPaint(`${workerPct}% workers`)} ${C.dim('·')} ${C.text(`${orchPct}% orchestrator`)}  ${C.dim('(target ≥80% workers)')}`);
     }
     lines.push('');
     const win = ORCH_WINDOWS[st.windowIndex] || ORCH_WINDOWS[0];
@@ -2133,7 +2249,7 @@ function orchestrateLines(st, model, width = 100) {
     }
     if (st.notice) lines.push('', bold(C.green(`  ✓ ${ui.clean(st.notice)}`)));
     if (st.error) lines.push('', C.red(`  ${ui.clean(st.error)}`));
-    return { lines: lines.map((l) => ui.clip(l, width)), hits };
+    return { lines: lines.map((l) => ui.clip(l, width)), hits: localHits };
   }
 
   // Tab 1: Launch & Plan Header + Tasks & Advisor Table
@@ -2174,29 +2290,58 @@ function orchestrateLines(st, model, width = 100) {
 
   if (loaded.hasTasksFile && loaded.rows.length > 0) {
     const selIdx = Math.max(0, Math.min(st.taskRow, loaded.rows.length - 1));
-    lines.push(`  ${bold(C.accent('TASKS & ADVISOR'))}  ${C.dim('↑↓ task · ←→ tool · space effort · ↵ model · f fallbacks')}`);
-    lines.push(C.dim(`    ${ui.padEnd('id', 16)} ${ui.padEnd('kind', 13)} ${ui.padEnd('tool', 9)} ${ui.padEnd('effort', 7)} ${ui.padEnd('tier', 10)} ${ui.padEnd('model', 22)} ${ui.padEnd('conf', 7)} status`));
-    loaded.rows.forEach((r, i) => {
-      const on = i === selIdx;
-      const rec = r.recommendation;
-      const mark = on ? bold(C.cyan('  › ')) : '    ';
-      const toolStr = rec.recommendedTool || 'auto';
-      const modelStr = rec.recommendedModel || (rec.requiresModelChoice ? '<choose>' : 'auto');
-      const rowText = [
-        ui.padEnd(ui.truncate(r.id, 16), 16),
-        ui.padEnd(ui.truncate(r.kind, 13), 13),
-        ui.padEnd(ui.truncate(toolStr, 9), 9),
-        ui.padEnd(ui.truncate(rec.recommendedEffort || '?', 7), 7),
-        ui.padEnd(ui.truncate(rec.recommendedTier || '?', 10), 10),
-        ui.padEnd(ui.truncate(modelStr, 22), 22),
-        ui.padEnd(ui.truncate(rec.confidence || '?', 7), 7),
-        ui.clean(r.status),
-      ].join(' ');
-      lines.push(mark + (on ? bold(C.text(rowText)) : C.text(rowText)));
-    });
+    lines.push(`  ${bold(C.accent('TASKS & ADVISOR'))}  ${C.dim('↑↓ task · ←→ tool · space effort · ↵ model · c copy · f fallbacks')}`);
+    if (width < 92) {
+      lines.push(C.dim(`    ${ui.padEnd('id', 8)} ${ui.padEnd('st', 7)} ${ui.padEnd('kind', 12)} ${ui.padEnd('eff', 4)} ${ui.padEnd('model', 18)} title`));
+      loaded.rows.forEach((r, i) => {
+        const on = i === selIdx;
+        const rec = r.recommendation || {};
+        const mark = on ? bold(C.cyan('  › ')) : '    ';
+        const modelStr = rec.recommendedModel || (rec.requiresModelChoice ? '<choose>' : 'auto');
+        const conf = String(rec.confidence || '').toLowerCase();
+        const effPaint = conf === 'high' ? C.green : (conf === 'medium' ? C.yellow : C.dim);
+        const effText = ui.padEnd(ui.truncate(rec.recommendedEffort || r.effort || '?', 4), 4);
+        const cId = ui.padEnd(ui.truncate(r.id, 8), 8);
+        const cSt = ui.padEnd(ui.truncate(r.status || '?', 7), 7);
+        const cKind = ui.padEnd(ui.truncate(r.kind || '?', 12), 12);
+        const cModel = ui.padEnd(ui.truncate(modelStr, 18), 18);
+        const cTitle = ui.clean(r.title || '');
+        const rowLine = `${mark}${C.text(cId)} ${C.text(cSt)} ${C.text(cKind)} ${effPaint(effText)} ${C.text(cModel)} ${C.text(cTitle)}`;
+        const rowY = lines.length;
+        lines.push(on ? bold(rowLine) : rowLine);
+        addHit({ action: 'orch-task-row', index: i, y: rowY, x0: 0, x1: 33 });
+        addHit({ action: 'orch-effort', index: i, y: rowY, x0: 34, x1: 38 });
+        addHit({ action: 'orch-model', index: i, y: rowY, x0: 39, x1: 57 });
+        addHit({ action: 'orch-task-row', index: i, y: rowY, x0: 58, x1: Math.max(58, width - 1) });
+      });
+    } else {
+      lines.push(C.dim(`    ${ui.padEnd('id', 8)} ${ui.padEnd('st', 7)} ${ui.padEnd('kind', 12)} ${ui.padEnd('eff', 6)} ${ui.padEnd('tier', 8)} ${ui.padEnd('model', 18)} ${ui.padEnd('conf', 7)} title`));
+      loaded.rows.forEach((r, i) => {
+        const on = i === selIdx;
+        const rec = r.recommendation || {};
+        const mark = on ? bold(C.cyan('  › ')) : '    ';
+        const modelStr = rec.recommendedModel || (rec.requiresModelChoice ? '<choose>' : 'auto');
+        const cId = ui.padEnd(ui.truncate(r.id, 8), 8);
+        const cSt = ui.padEnd(ui.truncate(r.status || '?', 7), 7);
+        const cKind = ui.padEnd(ui.truncate(r.kind || '?', 12), 12);
+        const cEff = ui.padEnd(ui.truncate(rec.recommendedEffort || r.effort || '?', 6), 6);
+        const cTier = ui.padEnd(ui.truncate(rec.recommendedTier || '?', 8), 8);
+        const cModel = ui.padEnd(ui.truncate(modelStr, 18), 18);
+        const cConf = ui.padEnd(ui.truncate(rec.confidence || '?', 7), 7);
+        const cTitle = ui.clean(r.title || '');
+        const rowLine = `${mark}${C.text(cId)} ${C.text(cSt)} ${C.text(cKind)} ${C.text(cEff)} ${C.text(cTier)} ${C.text(cModel)} ${C.text(cConf)} ${C.text(cTitle)}`;
+        const rowY = lines.length;
+        lines.push(on ? bold(rowLine) : rowLine);
+        addHit({ action: 'orch-task-row', index: i, y: rowY, x0: 0, x1: 33 });
+        addHit({ action: 'orch-effort', index: i, y: rowY, x0: 34, x1: 40 });
+        addHit({ action: 'orch-task-row', index: i, y: rowY, x0: 41, x1: 49 });
+        addHit({ action: 'orch-model', index: i, y: rowY, x0: 50, x1: 68 });
+        addHit({ action: 'orch-task-row', index: i, y: rowY, x0: 69, x1: Math.max(69, width - 1) });
+      });
+    }
     const sel = loaded.rows[selIdx];
     if (sel) {
-      const fb = sel.recommendation.fallbacks && sel.recommendation.fallbacks.length ? sel.recommendation.fallbacks.join(', ') : 'none';
+      const fb = sel.recommendation && sel.recommendation.fallbacks && sel.recommendation.fallbacks.length ? sel.recommendation.fallbacks.join(', ') : 'none';
       lines.push(C.dim(`  title: ${ui.clean(sel.title)} · brief: ${ui.clean(sel.brief)} · fallbacks: ${ui.clean(fb)}`));
     }
   } else {
@@ -2230,7 +2375,7 @@ function orchestrateLines(st, model, width = 100) {
   }
   if (st.notice) lines.push('', bold(C.green(`  ✓ ${ui.clean(st.notice)}`)));
   if (st.error) lines.push('', C.red(`  ${ui.clean(st.error)}`));
-  return { lines: lines.map((l) => ui.clip(l, width)), hits };
+  return { lines: lines.map((l) => ui.clip(l, width)), hits: localHits };
 }
 
 function rebuildSummaryInPlace(st) {
@@ -2393,6 +2538,14 @@ function orchestrateKey(st, key, model = null) {
       }
     } else if (key === '\r' || key === '\n') {
       st.edit = { target: 'task-file', tasksFile: loaded.tasksFile, taskId: cur.id, field: 'model', text: cur.model || '' };
+    } else if (key === 'c') {
+      const eff = cur.effort || (cur.recommendation && cur.recommendation.recommendedEffort) || 'medium';
+      const mod = cur.model || (cur.recommendation && cur.recommendation.recommendedModel) || '';
+      const modelArg = mod && mod !== '<choose>' ? ` --model ${mod}` : '';
+      const cmd = `roostr spawn --task "${cur.title}" --kind ${cur.kind} --effort ${eff}${modelArg}`.trim();
+      copyToClipboard(cmd);
+      st.notice = `copied spawn command for ${cur.id}`;
+      st.error = null;
     } else if (key === 'f') {
       st.edit = { target: 'task-file', tasksFile: loaded.tasksFile, taskId: cur.id, field: 'fallbacks', text: (cur.fallbacks || []).join(', ') };
     }
@@ -2413,6 +2566,15 @@ function orchestrateKey(st, key, model = null) {
       try { config.saveConfig(cfg); st.notice = `${kind} effort -> ${tk.effort || 'auto'}`; } catch (e) { st.error = e.message; }
     } else if (key === '\r' || key === '\n') {
       st.edit = { target: 'kind-config', kind, field: 'model', text: tk.model || '' };
+    } else if (key === 'c') {
+      const rec = advisor.recommend('', tk.effort || null, tk.model || null, { kind, config: cfg });
+      const tkEff = tk.effort || (rec && rec.recommendedEffort) || 'medium';
+      const tkMod = tk.model || (rec && rec.recommendedModel) || '';
+      const modelArg = tkMod && tkMod !== '<choose>' ? ` --model ${tkMod}` : '';
+      const cmd = `roostr spawn --task "${kind} task" --kind ${kind} --effort ${tkEff}${modelArg}`.trim();
+      copyToClipboard(cmd);
+      st.notice = `copied spawn command for ${kind}`;
+      st.error = null;
     } else if (key === 'f') {
       st.edit = { target: 'kind-config', kind, field: 'fallbacks', text: (tk.fallbacks || []).join(', ') };
     }
@@ -2442,7 +2604,8 @@ function render(model, {
   const gap = Math.max(2, width - ui.strWidth(left) - ui.strWidth(right));
   lines.push(left + ' '.repeat(gap) + C.text(right));
   if (menu) {
-    const bar = menuBar(menu, width);
+    const activeDrawer = orchestrate ? 'orchestrate' : (today ? 'today' : (backups ? 'backups' : (options ? 'options' : (help ? 'help' : null))));
+    const bar = menuBar(menu, width, activeDrawer);
     for (const h of bar.hits) regions.push({ ...h, y: lines.length });
     lines.push(bar.line);
   }
@@ -3932,8 +4095,55 @@ function runLive(opts) {
       draw();
       return;
     }
-    if (orchestrate && h && (h.action === 'orchestrate' || (typeof h.action === 'string' && h.action.startsWith('orch-tab:')))) {
-      act(h.action);
+    if (h && ['orchestrate', 'today', 'backups', 'options', 'help'].includes(h.action)) {
+      if (h.action === 'orchestrate') {
+        if (orchestrate) orchestrate = null;
+        else act('orchestrate');
+      } else if (h.action === 'today') {
+        if (today) today = false;
+        else act('today');
+      } else if (h.action === 'backups') {
+        if (backups) backups = null;
+        else openBackups();
+      } else if (h.action === 'options') {
+        if (options) options = false;
+        else act('options');
+      } else if (h.action === 'help') {
+        help = !help;
+      }
+      draw();
+      return;
+    }
+    if (orchestrate && h) {
+      if (h.action === 'orch-tab') {
+        if (ORCHESTRATE_TABS.includes(h.tab)) {
+          orchestrate.tab = h.tab;
+          orchestrate.notice = null;
+          orchestrate.error = null;
+        }
+      } else if (typeof h.action === 'string' && h.action.startsWith('orch-tab:')) {
+        act(h.action);
+      } else if (h.action === 'orch-close') {
+        orchestrate = null;
+      } else if (h.action === 'orch-task-row') {
+        orchestrate.taskRow = h.index;
+      } else if (h.action === 'orch-effort') {
+        orchestrate.taskRow = h.index;
+        orchestrateKey(orchestrate, ' ', model);
+      } else if (h.action === 'orch-model') {
+        orchestrate.taskRow = h.index;
+        orchestrateKey(orchestrate, '\r', model);
+      } else if (h.action === 'orch-copy-spawn') {
+        orchestrate.taskRow = h.index;
+        orchestrateKey(orchestrate, 'c', model);
+      } else if (h.action === 'orch-by') {
+        orchestrate.by = h.by;
+      } else if (h.action === 'orch-window') {
+        orchestrate.windowIndex = h.index;
+      } else if (h.action === 'orch-refresh-summary') {
+        rebuildSummaryInPlace(orchestrate);
+      }
+      draw();
       return;
     }
     if (!h || edit || setup || orchestrate || headPicker) return;

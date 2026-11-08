@@ -30,6 +30,7 @@ const C = {
   screen: fg(180), // values read from the pane screen
   green: fg(78),
   amber: fg(214),
+  yellow: fg(214),
   red: fg(203),
   cyan: fg(80),
   gold: fg(221),
@@ -168,4 +169,8 @@ function clip(line, width) {
   return out + (colorOn ? '\x1b[0m' : '');
 }
 
-module.exports = { C, WS, bold, clean, setColor, colorOn: isColorOn, defaultColor, stripAnsi, strWidth, truncate, padEnd, padStart, cell, clip };
+module.exports = {
+  C, WS, bold, clean, setColor, colorOn: isColorOn, defaultColor,
+  stripAnsi, strWidth, truncate, padEnd, padStart, cell, clip,
+  green: C.green, yellow: C.yellow, red: C.red, cyan: C.cyan,
+};
