@@ -31,7 +31,7 @@ The core observability board is fully implemented, verified with 418 tests, and 
 ### Developer Experience & Zero Dependencies
 * **Zero npm Dependencies**: Pure Node 22 native implementation using standard library modules only.
 * **Agent Statusline Integrations**: Drop-in statusline snippets for Claude Code, Agy, OpenCode, and Kilo (`integrations/`).
-* **SHA-256 Pinned Crewfiles**: Validates workspace-level `.roostr.toml` configuration files against SHA-256 checksums to prevent unauthorized prompt or model overrides.
+* **SHA-256 Pinned .roostr.toml files**: Validates workspace-level `.roostr.toml` configuration files against SHA-256 checksums to prevent unauthorized prompt or model overrides.
 
 ---
 
