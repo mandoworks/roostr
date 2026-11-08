@@ -27,6 +27,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Smart Spawner Execution & Daemon Escalation Triggers**:
   - `roostr spawn --execute` automates worktree pane splitting, agent initialization, pane labeling, board reporting, and ledger tracking.
   - `src/daemon.js` evaluates five deterministic procedural escalation triggers (`loop-3x`, `stalled-180s`, `blocked`, `context-ceiling` at `85%`, and `test-regression-2x`) at zero LLM token cost.
+- **Roostr Arena (`roostr arena`, `roostr analytics --share`) & Community Cold-Start Priors**:
+  - `src/arena.js` aggregates anonymized outcome telemetry (`first_try_pass_rate`, `avg_rework`, `avg_cost_per_pass_usd`) by `(kind, tool, model, effort)` with zero private paths, prompts, or repo names.
+  - `roostr arena --share` and `roostr analytics --share` render a copy-pasteable ASCII + Markdown leaderboard card of your 30-day model pass rates and $/pass.
+  - `src/advisor.js` falls back to `~/.roostr/global-summary.json` (`confidence: 'community'`) when a `(kind, model)` pair has fewer than 5 local runs.
+- **One-Command Onboarding (`roostr init`)**:
+  - `src/init.js` creates and pre-trusts a starter `.roostr.toml` in the current project and seeds `~/.roostr/config.json` with coding agent CLIs detected on `PATH`.
 - **Symlink Path Guards & `.bak` State Recovery**:
   - `fs.realpathSync` boundary verification in `src/crewfile.js` and `src/report.js` plus automatic `.bak` fallback in `src/state.js`.
 

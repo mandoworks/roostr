@@ -86,10 +86,12 @@ Roostr includes a data-driven orchestration engine and canonical agent skill ([`
   3. **`3 setup`**: Configure enabled coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), and per-kind defaults.
 - **CLI Subcommands**:
   ```sh
+  roostr init                               # create & trust a starter .roostr.toml and detect installed agent CLIs
   roostr recommend "<task>" --kind <kind>   # empirical model, tier, and effort recommendation
   roostr tasks                              # validate docs/orchestration/tasks.json and recommend per task
   roostr summary                            # refresh first-try pass rates in ~/.roostr/summary.json
-  roostr analytics --days 7 --by model      # cost, token, and pass-rate breakdown
+  roostr analytics --days 7 --by model      # cost, token, and pass-rate breakdown (--share for leaderboard card)
+  roostr arena --share                      # print & copy your 30-day pass-rate + effort leaderboard card
   ```
 
 See [docs/orchestration.md](docs/orchestration.md) and [skills/roostr/SKILL.md](skills/roostr/SKILL.md) for the complete Head Honcho, event-driven Daemon, and warm-pane context reset workflow.
