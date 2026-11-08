@@ -325,7 +325,7 @@ function agentName(name, taken = new Set()) {
   return out;
 }
 
-const USAGE = 'usage: crew-board sessions [--json] [--file <path>]';
+const USAGE = 'usage: roostr sessions [--json] [--file <path>]';
 
 function parseArgs(argv) {
   const opts = { json: false, dryRun: false, yes: false, file: null, help: false };
@@ -628,7 +628,7 @@ function mainSessions(argv) {
     return 0;
   }
   if (opts.error) {
-    process.stderr.write(`crew-board sessions: ${opts.error}\n${USAGE}\n`);
+    process.stderr.write(`roostr sessions: ${opts.error}\n${USAGE}\n`);
     return 2;
   }
   const list = loadSessions(opts.file);

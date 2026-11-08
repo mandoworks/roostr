@@ -14,7 +14,7 @@ const sessions = require('./sessions');
 
 const PANE_ID_NAME = /^w[0-9a-z]+[-:]p[0-9a-z]+$/i;
 
-const USAGE = 'usage: crew-board restore [--workspace <id|label|here|all>] [--yes] [--dry-run] [--json] [--focus|--no-focus] [--file <path>]';
+const USAGE = 'usage: roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run] [--json] [--focus|--no-focus] [--file <path>]';
 
 function parseArgs(argv) {
   const opts = {
@@ -160,7 +160,7 @@ async function main(argv) {
     return 0;
   }
   if (opts.error) {
-    process.stderr.write(`crew-board restore: ${opts.error}\n${USAGE}\n`);
+    process.stderr.write(`roostr restore: ${opts.error}\n${USAGE}\n`);
     return 2;
   }
   const list = sessions.loadSessions(opts.file);
@@ -170,7 +170,7 @@ async function main(argv) {
   // A plan without --yes may span every workspace; a real restore needs one.
   const all = opts.workspace === 'all';
   if (opts.yes && !workspace && !all) {
-    process.stderr.write(`crew-board restore: cannot find the current workspace, pass --workspace <id|label> or --workspace all\n`);
+    process.stderr.write(`roostr restore: cannot find the current workspace, pass --workspace <id|label> or --workspace all\n`);
     return 2;
   }
   const scoped = opts.yes || opts.workspace ? sessions.workspaceSessions(list, workspace) : list;

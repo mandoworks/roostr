@@ -34,6 +34,7 @@ const pricing = require('./pricing');
 const state = require('./state');
 const sessions = require('./sessions');
 const backup = require('./backup');
+const ledger = require('./ledger');
 const ui = require('./ui');
 const names = require('./names');
 const recover = require('./recover');
@@ -312,6 +313,10 @@ function buildModel({
     }
 
     const modelField = pick([rep.model, 'exact'], [extra && extra.model, 'crew'], [scr.model, 'screen']);
+    const ctxField = pick([rep.ctx, 'exact'], [scr.ctx, 'screen']);
+    if (ctxField.v !== null && typeof ctxField.v === 'number' && ctxField.v >= 50) {
+      badges.push({ name: 'COMPACT', kind: 'compact', level: ctxField.v >= 85 ? 'critical' : (ctxField.v >= 75 ? 'high' : 'warn') });
+    }
     const effortVal = rep.effort || (scr && scr.effort) || null;
     const apiEstimate = pricing.estimate(modelField.v, rep);
     const costField = pick([rep.cost, 'exact'], [scr.cost, 'screen'], [apiEstimate && apiEstimate.cost, 'estimate']);
@@ -343,7 +348,7 @@ function buildModel({
       status: st.status,
       statusFor: now - st.since,
       statusExact: st.exact,
-      ctx: pick([rep.ctx, 'exact'], [scr.ctx, 'screen']),
+      ctx: ctxField,
       tokens: pick([rep.tokens, 'exact'], [scr.tokens, 'screen']),
       cost: costField,
       price: costField.src === 'estimate' && apiEstimate ? apiEstimate.rate : null,
@@ -537,11 +542,31 @@ function rowCells(r, shortState) {
     agent: agentCell(r),
     effort: effortCell(r),
     state: { text: `${label} ${time}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
-    ctx: val(r.ctx, fmtCtx),
+    ctx: ctxCell(r, val(r.ctx, fmtCtx)),
     tokens: val(r.tokens, fmtTokens),
     cost: costCell(r, estimatedCost(r, val(r.cost, fmtCost))),
     ram: val(r.ram, fmtRam),
   };
+}
+
+function ctxState(ctx) {
+  if (ctx === null || typeof ctx !== 'number') return null;
+  if (ctx >= 85) return 'critical';
+  if (ctx >= 75) return 'high';
+  if (ctx >= 50) return 'warn';
+  if (ctx >= 30) return 'warm';
+  return null;
+}
+const CTX_PAINT = {
+  critical: (s) => bold(C.red(s)),
+  high: (s) => bold(C.amber(s)),
+  warn: (s) => C.amber(s),
+  warm: (s) => C.cyan(s),
+};
+
+function ctxCell(r, cell) {
+  const st = ctxState(r.ctx.v);
+  return st ? { text: cell.text, paint: CTX_PAINT[st] } : cell;
 }
 
 // An API estimate is not a bill: it carries a tilde and the screen tint.
@@ -575,9 +600,16 @@ function taskCell(r, width) {
   while (n > 0 && width - badgeW() < Math.min(taskLen, 12)) n--;
   const paint = r.taskSrc === 'screen' ? C.screen : C.text;
   const task = r.task === null ? C.dim('?') : paint(ui.truncate(r.task, Math.max(4, width - badgeW())));
-  const badges = r.badges.slice(0, n).map((b, i) => (
-    b.kind === 'report' ? bold(C.gold(texts[i])) : b.kind === 'unknown' ? C.dim(texts[i]) : C.green(texts[i])
-  )).join(' ');
+  const badges = r.badges.slice(0, n).map((b, i) => {
+    if (b.kind === 'compact') {
+      if (b.level === 'critical') return bold(C.red(texts[i]));
+      if (b.level === 'high') return bold(C.amber(texts[i]));
+      return C.amber(texts[i]);
+    }
+    if (b.kind === 'report') return bold(C.gold(texts[i]));
+    if (b.kind === 'unknown') return C.dim(texts[i]);
+    return C.green(texts[i]);
+  }).join(' ');
   return task + (badges ? ` ${badges}` : '');
 }
 
@@ -677,6 +709,8 @@ function menuBar(menu, width) {
     ['view', `view: ${menu.view}`],
     ['scope', `scope: ${menu.scope}`],
     ['edit', 'edit task'],
+    ['backups', 'R backups'],
+    ['options', 'o options'],
   ];
   if (menu.orchestration) {
     items.push(
@@ -710,7 +744,7 @@ function menuBar(menu, width) {
   const orchKeys = menu.orchestration ? ' S O K M C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
-    : ` click to select · double click jump · ↑↓ ↵ f e t v s d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
+    : ` click to select · double click jump · ↑↓ ↵ f e t v s R o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
   if (x + ui.strWidth(hint) <= width) line += (menu.notice ? hint : C.dim(hint));
   return { line, hits };
 }
@@ -1123,8 +1157,9 @@ function helpLines(menu, sources, width = 100) {
       ['u', 'install the offered update'],
       ['r', 'refresh now'],
       ['R', 'backups: check what is saved, rebuild a workspace'],
+      ['o', 'options: tokscale, compaction, settings'],
       ['?', 'this help'],
-      ['esc', 'close details, today or backups'],
+      ['esc', 'close details, today, backups or options'],
       ['q', 'quit'],
     ]],
   };
@@ -1223,6 +1258,10 @@ function detailBox(r, width, ts = null, notice = null) {
     c.cost.paint(c.cost.text) + budget,
     `ram ${c.ram.paint(c.ram.text)}`,
   ].join(C.dim(' · '))));
+  if (r.ctx && typeof r.ctx.v === 'number' && r.ctx.v >= 50) {
+    const note = r.ctx.v >= 85 ? 'critical context' : (r.ctx.v >= 75 ? 'high context' : 'attention dilution risk');
+    lines.push(field('advice', bold(C.amber(`${note} (${Math.round(r.ctx.v)}%) · /compact recommended`))));
+  }
   if (r.price) {
     lines.push(field('price', C.text(`~${fmtCost(r.cost.v)} at API rates · ${fmtCost(r.price.input)} in / ${fmtCost(r.price.output)} out per 1M tokens`)));
   }
@@ -1259,6 +1298,11 @@ function banner(model) {
   if (blocked.length) {
     const who = blocked.map((r) => `${r.name} ${fmtDuration(r.statusFor)}`).join(' · ');
     parts.push({ kind: 'blocked', text: `◼ ${blocked.length} BLOCKED: ${who}` });
+  }
+  const compact = model.rows.filter((r) => r.ctx && typeof r.ctx.v === 'number' && r.ctx.v >= 75);
+  if (compact.length) {
+    const who = compact.map((r) => `${r.name} ${Math.round(r.ctx.v)}%`).join(' · ');
+    parts.push({ kind: 'compact', text: `⚡ ${compact.length} HIGH CTX: ${who} (compact recommended)` });
   }
   const over = model.rows.filter((r) => budgetState(r.cost.v, r.budget) === 'over');
   if (over.length) {
@@ -1457,6 +1501,89 @@ function backupAgo(iso, now) {
   if (m < 60) return `${m}m`;
   if (m < 1440) return `${Math.round(m / 60)}h`;
   return `${Math.round(m / 1440)}d`;
+}
+
+// ---------------------------------------------------------------- options
+
+function findTokscale() {
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const full = path.join(dir, `tokscale${ext}`);
+      try {
+        if (fs.existsSync(full)) return full;
+      } catch {
+        // Unreadable directory in PATH is skipped.
+      }
+    }
+  }
+  return null;
+}
+
+// The options view: tokscale status, compaction thresholds, active board
+// settings, and storage locations. Toggle with 'o' or click [o options].
+function optionsLines(model, menu, width = 100, metric = 'tokens') {
+  const lines = [`${bold(C.title('options'))}  ${C.dim('o close · esc close · t tags · v view · s scope · $ metric · ? help')}`];
+  lines.push('');
+
+  const colW = Math.max(14, Math.min(18, Math.floor(width / 4)));
+  const field = (k, v) => `  ${C.dim(ui.padEnd(k, colW))}${v}`;
+  const section = (title) => bold(C.accent(title));
+
+  // 1. Tokscale
+  lines.push(section('TOKSCALE CONNECTION'));
+  const tsBin = findTokscale();
+  const ts = model.tokscale;
+  if (ts) {
+    lines.push(field('binary', C.green(`installed (${tsBin || 'on PATH'})`)));
+    const ago = fmtDuration(Math.max(0, model.now - ts.at));
+    const clients = Object.keys(ts.clients || {}).join(', ') || 'none';
+    lines.push(field('status', C.text(`active · polled ${ago} ago · spend today: ${fmtCost(ts.total)}`)));
+    lines.push(field('clients', C.dim(clients)));
+  } else if (tsBin) {
+    lines.push(field('binary', C.green(`installed (${tsBin})`)));
+    lines.push(field('status', C.amber('background poll running (first run can take ~15s)')));
+  } else {
+    lines.push(field('binary', C.dim('not found on PATH')));
+    lines.push(field('status', C.dim('optional · enables cross-agent spend tracking (github.com/junhoyeo/tokscale)')));
+  }
+  lines.push('');
+
+  // 2. Compaction
+  lines.push(section('CONTEXT COMPACTION'));
+  lines.push(field('thresholds', C.text('≥30% notice (warm) · ≥50% warn (dilution) · ≥75% high · ≥85% critical')));
+  lines.push(field('action', C.cyan('/compact recommended in high-context agent panes')));
+  const over50 = model.rows.filter((r) => r.ctx && typeof r.ctx.v === 'number' && r.ctx.v >= 50);
+  if (over50.length) {
+    const list = over50.map((r) => `${r.name || r.paneId} (${Math.round(r.ctx.v)}%)`).join(', ');
+    lines.push(field('high context', bold(C.amber(`${over50.length} pane(s): ${list}`))));
+  } else {
+    lines.push(field('status', C.green(`all ${model.rows.length} pane(s) within safe context (<50%)`)));
+  }
+  lines.push('');
+
+  // 3. Board settings
+  lines.push(section('BOARD SETTINGS'));
+  const tagMode = menu ? menu.tags : 'off';
+  const viewMode = menu ? menu.view : 'auto';
+  const scopeMode = menu ? menu.scope : 'here';
+  lines.push(field('tags (t)', C.text(`${tagMode}  ${C.dim('(cycle: label ▸ tokens ▸ metadata ▸ off)')}`)));
+  lines.push(field('layout (v)', C.text(`${viewMode}  ${C.dim('(cycle: auto ▸ line ▸ wrap)')}`)));
+  lines.push(field('scope (s)', C.text(`${scopeMode}  ${C.dim('(cycle: here ▸ all)')}`)));
+  lines.push(field('metric ($)', C.text(`${metric}  ${C.dim('(cycle: tokens ▸ cost)')}`)));
+  const budgetStr = model.dailyBudget ? fmtCost(model.dailyBudget) : 'none';
+  const spendStr = ts ? fmtCost(ts.total) : (model.rows.some((r) => r.cost.v !== null) ? fmtCost(model.rows.reduce((acc, r) => acc + (r.cost.v || 0), 0)) : 'none');
+  lines.push(field('daily budget', C.text(`${budgetStr}  ${C.dim(`(spent: ${spendStr})`)}`)));
+  lines.push('');
+
+  // 4. Paths & Storage
+  lines.push(section('PATHS & STORAGE'));
+  lines.push(field('config', C.dim(config.configPath())));
+  lines.push(field('ledger', C.dim(ledger.ledgerPath())));
+  lines.push(field('backups', C.dim(backup.backupsDir())));
+
+  return lines;
 }
 
 // ------------------------------------------------------------------ setup
@@ -1804,7 +1931,7 @@ function monitorPrompt(scope) {
 function render(model, {
   width = 100, height = 0, error = null, load = os.loadavg(), view = 'auto', menu = null, selected = -1, edit = null, hits = null,
   folded = new Set(), provider = null, subview = null, help = false, detail = false, today = false, metric = 'tokens',
-  backups = null, setup = null, headPicker = null,
+  backups = null, setup = null, headPicker = null, options = false,
 } = {}) {
   const lines = [];
   const regions = [];
@@ -1832,13 +1959,13 @@ function render(model, {
     for (const e of crew.errors) lines.push(C.red(ui.clean(`crew file ${crew.file}: ${e}`)));
   }
   for (const crew of model.untrusted || []) {
-    const how = menu ? 'press a (or click) to allow' : 'open crew-board and press a to allow';
+    const how = menu ? 'press a (or click) to allow' : 'open roostr and press a to allow';
     regions.push({ action: 'trust', y: lines.length, x0: 0, x1: width - 1 });
     lines.push(C.amber(ui.clean(`crew file new or changed, off until you allow it: ${how} · ${crew.file}`)));
   }
   const alerts = banner(model);
   if (alerts.length) {
-    const line = alerts.map((a) => (a.kind === 'blocked' ? bold(C.red(a.text)) : C.amber(a.text))).join(C.dim(' │ '));
+    const line = alerts.map((a) => (a.kind === 'blocked' ? bold(C.red(a.text)) : a.kind === 'compact' ? bold(C.amber(a.text)) : C.amber(a.text))).join(C.dim(' │ '));
     lines.push(ui.clip(line, width));
   }
   if (error) lines.push(C.red(ui.clean(`herdr: ${error}`)));
@@ -1857,6 +1984,8 @@ function render(model, {
     lines.push(...td.lines);
   } else if (backups) {
     lines.push(...backupLines(backups, width, model.now));
+  } else if (options) {
+    lines.push(...optionsLines(model, menu, width, metric));
   } else {
     const { cols, cells, taskW } = fitColumns(model.rows, width, view);
     const indent = 3;
@@ -1965,7 +2094,7 @@ function render(model, {
         const nextSubPaint = nextSubHint ? C.dim(nextSubHint) : '';
         return ui.clip(line + nextProvPaint + nextSubPaint, width);
       });
-  const box = detail && !help && !today && !backups && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
+  const box = detail && !help && !today && !backups && !options && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
   const body = lines.map((l) => ui.clip(l, width));
   const footer = ui.clip(foot, width);
 
@@ -2146,28 +2275,22 @@ function toJson(model) {
 
 // ------------------------------------------------------------------ runtime
 
-const HELP = `crew-board: a live board of the agent panes in this Herdr workspace (--all: every workspace)
+const HELP = `roostr: a live board of the agent panes in this Herdr workspace (--all: every workspace)
 
-usage: crew-board [board] [options]
+usage: roostr [board] [options]
 ${REPORT_USAGE.replace(/^usage: /, '       ')}
-       crew-board recommend "<task>" [--effort <eff>] [--model <mod>] [--json]
-       crew-board sessions [--json]
-       crew-board restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
-       crew-board backups [show|restore <label|id>] [--version N] [--layout even|saved|columns|rows] [--yes]
-       crew-board spawn --pane <id> --task "<task>" [--role worker] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>]
-       crew-board outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
-       crew-board summary [--json] [--days 30] [--no-write]
-       crew-board template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
-       crew-board name --language en|es|pt|fr [--count 1..20] [--exclude a,b,c]
-       crew-board analytics [--days N | --today] [--by pane|model|kind|batch] [--json]
+       roostr backups [show|restore <label|id>] [--version N] [--layout even|saved|columns|rows] [--yes]
+       roostr analytics [--days N | --today] [--by pane|model|kind|batch] [--json]
+       roostr sessions [--json]
+       roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
 
 options:
   --workspace <id|label>  only show agent panes in this workspace
   --crew <file>           use this crew file for every pane (default: find
-                          .crew-board.toml above each pane's cwd)
+                          .roostr.toml or .crew-board.toml above each pane's cwd)
   --tags tokens|label|metadata|off
                           how panes get their colour tag (default:
-                          $CREW_BOARD_TAGS, else crew file [board] tags,
+                          $ROOSTR_TAGS, else $CREW_BOARD_TAGS, else crew file [board] tags,
                           else label)
   --tags-scope here|all   which panes a label or metadata tag may change
                           (default: crew file [board] tag_scope, else here)
@@ -2183,10 +2306,11 @@ options:
   --interval <seconds>    refresh period, at least 2 (default 3)
   --once                  print one frame and exit (no colour tags written)
   --backups               open on the backups view (the restore action uses this)
+  --options               open on the options view (settings, tokscale, compaction)
   --json                  print the JSON envelope (version, scope, summary, panes) and exit
   --json-rows             print only the pane rows array and exit (later flag wins)
-  --no-update-check       never ask GitHub for a newer release (or CREW_BOARD_NO_UPDATE_CHECK=1)
-  -v, --version           print the crew-board version and exit
+  --no-update-check       never ask GitHub for a newer release (or ROOSTR_NO_UPDATE_CHECK=1)
+  -v, --version           print the roostr version and exit
   -h, --help              this help
 `;
 
@@ -2225,6 +2349,7 @@ function parseArgs(argv) {
     else if (a === '--interval') o.interval = Math.max(2, Number(val()) || 3);
     else if (a === '--once') o.once = true;
     else if (a === '--backups') o.backups = true;
+    else if (a === '--options') o.options = true;
     else if (a === '--orchestration' || a === '--experimental') o.orchestration = true;
     else if (a === '--json') { o.json = true; o.jsonRows = false; }
     else if (a === '--json-rows') { o.jsonRows = true; o.json = false; }
@@ -2555,6 +2680,7 @@ function runLive(opts) {
   let detail = false;
   let today = false;
   let backups = null;
+  let options = Boolean(opts.options);
   let setup = null;
   let headPicker = null;
   let updating = null; // { version, state: 'installing' | 'done' }
@@ -2611,7 +2737,7 @@ function runLive(opts) {
     const prov = shownProvider();
     const frame = render(model, {
       width: out.columns || 100, height: out.rows || 0, error, view: opts.view, menu: menu(), selected, edit, hits, folded,
-      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, setup, headPicker,
+      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, setup, headPicker, options,
     });
     // Erase each line before writing it: erasing after a full width line would
     // eat its last cell. Keep terminal and pane title locked to 🐓ROOSTR🐓.
@@ -2945,7 +3071,16 @@ function runLive(opts) {
         opts.wantHourly = true;
         tick();
       }
-    } else if (action === 'metric' && today) metric = metric === 'tokens' ? 'cost' : 'tokens';
+    } else if (action === 'metric') metric = metric === 'tokens' ? 'cost' : 'tokens';
+    else if (action === 'options') {
+      options = !options;
+      if (options) {
+        detail = false;
+        today = false;
+        backups = null;
+        help = false;
+      }
+    }
     else if (action === 'detail') detail = !detail;
     else if (action === 'close') detail = false;
     else if (action === 'jump' && row) herdr.focusAgent(row.paneId).catch(() => {});
@@ -3093,6 +3228,18 @@ function runLive(opts) {
       draw();
       return;
     }
+    if (options) {
+      if (k === '\x1b' || k === 'o' || k === 'q') options = false;
+      else if (k === '\x03') return quit();
+      else if (k === 't') act('tags');
+      else if (k === 'v') act('view');
+      else if (k === 's') act('scope');
+      else if (k === '$') act('metric');
+      else if (k === 'r') tick();
+      else if (k === '?') act('help');
+      draw();
+      return;
+    }
     if (k === '\x1b' && today) act('today');
     else if (k === '\x1b' && detail) act('close');
     else if (k === 'q' || k === '\x03' || k === '\x1b') quit();
@@ -3114,6 +3261,7 @@ function runLive(opts) {
     else if (k === 'u') act('update');
     else if (k === 'y') act('copy-id');
     else if (k === 'R') act('backups');
+    else if (k === 'o') act('options');
     else if (k === 'S') act('setup');
     else if (k === 'O') act('head-honcho');
     else if (k === 'K') act('secretary');
@@ -3221,7 +3369,7 @@ function main(argv) {
   try {
     opts = parseArgs(argv);
   } catch (e) {
-    process.stderr.write(`crew-board: ${e.message}\n\n${HELP}`);
+    process.stderr.write(`roostr: ${e.message}\n\n${HELP}`);
     return Promise.resolve(2);
   }
   if (opts.help) {
@@ -3231,12 +3379,12 @@ function main(argv) {
   // --crew names a file the board will run, so it gets the same ownership and
   // permission check as a file found by walking up.
   if (opts.crew && fs.existsSync(opts.crew) && !crewfile.safeToRun(opts.crew)) {
-    process.stderr.write(`crew-board: ${opts.crew} must be owned by you and not writable by group or others (chmod go-w ${opts.crew})\n`);
+    process.stderr.write(`roostr: ${opts.crew} must be owned by you and not writable by group or others (chmod go-w ${opts.crew})\n`);
     return Promise.resolve(2);
   }
   if (opts.once || opts.json || !process.stdout.isTTY) {
     return runOnce(opts).catch((e) => {
-      process.stderr.write(`crew-board: ${e.message}\n`);
+      process.stderr.write(`roostr: ${e.message}\n`);
       return 1;
     });
   }
@@ -3246,6 +3394,6 @@ function main(argv) {
 
 module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
-  render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups,
+  render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups, findTokscale, optionsLines,
   setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, secretaryTarget, monitorDue, monitorScope, monitorPrompt, surge, orchestrationEnabled,
 };

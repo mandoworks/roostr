@@ -24,7 +24,7 @@ const SUFFIX = ' *restored';
 // line. Restoring defaults to `even` so a cramped backup does not come back
 // cramped.
 const LAYOUTS = ['even', 'saved', 'columns', 'rows'];
-const USAGE = 'usage: crew-board backups [--json] | backups show <label|id> [--version N] | backups restore <label|id> [--version N] [--layout even|saved|columns|rows] [--yes]';
+const USAGE = 'usage: roostr backups [--json] | backups show <label|id> [--version N] | backups restore <label|id> [--version N] [--layout even|saved|columns|rows] [--yes]';
 
 function backupsDir(dir) {
   if (dir) return dir;
@@ -546,7 +546,7 @@ async function main(argv, options = {}) {
     return 0;
   }
   if (o.error) {
-    err.write(`crew-board backups: ${o.error}\n${USAGE}\n`);
+    err.write(`roostr backups: ${o.error}\n${USAGE}\n`);
     return 2;
   }
   const list = listBackups(o.dir);
@@ -568,12 +568,12 @@ async function main(argv, options = {}) {
   }
   const found = findBackup(list, o.key);
   if (!found) {
-    err.write(`crew-board backups: no backup for ${o.key}\n`);
+    err.write(`roostr backups: no backup for ${o.key}\n`);
     return 1;
   }
   const v = found.versions[o.version - 1];
   if (!v) {
-    err.write(`crew-board backups: ${found.label} has ${found.versions.length} version${found.versions.length === 1 ? '' : 's'}\n`);
+    err.write(`roostr backups: ${found.label} has ${found.versions.length} version${found.versions.length === 1 ? '' : 's'}\n`);
     return 1;
   }
   if (o.cmd === 'show' || !o.yes) {

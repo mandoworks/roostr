@@ -518,9 +518,9 @@ test('render: menu bar and click regions', () => {
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
-  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[d today\] \[\? keys\]/);
+  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[d today\] \[\? keys\]/);
   const outOrch = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
-  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
+  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[S setup\] \[O head\] \[K sec\] \[M monitor\] \[C continue\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
   const tags = hits.find((h) => h.action === 'tags');
@@ -988,7 +988,7 @@ test('trust: a crew file you have not allowed runs no checks and says so', () =>
   const out = board.render(m, { width: 160, menu: { tags: 'tokens', view: 'auto', scope: 'all', trust: true }, hits });
   assert.match(out, /^crew file new or changed, off until you allow it: press a \(or click\) to allow · \//m);
   assert.ok(hits.some((h) => h.action === 'trust'));
-  assert.match(board.render(m, { width: 160 }), /open crew-board and press a to allow/);
+  assert.match(board.render(m, { width: 160 }), /open (roostr|crew-board) and press a to allow/);
   // A changed file has a new hash: the old grant no longer counts.
   assert.equal(board.buildModel({ ...input, trust: { [m.crews[0].file]: 'old' } }).untrusted.length, 1);
   // A crew file without checks has nothing to allow.
@@ -1146,7 +1146,7 @@ test('--crew: a file others can write is refused before drawing', async () => {
     process.stderr.write = saved;
     fs.chmodSync(file, 0o666);
   }
-  assert.match(err, /^crew-board: .*crew\.toml must be owned by you and not writable by group or others \(chmod go-w .*crew\.toml\)$/m);
+  assert.match(err, /^(roostr|crew-board): .*crew\.toml must be owned by you and not writable by group or others \(chmod go-w .*crew\.toml\)$/m);
   const { safeToRun } = require('../src/crewfile');
   assert.equal(safeToRun(file), false);
   fs.chmodSync(file, 0o644);
@@ -1721,6 +1721,15 @@ test('menu: orchestration items are hidden by default', () => {
   }
 });
 
+test('menu: backups item is visible on the main board and clickable', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const hits = [];
+  const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits }).split('\n');
+  assert.match(out[1], /\[R backups\]/);
+  assert.ok(hits.some((h) => h.action === 'backups'));
+});
+
 test('help: setup, Head Honcho and monitor rows are listed when orchestration enabled', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
@@ -1848,4 +1857,65 @@ test('head picker: lists shell panes and asks to confirm', () => {
   const out = board.headLines(st, 100).join('\n');
   assert.match(out, /w1:p9/);
   assert.match(out, /y to go/);
+});
+
+test('compaction: context over 50% triggers badge and advice, over 75% alerts in banner', () => {
+  const input = sample();
+  input.reports['w1:p1'] = { ctx: 52, tokens: 105000, cost: 1.1, model: 'opus' };
+  const m50 = board.buildModel(input);
+  const row50 = m50.rows.find((r) => r.paneId === 'w1:p1');
+  assert.ok(row50.badges.some((b) => b.name === 'COMPACT' && b.level === 'warn'));
+  const box50 = board.detailBox(row50, 120);
+  assert.ok(box50.lines.some((l) => l.includes('attention dilution risk (52%)')));
+
+  input.reports['w1:p1'] = { ctx: 82, tokens: 165000, cost: 2.1, model: 'opus' };
+  const m80 = board.buildModel(input);
+  const row80 = m80.rows.find((r) => r.paneId === 'w1:p1');
+  assert.ok(row80.badges.some((b) => b.name === 'COMPACT' && b.level === 'high'));
+  const alerts = board.banner(m80);
+  assert.ok(alerts.some((a) => a.kind === 'compact' && a.text.includes('82%') && a.text.includes('compact recommended')));
+  const box80 = board.detailBox(row80, 120);
+  assert.ok(box80.lines.some((l) => l.includes('high context (82%)')));
+});
+
+test('menu: options item is visible on the main board and clickable', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const hits = [];
+  const out = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits }).split('\n');
+  assert.match(out[1], /\[o options\]/);
+  assert.ok(hits.some((h) => h.action === 'options'));
+});
+
+test('help: options row is listed in help screen', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all' }, help: true });
+  assert.match(out, /  o +options: tokscale, compaction, settings/);
+});
+
+test('render: options view shows tokscale, compaction, board settings and paths', () => {
+  const input = sample();
+  input.reports['w1:p1'] = { ctx: 55, tokens: 110000, cost: 1.2, model: 'claude' };
+  const m = board.buildModel(input);
+  m.tokscale = { at: Date.now() - 60000, total: 3.45, clients: { claude: {}, opencode: {} } };
+  ui.setColor(false);
+  const out = board.render(m, { width: 120, menu: { tags: 'tokens', view: 'line', scope: 'here' }, options: true });
+  assert.match(out, /TOKSCALE CONNECTION/);
+  assert.match(out, /spend today: \$3\.45/);
+  assert.match(out, /claude, opencode/);
+  assert.match(out, /CONTEXT COMPACTION/);
+  assert.match(out, /≥30% notice \(warm\) · ≥50% warn \(dilution\) · ≥75% high · ≥85% critical/);
+  assert.match(out, /1 pane\(s\):/);
+  assert.match(out, /BOARD SETTINGS/);
+  assert.match(out, /tags \(t\) +tokens/);
+  assert.match(out, /layout \(v\) +line/);
+  assert.match(out, /scope \(s\) +here/);
+  assert.match(out, /PATHS & STORAGE/);
+  assert.match(out, /backups/);
+});
+
+test('parseArgs: --options flag is accepted', () => {
+  const o = board.parseArgs(['--options']);
+  assert.equal(o.options, true);
 });

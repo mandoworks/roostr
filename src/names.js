@@ -90,7 +90,7 @@ function draw({ language, count = 1, exclude = [] } = {}) {
   return out;
 }
 
-const USAGE = 'usage: crew-board name [--language en|es|pt|fr] [--count 1..20] [--exclude a,b,c] [--no-record] [--history [--json]]';
+const USAGE = 'usage: roostr name [--language en|es|pt|fr] [--count 1..20] [--exclude a,b,c] [--no-record] [--history [--json]]';
 
 function historyPath() {
   if (process.env.ROOSTR_NAMES) return process.env.ROOSTR_NAMES;
@@ -212,7 +212,7 @@ function main(argv = []) {
     return 0;
   }
   if (p.error) {
-    process.stderr.write(`crew-board name: ${p.error}\n${USAGE}\n`);
+    process.stderr.write(`roostr name: ${p.error}\n${USAGE}\n`);
     return 2;
   }
   if (p.history) {

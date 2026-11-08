@@ -344,11 +344,11 @@ function main(args = []) {
   const daysRaw = flagValue(args, '--days');
   const days = daysRaw === null ? 30 : Number(daysRaw);
   if (args.includes('--from') && (from === null || from.startsWith('--'))) {
-    console.error('usage: crew-board summary [--json] [--days 30] [--from <path>] [--no-write]');
+    console.error('usage: roostr summary [--json] [--days 30] [--from <path>] [--no-write]');
     return 2;
   }
   if (!Number.isFinite(days) || days <= 0) {
-    console.error('usage: crew-board summary [--json] [--days 30] [--from <path>] [--no-write]');
+    console.error('usage: roostr summary [--json] [--days 30] [--from <path>] [--no-write]');
     return 2;
   }
 
@@ -356,13 +356,13 @@ function main(args = []) {
   let entries;
   if (from !== null) {
     if (!fs.existsSync(from)) {
-      console.error(`crew-board summary: no such file: ${from}`);
+      console.error(`roostr summary: no such file: ${from}`);
       return 1;
     }
     try {
       entries = readEntriesFromFile(from, onWarn);
     } catch (e) {
-      console.error(`crew-board summary: ${e.message}`);
+      console.error(`roostr summary: ${e.message}`);
       return 1;
     }
   }
@@ -372,7 +372,7 @@ function main(args = []) {
     try {
       writeSummary(data);
     } catch (e) {
-      console.error(`crew-board summary: ${e.message}`);
+      console.error(`roostr summary: ${e.message}`);
       return 1;
     }
   }

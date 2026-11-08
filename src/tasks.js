@@ -15,7 +15,7 @@ const crewfile = require('./crewfile');
 
 const TASK_FILE = path.join('docs', 'orchestration', 'tasks.json');
 const STATUSES = ['pending', 'working', 'done', 'blocked'];
-const USAGE = 'usage: crew-board tasks [--file <path>] [--crew <file>] [--json]';
+const USAGE = 'usage: roostr tasks [--file <path>] [--crew <file>] [--json]';
 
 function text(v, max = 200) {
   return typeof v === 'string' ? v.replace(/[\x00-\x1f\x7f-\x9f]/g, '').trim().slice(0, max) : '';
@@ -199,12 +199,12 @@ function main(argv = []) {
   try {
     raw = load(file);
   } catch (e) {
-    process.stderr.write(`crew-board tasks: ${e.message}\n`);
+    process.stderr.write(`roostr tasks: ${e.message}\n`);
     return 1;
   }
   const checked = validate(raw);
   if (checked.errors.length) {
-    for (const e of checked.errors) process.stderr.write(`crew-board tasks: ${e}\n`);
+    for (const e of checked.errors) process.stderr.write(`roostr tasks: ${e}\n`);
     return 2;
   }
   const crewPath = flagValue(argv, '--crew') || crewfile.findCrewFile(process.cwd());

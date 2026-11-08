@@ -1,5 +1,5 @@
 'use strict';
-// Every Herdr CLI call crew-board makes lives in this file and nowhere else.
+// Every Herdr CLI call roostr makes lives in this file and nowhere else.
 // Herdr's CLI is young, so keeping the surface in one place makes a breaking
 // change a one file fix. Calls use execFile with an argv array (never a shell),
 // so pane labels and ids are passed as data, not parsed as commands.
@@ -17,7 +17,7 @@ function run(args, timeout = TIMEOUT_MS) {
     execFile(herdrBin(), args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
       if (!err) return resolve(stdout);
       if (err.code === 'ENOENT') {
-        return reject(new Error('herdr not found on PATH (crew-board runs inside Herdr)'));
+        return reject(new Error('herdr not found on PATH (roostr runs inside Herdr)'));
       }
       reject(err);
     });
@@ -99,29 +99,29 @@ async function renameAgent(target, name) {
 // The agent's own CLI session id, stored on the pane so a restore can resume
 // the exact conversation. Herdr keeps it across a board restart.
 async function reportAgentSession(paneId, kind, sessionId) {
-  await run(['pane', 'report-agent-session', paneId, '--source', 'crew-board', '--agent', kind, '--agent-session-id', sessionId]);
+  await run(['pane', 'report-agent-session', paneId, '--source', 'roostr', '--agent', kind, '--agent-session-id', sessionId]);
 }
 
 // Display only metadata. Herdr wants the pane id before the options.
 async function setDisplayAgent(paneId, text) {
-  await run(['pane', 'report-metadata', paneId, '--source', 'crew-board', '--display-agent', text]);
+  await run(['pane', 'report-metadata', paneId, '--source', 'roostr', '--display-agent', text]);
 }
 
 async function clearDisplayAgent(paneId) {
-  await run(['pane', 'report-metadata', paneId, '--source', 'crew-board', '--clear-display-agent']);
+  await run(['pane', 'report-metadata', paneId, '--source', 'roostr', '--clear-display-agent']);
 }
 
 // Sidebar tokens ($tag, $task, ...) for `ui.sidebar.agents.rows`. An empty
 // value clears that token. They fade after ttlMs unless written again, so a
 // board that stops leaves nothing stale behind.
 async function setTokens(paneId, tokens, ttlMs) {
-  const args = ['pane', 'report-metadata', paneId, '--source', 'crew-board', '--ttl-ms', String(ttlMs)];
+  const args = ['pane', 'report-metadata', paneId, '--source', 'roostr', '--ttl-ms', String(ttlMs)];
   for (const [k, v] of Object.entries(tokens)) args.push(...(v ? ['--token', `${k}=${v}`] : ['--clear-token', k]));
   await run(args);
 }
 
 async function clearTokens(paneId, names) {
-  await run(['pane', 'report-metadata', paneId, '--source', 'crew-board', ...names.flatMap((k) => ['--clear-token', k])]);
+  await run(['pane', 'report-metadata', paneId, '--source', 'roostr', ...names.flatMap((k) => ['--clear-token', k])]);
 }
 
 // ---- the toggle action: open, focus, or close the board's own pane

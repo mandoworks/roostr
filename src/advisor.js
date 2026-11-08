@@ -352,7 +352,7 @@ function parseArgs(args) {
 
 function formatHelp() {
   return [
-    'usage: crew-board recommend "<task>" [--kind <kind>] [--effort <eff>] [--model <mod>] [--json]',
+    'usage: roostr recommend "<task>" [--kind <kind>] [--effort <eff>] [--model <mod>] [--json]',
     '',
     'Suggests optimal speed tier and reasoning effort based on task pattern and orchestration history.',
     '',

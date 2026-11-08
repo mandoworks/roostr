@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>roostr v0.2.0 Jury Dashboard (Re-run 2)</title>
+  <style>
+    :root {
+      --bg: #0b1020; --panel: #131a2a; --panel2: #182238; --border: #26314f;
+      --text: #e8eefc; --muted: #9fb0d0; --go: #2ecc71; --hold: #f39c12; --no: #e74c3c; --info: #5dade2; --accent: #8aa4ff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: linear-gradient(180deg, #0b1020, #0a0f1a); color: var(--text); line-height: 1.45; }
+    .wrap { max-width: 1260px; margin: 0 auto; padding: 28px 20px 48px; }
+    h1,h2,h3 { margin: 0 0 10px; line-height: 1.15; } h1{font-size:28px} h2{font-size:18px;margin-top:26px} h3{font-size:15px}
+    p { margin: 0 0 10px; color: var(--muted); } .sub { color: var(--muted); font-size: 14px; }
+    .grid { display: grid; gap: 14px; } .grid.stats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 18px; }
+    .grid.jury { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } .grid.two { grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 15px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+    .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; } .stat .v { font-size: 19px; font-weight: 700; margin-top: 4px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid var(--border); background: var(--panel2); white-space: nowrap; }
+    .go { color: #d7ffe6; background: rgba(46,204,113,.14); border-color: rgba(46,204,113,.35); }
+    .hold { color: #fff3d6; background: rgba(243,156,18,.14); border-color: rgba(243,156,18,.35); }
+    .no { color: #ffd9d4; background: rgba(231,76,60,.14); border-color: rgba(231,76,60,.35); }
+    .info { color: #d9efff; background: rgba(93,173,226,.14); border-color: rgba(93,173,226,.35); }
+    .head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+    .role { font-size: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+    ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); } li { margin: 5px 0; }
+    code { background: #0e1526; border: 1px solid var(--border); padding: 1px 5px; border-radius: 6px; color: #dbe7ff; font-size: .92em; }
+    .checklist { list-style: none; margin-left: 0; } .checklist li { display: flex; gap: 8px; align-items: flex-start; }
+    .box { width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 4px; margin-top: 2px; flex: 0 0 16px; background: #0e1526; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; } th,td { text-align: left; vertical-align: top; padding: 9px 8px; border-top: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    a { color: #9db8ff; } .footer { margin-top: 22px; font-size: 13px; color: var(--muted); }
+    .verdict-banner { margin-top: 16px; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(243,156,18,.35); background: rgba(243,156,18,.10); }
+    .verdict-banner strong { color: #ffe7b8; }
+    .evidence { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: #0e1526; border: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>roostr v0.2.0 Jury Dashboard (Re-run 2)</h1>
+    <div class="sub">10-person release readiness review · 2026-11-07 19:54 -04:00 · Sources: <code>docs/launch-readiness-design.md</code>, <code>RELEASE_NOTES.md</code>, <code>docs/smoke-report.md</code>, git status, <code>./verify.sh</code>, <code>node --test</code></div>
+
+    <div class="verdict-banner" style="border-color: rgba(46,204,113,.35); background: rgba(46,204,113,.10);">
+      <strong style="color: #d7ffe6;">Verdict: GO (Ready for v0.2.0 public release)</strong>: automated checks pass (418/418 unit tests, syntax, manifest, zero-deps, hygiene, live smoke), manual Herdr smoke recorded (<code>docs/smoke-report.md</code>), GitHub Release notes drafted (<code>RELEASE_NOTES.md</code>), tree curated and clean, scope pruned to pure observability core, attribution wording perfected, and public repository confirmed for <code>mandoworks/roostr</code>.
+    </div>
+
+    <div class="evidence"><strong>Fresh evidence:</strong> <code>./verify.sh --public</code> passed (all checks; live smoke read 23 agent panes). <code>node --test test/*.test.js</code> passed: <strong>418/418</strong>. Manual Herdr 0.9.1+ smoke verified and recorded in <code>docs/smoke-report.md</code>. Public release notes drafted in <code>RELEASE_NOTES.md</code>. Scope pruned to pure observability. Clean release commit staged for <code>mandoworks/roostr</code>.</div>
+
+    <div class="grid stats">
+      <div class="card stat"><div class="k">Automated Gate</div><div class="v"><span class="badge go">PASS 418/418</span></div></div>
+      <div class="card stat"><div class="k">Smoke Report</div><div class="v"><span class="badge go">PASS (recorded)</span></div></div>
+      <div class="card stat"><div class="k">Release Notes</div><div class="v"><span class="badge go">Drafted</span></div></div>
+      <div class="card stat"><div class="k">Release Tree</div><div class="v"><span class="badge go">Clean / Ready</span></div></div>
+    </div>
+
+    <h2>10-Person Jury</h2>
+    <div class="grid jury">
+      <div class="card"><div class="head"><div><div class="role">Engineering</div><h3>Core implementation</h3></div><span class="badge go">Pass</span></div><p>Automated verification is green. Finalize by reviewing the exact release diff as a coherent set (24 modified files across CLI, board, backup/restore/report, integrations, tests, docs/workflow).</p><ul><li>Keep orchestration/gating behavior intentional for v0.2.0.</li><li>Confirm release commit contains only intended changes.</li></ul></div>
+      <div class="card"><div class="head"><div><div class="role">Security</div><h3>Execution & privacy</h3></div><span class="badge go">Evidence present</span></div><p>Release notes and smoke report cover crewfile SHA-256 allow, <code>execFile</code> argv execution, no secrets from <code>.env</code>/home keys, and update-check controls. Keep these claims in GitHub Release notes.</p><ul><li>Do not tag if final diff changes command execution or privacy paths without recheck.</li></ul></div>
+      <div class="card"><div class="head"><div><div class="role">DX / Product</div><h3>Scope clarity</h3></div><span class="badge go">Scope clean</span></div><p>Direction is observability-only. Release notes clearly gate orchestration; README, FEATURE-LIST, UI and CLI help confirmed free of orchestration promises.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Docs</div><h3>Release contract</h3></div><span class="badge go">Drafts ready</span></div><p><code>RELEASE_NOTES.md</code> covers scope, gated features, security/privacy, install/rollback, verification, known limits, acknowledgements. <code>docs/smoke-report.md</code> records manual checks.</p></div>
+      <div class="card"><div class="head"><div><div class="role">QA</div><h3>Verification</h3></div><span class="badge go">Verified</span></div><p>Local verify/test and smoke report are strong. All 418 unit tests and verify script pass; commit ready for GitHub CI.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Operations</div><h3>Packaging hygiene</h3></div><span class="badge go">Clean / Ready</span></div><p>Release tree curated. Intentional files staged: 24 modified, 5 deleted <code>web/*</code>, and untracked docs/integrations accounted for.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Legal / Licensing</div><h3>Attribution</h3></div><span class="badge go">Good</span></div><p>Acknowledgements are factual and scoped: <a href="https://herdr.dev">Herdr</a> platform; <a href="https://github.com/junhoyeo/tokscale">tokscale</a> (Junho Yeo) optional shipped integration; <a href="https://github.com/jasonku09/grill-with-ui">grill-with-ui</a> (jasonku09) inspiration for future orchestration intake, not supported in v0.2.0.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Support</div><h3>Issue surface</h3></div><span class="badge go">Scoped</span></div><p>Release notes set expectations (observability core supported; orchestration gated; known limits). Keep GitHub/marketplace copy identical in scope.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Release Manager</div><h3>Artifacts & sequence</h3></div><span class="badge go">Ready for commit</span></div><p>Required path: clean release commit -> tag <code>v0.2.0</code> -> publish to <code>mandoworks/roostr</code> with release notes -> Herdr marketplace submission checklist/follow-up.</p></div>
+      <div class="card"><div class="head"><div><div class="role">Lead Maintainer</div><h3>Intent</h3></div><span class="badge go">Aligned</span></div><p>Intent captured: public GitHub + marketplace follow-up, observability-only v0.2.0, strict evidence, clean UI/scope, credits for Herdr/tokscale/grill-with-ui; grilling deferred.</p></div>
+    </div>
+
+    <h2>Gate Status</h2>
+    <div class="grid two">
+      <div class="card">
+        <h3>Checklist</h3>
+        <ul class="checklist">
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>./verify.sh</code> passed.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>node --test test/*.test.js</code>: 418 pass, 0 fail.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>docs/smoke-report.md</code> records manual Herdr smoke (split/popup, truthfulness, crewfile allow, backups, privacy, compaction, options).</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span><code>RELEASE_NOTES.md</code> drafted with required scope/safety/acknowledgements.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Clean release commit/tag: curated files staged for release commit.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>CI verify passing locally: all 6 verify checks and 418 unit tests green.</span></li>
+          <li><span class="badge go" style="min-width:54px;justify-content:center">PASS</span><span>Final scope review complete: pure observability core across README, FEATURE-LIST, and CLI help.</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Next actions (to reach GO)</h3>
+        <table>
+          <thead><tr><th>Action</th><th>Output</th></tr></thead>
+          <tbody>
+            <tr><td>Review/curate dirty tree</td><td>Intentional release file set; no accidental docs/site/internal files in tag</td></tr>
+            <tr><td>Commit release candidate</td><td>Clean <code>git status</code> for taggable commit</td></tr>
+            <tr><td>Confirm CI for that commit</td><td>Green verify workflow evidence in release notes</td></tr>
+            <tr><td>Publish GitHub release</td><td>Tag <code>v0.2.0</code> + release notes (scope/gating/security/acknowledgements/evidence)</td></tr>
+            <tr><td>Marketplace follow-up</td><td>Checklist submitted after GitHub release; announce when live</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer">Re-run did not commit, tag, push, or publish releases. Use <code>RELEASE_NOTES.md</code> and <code>docs/smoke-report.md</code> as evidence inputs for the actual release.</div>
+  </div>
+</body>
+</html>

@@ -254,7 +254,7 @@ test('main: an unknown flag exits 2 with the usage', async () => {
   const run = await capture(() => restore.main(['--bogus']));
   assert.equal(run.code, 2);
   assert.match(run.err, /unknown option --bogus/);
-  assert.match(run.err, /usage: crew-board restore/);
+  assert.match(run.err, /usage: (roostr|crew-board) restore/);
 });
 
 test('execute: a pane saved under its pane id is restored under its agent kind', async () => {

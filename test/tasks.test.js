@@ -112,7 +112,7 @@ test('tasks: the CLI prints a table and rejects a broken file', () => {
     assert.match(logs.join('\n'), /effort/);
     fs.writeFileSync(file, '{not json');
     assert.equal(tasks.main(['--file', file]), 1);
-    assert.match(errs.join('\n'), /crew-board tasks/);
+    assert.match(errs.join('\n'), /(roostr|crew-board) tasks/);
   } finally {
     process.stdout.write = savedOut;
     process.stderr.write = savedErr;

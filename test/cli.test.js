@@ -6,13 +6,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const bin = path.join(__dirname, '..', 'bin', 'crew-board');
+const bin = fs.existsSync(path.join(__dirname, '..', 'bin', 'roostr'))
+  ? path.join(__dirname, '..', 'bin', 'roostr')
+  : path.join(__dirname, '..', 'bin', 'crew-board');
 
 test('help: the command list ends on the page, no truncation', () => {
   const r = spawnSync(process.execPath, [bin, '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /crew-board sessions \[--json\]/);
-  assert.match(r.stdout, /crew-board restore \[--workspace <id\|label\|here\|all>\] \[--yes\] \[--dry-run\]/);
+  assert.match(r.stdout, /(roostr|crew-board) sessions \[--json\]/);
+  assert.match(r.stdout, /(roostr|crew-board) restore \[--workspace <id\|label\|here\|all>\] \[--yes\] \[--dry-run\]/);
   assert.match(r.stdout.trimEnd(), /-h, --help +this help$/);
 });
 
@@ -23,8 +25,8 @@ test('version: --version and -v print the manifest version and exit 0', () => {
   for (const args of [['--version'], ['-v'], ['board', '--version'], ['--version', 'extra']]) {
     const r = spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8' });
     assert.equal(r.status, 0, args.join(' '));
-    assert.match(r.stdout, /^crew-board \d+\.\d+\.\d+\n$/);
-    assert.equal(r.stdout.trim(), `crew-board ${m[1]}`);
+    assert.match(r.stdout, /^(roostr|crew-board) \d+\.\d+\.\d+\n$/);
+    assert.match(r.stdout.trim(), new RegExp(`^(roostr|crew-board) ${m[1]}$`));
   }
 });
 

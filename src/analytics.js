@@ -517,7 +517,7 @@ function formatText(result) {
 
 function helpText() {
   return [
-    'usage: crew-board analytics [--days N | --today] [--by pane|model|kind|batch] [--tasks <path>] [--json]',
+    'usage: roostr analytics [--days N | --today] [--by pane|model|kind|batch] [--tasks <path>] [--json]',
     '',
     'Four analytical views over continuous usage, ledger attempts, and transitions:',
     '  (1) cost by model',
@@ -555,13 +555,13 @@ function main(argv = []) {
     if (a === '--days' && i + 1 < argv.length) {
       days = Number(argv[++i]);
       if (!Number.isFinite(days) || days <= 0) {
-        process.stderr.write('crew-board analytics: --days must be a positive number\n');
+        process.stderr.write('roostr analytics: --days must be a positive number\n');
         return 2;
       }
     } else if (a === '--by' && i + 1 < argv.length) {
       by = argv[++i];
       if (!VIEWS.includes(by)) {
-        process.stderr.write(`crew-board analytics: --by must be one of: ${VIEWS.join(', ')}\n`);
+        process.stderr.write(`roostr analytics: --by must be one of: ${VIEWS.join(', ')}\n`);
         return 2;
       }
     } else if (a === '--tasks' && i + 1 < argv.length) {

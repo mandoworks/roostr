@@ -53,7 +53,7 @@ function step(state, event) {
 const CrewBoardPlugin = async () => {
   const pane = process.env.HERDR_PANE_ID;
   if (!pane) return {};
-  const bin = process.env.CREW_BOARD_BIN || 'crew-board';
+  const bin = process.env.ROOSTR_BIN || process.env.CREW_BOARD_BIN || 'roostr';
   const state = { session: null, task: null, model: null, tokens: 0, costs: {}, last: null };
   let pending = null;
   let timer = null;

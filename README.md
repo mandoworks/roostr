@@ -1,10 +1,10 @@
 # roostr
 
-A [Herdr](https://herdr.dev) plugin that opens a live **board** of every agent pane in the session. One row per agent: its colour tag, name, model and reasoning effort, status and how long it has been in that status, context, tokens and cost, its **task line**, and check badges such as `REPORT READY`. It also runs a whole crew: a Head Honcho, a secretary, workers and optional reviewers.
+A [Herdr](https://herdr.dev) plugin that opens a live **board** of every agent pane in the session. One row per agent: its colour tag, name, model and reasoning effort, status and how long it has been in that status, context, tokens and cost, its **task line**, check badges such as `REPORT READY`, and workspace backups.
 
 ```
 🐓ROOSTR🐓  example crew                                                  14:30  load 1.50 1.25 1.00
-[tags: label] [view: auto] [scope: all] [edit task] [S setup] [O head] [K sec] [M monitor] [C continue] [d today] [? keys]
+[tags: label] [view: auto] [scope: all] [edit task] [R backups] [d today] [? keys]
 ● tests
 ◼ 1 BLOCKED: copy 30s
 ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -70,50 +70,26 @@ Once installed, open the board in any of three ways:
 
 The visual prototype is in [docs/crew-board-visual.html](docs/crew-board-visual.html). Press `?` in the board for the key list.
 
-## Run a crew
+## Backups and Workspace Recovery
 
-One Head Honcho is the expensive advisor that owns the plan and the hard decisions, and draws every worker name randomly from the language it uses with the user. The secretary is always `Secretary - <workspace>`, and runs the day to day loop: compare what each worker says it did with the plan, tell it to continue, and escalate only difficulty, stuck sessions and finished gates. Workers run one work package each in a fresh context. Press `S` for settings, `O` to start the Head Honcho, `K` to start a secretary, and `M` for a monitor pass. The full guide, with commands for naming, spawning, monitoring, triage and teardown, is in [docs/orchestration.md](docs/orchestration.md).
+Roostr saves workspace layouts (panes, working directories, active models, split ratios) under `~/.roostr/backups`.
 
-The setup screen has a `language` row. The default is `en`, and `es`, `pt` and `fr` are supported. The head draws names once, then keeps them:
-
-```sh
-roostr name --language es --count 3
-```
-
-A Herdr agent name is lowercase, for example `diego`. The pane label carries the capitalized display name, for example `Diego`. The role is the stable core job, `board core and CLI`, and the about is one line. The task is the current work. The board row shows `Diego · board core and CLI`, and the detail box shows the role and about. The secretary is always `Secretary - <workspace>` / `secretary-<workspace>` and keeps the stable role `secretary`. Recent names are kept in `~/.roostr/names.json` so the same few names do not repeat.
-
-The settings tab also holds one row per task kind (`docs`, `review`, `tests`, `tooling`, `complex`, `feature`). Each row sets the coding tool, primary model, ordered fallback models and effort. Project settings go in `.roostr.toml` under `[tasks.<kind>]`; a per-run flag wins over both. The board never substitutes a model silently: if the preferred one is disabled, it stops and shows the fallback choices.
-
-## Task list and effort feedback
-
-The Head Honcho writes `docs/orchestration/tasks.json` next to the plan and briefs. It is the machine readable bridge: id, title, kind, brief, report, owners, dependencies, status and optional per-task effort, model and fallbacks. Validate it and see the recommendation for every task:
-
-```sh
-roostr tasks
-roostr tasks --json
-```
-
-The recommendation follows task kind, not a global average. Effort follows hidden state and scope, not file count. Use medium for an isolated diff with a test, high for engine state, visual proof, packaging or a bug that survived one attempt, and low for deterministic batch scripts and narrow docs.
-
-## Effort feedback
-
-Record every attempt so the next recommendation learns from real outcomes:
-
-```sh
-roostr recommend "add pagination to the orders endpoint"
-roostr spawn --pane <id> --task "add pagination to the orders endpoint"
-roostr outcome --run <runId> --result pass --cost 0.42
-roostr summary
-```
-
-`roostr spawn` writes the recommendation and the effort the run will use to `~/.roostr/orchestration.jsonl`. `roostr outcome` closes the attempt. `roostr summary` writes `~/.roostr/summary.json` by kind, effort, tier and model, and the next `recommend` reads it. A first try pass means an accepted run with no rework: imported `accepted` counts as pass, `abandoned` as fail, and partial or reworked runs are not first try passes. The ledger is local only and stores no prompts, transcripts, pane screens or secrets. The [reference](docs/reference.md#ledger-attempts-and-summary) has the entry schema, the data quality rules, the team ledger bridge and every aggregate.
+* **From the board**: Press `R` or click `[R backups]` in the menu bar to open the interactive backups view.
+* **Inspect and preview**: Use arrow keys to cycle through saved workspaces and versions.
+* **Restore safely**: Press `r` to restore the selected snapshot. Roostr builds a fresh workspace (`*restored`) without altering or touching your active panes.
+* **CLI usage**:
+  ```sh
+  roostr backups
+  roostr backups show <label|id>
+  roostr backups restore <label|id> --yes
+  ```
 
 ## Where each value comes from
 
 | Column | Source, best first |
 | --- | --- |
 | colour tag | assigned by the board, stable for the pane's life |
-| name | the capitalized display name from the pane label, then the Herdr agent name; worker names are drawn from the head language |
+| name | the capitalized display name from the pane label, then the Herdr agent name |
 | role, about | an exact `--role` and `--about` report; the role is stable and the about is one line |
 | id | the Herdr pane id (`w1:p3`); click or press `y` to copy it |
 | task line | an exact `--task` report, then the terminal title |
@@ -150,7 +126,7 @@ report = "agents/docs/report.md"
 checks = ["GREEN: npm test"]
 ```
 
-The full schema, including `[checks]`, `[secretary]` and `[providers.explabs]`, is in [docs/reference.md](docs/reference.md#the-crew-file).
+The full schema, including `[checks]` and `[providers.explabs]`, is in [docs/reference.md](docs/reference.md#the-crew-file).
 
 ## Security
 
@@ -183,6 +159,12 @@ node --test test/*.test.js
 ```
 
 Tests use node:test with sample footers for every adapter, TOML reader cases, and a render snapshot (`UPDATE_SNAPSHOTS=1` rewrites it). Every Herdr CLI call lives in `src/herdr.js`.
+
+## Acknowledgements
+
+* [Herdr](https://herdr.dev): The modern terminal multiplexer and runtime platform roostr is built for.
+* [tokscale](https://github.com/junhoyeo/tokscale) by Junho Yeo: Powers optional daily spend tracking (`--today`) with clean fallback when absent.
+* [grill-with-ui](https://github.com/jasonku09/grill-with-ui) by jasonku09: Inspiration for future orchestration intake; not supported in v0.2.0.
 
 ## Licence
 

@@ -212,7 +212,9 @@ test('pruneReports: returns [] when the state dir is missing', () => {
 });
 
 test('the crew-board report command end to end', () => {
-  const bin = path.join(__dirname, '..', 'bin', 'crew-board');
+  const bin = fs.existsSync(path.join(__dirname, '..', 'bin', 'roostr'))
+    ? path.join(__dirname, '..', 'bin', 'roostr')
+    : path.join(__dirname, '..', 'bin', 'crew-board');
   execFileSync(process.execPath, [bin, 'report', '--pane', 'w3:p1', '--ctx', '17', '--tokens', '136700', '--cost', '2.02', '--model', 'opus'], { env: process.env });
   const r = readReport('w3:p1');
   assert.equal(r.ctx, 17);
@@ -221,7 +223,7 @@ test('the crew-board report command end to end', () => {
   assert.equal(r.model, 'opus');
   const bad = spawnSync(process.execPath, [bin, 'report', '--ctx', '17'], { env: process.env, encoding: 'utf8' });
   assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /usage: crew-board report/);
+  assert.match(bad.stderr, /usage: (roostr|crew-board) report/);
 });
 
 test('the example Claude statusline reports exactly', async () => {
@@ -267,7 +269,7 @@ test('report: --help works anywhere and does not need a value', () => {
   } finally {
     process.stdout.write = saved;
   }
-  assert.match(out, /^usage: crew-board report --pane /);
+  assert.match(out, /^usage: (roostr|crew-board) report --pane /);
   assert.match(out, /--task T/);
 });
 

@@ -42,7 +42,7 @@ function render(role, values = {}) {
   return text;
 }
 
-const USAGE = 'usage: crew-board template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]';
+const USAGE = 'usage: roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]';
 
 function parseArgs(argv) {
   let role = null;
@@ -72,14 +72,14 @@ function main(argv) {
     return 0;
   }
   if (p.error) {
-    process.stderr.write(`crew-board template: ${p.error}\n${USAGE}\n`);
+    process.stderr.write(`roostr template: ${p.error}\n${USAGE}\n`);
     return 2;
   }
   try {
     process.stdout.write(render(p.role, p.values));
     return 0;
   } catch (e) {
-    process.stderr.write(`crew-board template: ${e.message}\n`);
+    process.stderr.write(`roostr template: ${e.message}\n`);
     return 1;
   }
 }

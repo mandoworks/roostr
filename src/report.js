@@ -23,7 +23,7 @@ const EFFORT_ALIASES = {
   xhigh: 'xhigh', xh: 'xhigh', max: 'max',
 };
 
-const USAGE = 'usage: crew-board report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--task T] [--role S] [--about S] [--session ID] [--from claude|agy]';
+const USAGE = 'usage: roostr report --pane <id> [--ctx N] [--tokens N] [--input N] [--output N] [--cost N] [--model S] [--effort E] [--task T] [--role S] [--about S] [--session ID] [--from claude|agy]';
 
 const FLAG_HELP = [
   ['--pane <id>', 'Herdr pane id (required, for example w1:p2)'],
@@ -340,7 +340,7 @@ function main(argv) {
     return 0;
   }
   if (p.error) {
-    process.stderr.write(`crew-board report: ${p.error}\n${USAGE}\n`);
+    process.stderr.write(`roostr report: ${p.error}\n${USAGE}\n`);
     return 2;
   }
   let values = p.values;
@@ -349,7 +349,7 @@ function main(argv) {
     try {
       d = JSON.parse(fs.readFileSync(0, 'utf8'));
     } catch (e) {
-      process.stderr.write(`crew-board report: --from ${p.from} needs its JSON on stdin\n`);
+      process.stderr.write(`roostr report: --from ${p.from} needs its JSON on stdin\n`);
       return 2;
     }
     values = { ...FROM[p.from](d || {}), ...values };

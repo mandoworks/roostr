@@ -167,7 +167,7 @@ function main(args = []) {
       const paneId = flagValue(argv, '--pane');
       const task = flagValue(argv, '--task');
       if (!paneId || !task) {
-        console.error('usage: crew-board spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]');
+        console.error('usage: roostr spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]');
         return 2;
       }
       const result = spawn({
@@ -188,7 +188,7 @@ function main(args = []) {
     const runId = flagValue(argv, '--run');
     const result = flagValue(argv, '--result');
     if (!runId || !result) {
-      console.error('usage: crew-board outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]');
+      console.error('usage: roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]');
       return 2;
     }
     const entry = outcome({
@@ -201,7 +201,7 @@ function main(args = []) {
     console.log(`outcome:     ${entry.outcome} · run ${entry.runId}`);
     return 0;
   } catch (e) {
-    console.error(`crew-board ${sub}: ${e.message}`);
+    console.error(`roostr ${sub}: ${e.message}`);
     return 1;
   }
 }

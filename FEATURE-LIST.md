@@ -6,7 +6,7 @@ Live status of features in Roostr: what ships now in v0.2.0, what is gated for v
 
 ## 1. Shipped in v0.2.0 (Core Observability & Safety Guardrails)
 
-The core observability board is fully implemented, verified with 408 tests, and ready for public use.
+The core observability board is fully implemented, verified with 418 tests, and ready for public use.
 
 ### Live TUI Observability Board
 * **Split and Popup Views**: Runs as a persistent split pane (`roostr`) or an on-demand popup overlay (`roostr --popup`, closed with `q` or `Esc`).
@@ -35,27 +35,7 @@ The core observability board is fully implemented, verified with 408 tests, and 
 
 ---
 
-## 2. Gated for v0.3.0 (Autonomous Orchestration & Supervisor Loop)
-
-These modules are implemented and unit tested against mocks, but require multi-pane live soak testing in production before public enablement. Gated behind `[orchestration] enabled = false` by default.
-
-### Autonomous Supervisor Daemon (`src/daemon.js`)
-* **Event-Driven Pane Supervision**: Watches `pane.agent_status_changed` events from Herdr to detect stalls, idle workers, or error loops.
-* **Automated Escalation Triggers**: Intervenes when an agent pane stays blocked or idle beyond configured thresholds.
-* **Worker Health Heartbeats**: Tracks active worker progress without manual terminal polling.
-
-### Head Honcho & Secretary Roles (`src/orchestrator.js`)
-* **Head Honcho (O key)**: Interactive prompt to plan, decompose high-level user tasks into risk-stamped subtasks, and assign panes.
-* **Workspace Secretary (K/M keys)**: Automated daemon that collects finished worker outputs, runs acceptance checks, and logs results.
-* **Structured Delegation Protocols**: Formats work packages with strict boundaries, risk tiers, and completion markers.
-
-### Pre-Plan Grilling Intake (`src/grill.js`)
-* **Interactive Design Interview**: Pre-execution grilling sequence that asks targeted questions to resolve architectural ambiguity before spawning workers.
-* **Risk Tier Classification**: Categorizes delegated jobs into Tier 1 (procedural linter/test checks), Tier 2 (single blind review pass), or Tier 3 (two review passes and human sign-off).
-
----
-
-## 3. Planned for v0.4.0+ (Advanced Swarm Intelligence)
+## 2. Roadmap
 
 * **Cross-Host Herdr Federation**: Observe and manage agent panes across multiple machines connected via Tailscale.
 * **Adaptive Model Routing**: Dynamically route subtasks to the cheapest capable model based on real-time token spend and failure history.

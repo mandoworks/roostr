@@ -27,11 +27,11 @@ function flagsAfter(marker) {
   return out;
 }
 
-// `roostr` or `crew-board` on its own, not the `report` subcommand.
+// `roostr` or `crew-board` on its own, not subcommands.
 const boardFlags = new Set();
 for (const m of text.matchAll(/(?:roostr|crew-board)(?![\w-])/g)) {
   const after = text.slice(m.index + m[0].length);
-  if (/^\s+(?:report|recommend|analytics)\b/.test(after)) continue;
+  if (/^\s+[a-z][a-z0-9-]*\b/.test(after)) continue;
   let rest = after;
   const stop = rest.search(/[`\n]/);
   if (stop !== -1) rest = rest.slice(0, stop);

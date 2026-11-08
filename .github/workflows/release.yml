@@ -28,16 +28,16 @@ jobs:
       - run: ./verify.sh
       - name: Build the release archive
         run: |
-          git archive --format=tar.gz --prefix="crew-board-$GITHUB_REF_NAME/" \
-            -o "crew-board-$GITHUB_REF_NAME.tar.gz" HEAD
-          sha256sum "crew-board-$GITHUB_REF_NAME.tar.gz" > SHA256SUMS
+          git archive --format=tar.gz --prefix="roostr-$GITHUB_REF_NAME/" \
+            -o "roostr-$GITHUB_REF_NAME.tar.gz" HEAD
+          sha256sum "roostr-$GITHUB_REF_NAME.tar.gz" > SHA256SUMS
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "crew-board-$GITHUB_REF_NAME.tar.gz" SHA256SUMS \
-            --title "crew-board $GITHUB_REF_NAME" \
+            "roostr-$GITHUB_REF_NAME.tar.gz" SHA256SUMS \
+            --title "roostr $GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag
 
@@ -57,22 +57,23 @@ jobs:
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
           commit=$(git rev-parse "$tag^{commit}")
-          gh release download "$tag" --pattern 'crew-board-*.tar.gz' --dir dist --clobber
-          sha=$(sha256sum dist/crew-board-*.tar.gz | awk '{print $1}')
+          mkdir -p dist web
+          gh release download "$tag" --pattern 'roostr-*.tar.gz' --dir dist --clobber
+          sha=$(sha256sum dist/roostr-*.tar.gz | awk '{print $1}')
           released=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > web/plugin.json <<EOF
           {
             "schema": 1,
-            "id": "crew-board",
+            "id": "roostr",
             "version": "$version",
             "minHerdrVersion": "0.9.1",
             "commit": "$commit",
             "tag": "$tag",
             "releasedAt": "$released",
-            "install": "herdr plugin install mandoworks/crew-board --ref $tag",
-            "repo": "https://github.com/mandoworks/crew-board",
-            "release": "https://github.com/mandoworks/crew-board/releases/tag/$tag",
-            "tarball": "https://github.com/mandoworks/crew-board/releases/download/$tag/crew-board-$tag.tar.gz",
+            "install": "herdr plugin install mandoworks/roostr --ref $tag",
+            "repo": "https://github.com/mandoworks/roostr",
+            "release": "https://github.com/mandoworks/roostr/releases/tag/$tag",
+            "tarball": "https://github.com/mandoworks/roostr/releases/download/$tag/roostr-$tag.tar.gz",
             "sha256": "$sha"
           }
           EOF

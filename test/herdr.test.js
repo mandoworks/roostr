@@ -56,7 +56,7 @@ test('run: a missing herdr binary names the real problem', async () => {
   const saved = process.env.HERDR_BIN_PATH;
   process.env.HERDR_BIN_PATH = path.join(dir, 'missing-herdr');
   try {
-    await assert.rejects(herdr.snapshot(), /herdr not found on PATH \(crew-board runs inside Herdr\)/);
+    await assert.rejects(herdr.snapshot(), /herdr not found on PATH \((roostr|crew-board) runs inside Herdr\)/);
   } finally {
     if (saved === undefined) delete process.env.HERDR_BIN_PATH;
     else process.env.HERDR_BIN_PATH = saved;
