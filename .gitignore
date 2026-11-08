@@ -7,3 +7,6 @@ graphify-out/
 
 # owner test plan, internal
 human-plan.md
+GREAT-PLAN.md
+docs/gui-improvements.md
+.worktrees/
