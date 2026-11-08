@@ -23,7 +23,7 @@ Node 22 or newer, zero npm dependencies, no build step. Linux and macOS. Needs H
 
 ### 1-Line Install (Automatic)
 
-Installs the Herdr plugin, symlinks `roostr` onto your PATH, and configures the `prefix + b` keybinding automatically:
+Installs the Herdr plugin, symlinks `roostr` onto your PATH, and configures the `prefix + r` keybinding automatically:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mandoworks/roostr/main/scripts/install.sh | bash
@@ -41,7 +41,7 @@ Bind a shortcut in `~/.config/herdr/config.toml`:
 
 ```toml
 [[keys.command]]
-key = "prefix+b"
+key = "prefix+r"
 type = "plugin_action"
 command = "roostr.toggle-board"
 description = "roostr: toggle live board"
@@ -55,7 +55,7 @@ herdr server reload-config
 ## Opening the Board
 
 Once installed, open the board in any of three ways:
-* **Keybinding**: Press `prefix + b` to toggle the board beside your current work.
+* **Keybinding**: Press `prefix + r` to toggle the board beside your current work.
 * **Terminal**: Type `roostr` in any Herdr shell.
 * **Command Palette**: Press `Cmd+K` / `Ctrl+P`, type `roostr: toggle board`, and hit Enter.
 
@@ -68,7 +68,7 @@ Once installed, open the board in any of three ways:
 - **click**: one click selects a row. Double click the same row to jump to its pane. Clicking a pane id copies it.
 - **`◼` blocked** rows sort first in their workspace, and the banner shows the blocked and over budget panes.
 
-The visual prototype is in [docs/crew-board-visual.html](docs/crew-board-visual.html). Press `?` in the board for the key list.
+See the live board preview at [roostr.mando.works](https://roostr.mando.works/). Press `?` in the board for the key list.
 
 ## Backups and Workspace Recovery
 
