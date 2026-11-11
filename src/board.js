@@ -3855,7 +3855,7 @@ function runLive(opts) {
       const failed = r.errors.length ? ` · ${r.errors.length} failed: ${r.errors[0]}` : '';
       if (backups) {
         backups.busy = false;
-        backups.status = `built ${r.label}: ${r.panes} panes, ${r.agents} agents${failed}`;
+        backups.status = `built ${r.label}: ${r.panes} panes, ${r.agents} agents, ${r.sessions.length} resumed${failed}`;
       }
       if (r.workspaceId) herdr.focusWorkspace(r.workspaceId).catch(() => {});
       tick();

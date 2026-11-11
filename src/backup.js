@@ -410,8 +410,9 @@ function previewLines(b, width = 100, now = Date.now(), layout = 'saved') {
 }
 
 // Build a new workspace from one version. Returns { workspaceId, label,
-// panes, agents, errors }. Every step that fails is reported and skipped;
-// panes already made stay so nothing half built disappears silently.
+// panes, agents, sessions, errors }, where `sessions` lists the agents whose
+// saved conversation was resumed. Every step that fails is reported and
+// skipped; panes already made stay so nothing half built disappears silently.
 async function restoreBackup(b, options = {}) {
   const herdr = options.herdr || require('./herdr');
   const taken = new Set(options.taken || []);
@@ -476,7 +477,7 @@ async function restoreBackup(b, options = {}) {
       }
     } catch (e) {
       errors.push(i === 0 ? `create workspace ${label}: ${e.message}` : `create tab ${i + 1}: ${e.message}`);
-      if (i === 0) return { workspaceId: null, label, layout, panes: 0, agents: 0, errors };
+      if (i === 0) return { workspaceId: null, label, layout, panes: 0, agents: 0, sessions: [], errors };
       continue;
     }
     if (!root) {
@@ -487,6 +488,7 @@ async function restoreBackup(b, options = {}) {
   }
 
   let agents = 0;
+  const startedSessions = [];
   for (const t of b.tabs) {
     for (const p of t.panes) {
       const paneId = made.get(p.paneId);
@@ -498,16 +500,18 @@ async function restoreBackup(b, options = {}) {
       const a = p.agent;
       const name = sessions.agentName(a.name || a.kind, taken);
       taken.add(name);
+      const session = sessions.validSession(a.kind, a.session) ? a.session : null;
       try {
         await herdr.startAgent(name, a.kind, paneId, sessions.agentArgs({ ...a, agent: a.kind }));
         agents++;
+        if (session) startedSessions.push({ paneId, name, agent: a.kind, session });
         await herdr.renamePane(paneId, a.task ? `${name} · ${a.task}` : name).catch(() => {});
       } catch (e) {
         errors.push(`start ${name} (${a.kind}): ${e.message}`);
       }
     }
   }
-  return { workspaceId, label, layout, panes: made.size, agents, errors };
+  return { workspaceId, label, layout, panes: made.size, agents, sessions: startedSessions, errors };
 }
 
 function parseArgs(argv) {
@@ -589,7 +593,8 @@ async function main(argv, options = {}) {
   const r = await restoreBackup(v.backup, { herdr, taken, layout: o.layout, opencodeBin: o.opencodeBin });
   if (o.json) out.write(JSON.stringify(r, null, 2) + '\n');
   else {
-    out.write(`Built ${r.label}${r.workspaceId ? ` (${r.workspaceId})` : ''}: ${r.panes} panes, ${r.agents} agents started.\n`);
+    out.write(`Built ${r.label}${r.workspaceId ? ` (${r.workspaceId})` : ''}: ${r.panes} panes, ${r.agents} agents started, ${r.sessions.length} session${r.sessions.length === 1 ? '' : 's'} resumed.\n`);
+    for (const s of r.sessions) out.write(`  resumed: ${s.name} (${s.agent}) · ${s.session}\n`);
     for (const e of r.errors) out.write(`  failed: ${e}\n`);
   }
   return r.errors.length ? 1 : 0;

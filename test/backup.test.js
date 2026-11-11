@@ -159,6 +159,7 @@ test('restoreBackup: builds a new "*restored" workspace with the same tabs, spli
   assert.deepEqual(calls.find((c) => c[0] === 'tab'), ['tab', 'w9', '/tmp/app', 'review']);
   const docs = calls.find((c) => c[0] === 'start' && c[2] === 'claude');
   assert.deepEqual(docs, ['start', 'docs-2', 'claude', 'w9:n2', ['--resume', 'sess-1']]);
+  assert.deepEqual(r.sessions, [{ paneId: 'w9:n2', name: 'docs-2', agent: 'claude', session: 'sess-1' }]);
   assert.deepEqual(calls.find((c) => c[0] === 'start' && c[2] === 'opencode').slice(1, 4), ['opencode', 'opencode', 'w9:t2root']);
   assert.ok(calls.some((c) => c[0] === 'rename' && c[1] === 'w9:p1' && c[2] === 'logs'));
   assert.ok(calls.some((c) => c[0] === 'rename' && c[1] === 'w9:n2' && c[2] === 'docs-2 · write the guide'));
@@ -173,6 +174,7 @@ test('restoreBackup: a failed agent start is reported and the rest still opens',
   };
   const r = await backup.restoreBackup(backup.capture(model())[0], { herdr: h });
   assert.equal(r.agents, 1);
+  assert.deepEqual(r.sessions, []);
   assert.equal(r.errors.length, 1);
   assert.match(r.errors[0], /no claude here/);
 });
@@ -265,4 +267,5 @@ test('restoreBackup: a dead pane resolves its session from the store before it s
   assert.deepEqual(r.errors, []);
   const started = calls.find((c) => c[0] === 'start' && c[2] === 'opencode');
   assert.deepEqual(started[4], ['--session', 'ses_recovered']);
+  assert.equal(r.sessions.find((s) => s.agent === 'opencode').session, 'ses_recovered');
 });
