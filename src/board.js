@@ -29,7 +29,7 @@ const { readReport, pruneReports, writeReport, appendUsage, USAGE: REPORT_USAGE 
 const advisor = require('./advisor');
 const config = require('./config');
 const orchestrator = require('./orchestrator');
-const { VERSION } = require('./version');
+const { VERSION, COMMIT, label: buildLabel } = require('./version');
 const pricing = require('./pricing');
 const state = require('./state');
 const sessions = require('./sessions');
@@ -44,6 +44,12 @@ const analytics = require('./analytics');
 const summary = require('./summary');
 
 const { C, bold } = ui;
+
+// This device's exact build: the release version, plus the commit when the
+// plugin runs from a git checkout (the normal case while a branch is ahead of
+// its last tag), plus a star for uncommitted edits. Two devices showing the
+// same label run the same code.
+const VERSION_LABEL = buildLabel();
 
 // Squares first, then circles, so up to 18 panes get a mark of their own.
 // The palette avoids black, white and brown, which vanish on some themes.
@@ -2642,7 +2648,10 @@ function render(model, {
   }
   const loads = load.map((n) => n.toFixed(2));
   const z4 = width < 105 ? `${clock(model.now)} · load ${loads[0]}` : `${clock(model.now)}  load ${loads.join(' ')}`;
-  const zRight = (z3 ? z3 + '   ' : '') + z4;
+  const offered = menu && menu.update ? menu.update : null;
+  const versionText = offered ? `${VERSION_LABEL} ⬆` : VERSION_LABEL;
+  const versionPaint = offered ? bold(C.amber(versionText)) : C.dim(versionText);
+  const zRight = (z3 ? z3 + '   ' : '') + z4 + '   ' + versionPaint;
   const zLeft = `${z1}   ${z2}`;
   const gap = Math.max(1, width - ui.strWidth(zLeft) - ui.strWidth(zRight));
   lines.push(zLeft + ' '.repeat(gap) + zRight);
@@ -2658,10 +2667,15 @@ function render(model, {
     const boltX = z3x + ui.strWidth(z3) - ui.strWidth(bolt);
     regions.push({ action: 'tooltip', y: 0, x0: boltX, x1: boltX + ui.strWidth(bolt) - 1, text: `⚡ burn pace: ${paceLabel}× sustainable rate (${maxPace >= 2 ? 'critically high burn' : maxPace >= 1 ? 'faster than sustainable pace' : 'healthy pace'})` });
   }
-  const z4x = ui.strWidth(zLeft) + gap + ui.strWidth(zRight) - ui.strWidth(z4);
+  const z4x = z3x + (z3 ? ui.strWidth(z3) + 3 : 0);
   const loadAt = z4x + z4.indexOf('load ');
   const cores = os.cpus ? os.cpus().length : 0;
   regions.push({ action: 'tooltip', y: 0, x0: loadAt, x1: Math.min(width - 1, z4x + ui.strWidth(z4) - 1), text: `load 1m/5m/15m: ${loads.join(', ')} across ${cores} CPU core${cores === 1 ? '' : 's'}` });
+  const verX = z4x + ui.strWidth(z4) + 3;
+  regions.push({
+    action: 'tooltip', y: 0, x0: verX, x1: Math.min(width - 1, verX + ui.strWidth(versionText) - 1),
+    text: `roostr ${VERSION_LABEL} on this device${offered ? ` · v${offered} available, press u` : ' · run scripts/update.sh to match another device'}`,
+  });
   if (menu) {
     const activeDrawer = orchestrate ? 'orchestrate' : (today ? 'today' : (backups ? 'backups' : (options ? 'options' : (help ? 'help' : null))));
     const bar = menuBar(menu, width, activeDrawer);
@@ -3064,6 +3078,7 @@ function toJson(model) {
   return {
     schema: 1,
     version: VERSION,
+    commit: COMMIT || null,
     generatedAt: new Date(Number.isFinite(model.now) ? model.now : Date.now()).toISOString(),
     scope,
     workspace: scope === 'all' ? null : scope,

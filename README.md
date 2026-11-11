@@ -58,6 +58,23 @@ Reload Herdr config:
 herdr server reload-config
 ```
 
+### Keeping Devices on the Same Build
+
+The right corner of line 0 shows the build this device runs: `v0.2.0` for a
+release, `v0.2.0@3f9a2c1` for a git checkout. Two devices showing the same label
+run the same code; an amber `⬆` means a newer release is available.
+
+`scripts/update.sh` moves a device onto the fleet's build:
+
+```sh
+scripts/update.sh --ref main                                    # plugin only, from a branch
+scripts/update.sh --skills-repo git@github.com:org/skills.git   # plugin + skills
+```
+
+A device can keep those flags in `~/.roostr/update.conf` (`ROOSTR_REF`,
+`ROOSTR_SKILLS_REPO`, `ROOSTR_SKILLS_DIR`) and then just run `scripts/update.sh`.
+Without `--ref`, the plugin comes from the latest release tag.
+
 ## Opening the Board
 
 Once installed, open the board in any of three ways:

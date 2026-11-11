@@ -15,6 +15,7 @@ const checks = require('../src/checks');
 const config = require('../src/config');
 const { parseToml, toCrew } = require('../src/crewfile');
 const ui = require('../src/ui');
+const { VERSION } = require('../src/version');
 const tokscale = require('../src/tokscale');
 const { decide } = require('../scripts/toggle');
 
@@ -251,9 +252,15 @@ test('render: snapshot of a full board', async () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const out = board.render(m, { width: 118, load: [1.5, 1.25, 1] });
+  // The build in the corner changes with every commit, so the fixture keeps a
+  // placeholder and the rest of the board stays byte exact.
+  const stable = out.replace(/v\d+\.\d+\.\d+(@[0-9a-f]{4,40})?\*?/g, '<build>')
+    .split('\n')
+    .map((line, i) => (i === 0 ? line.replace(/\s+/g, ' ').trim() : line))
+    .join('\n');
   const file = path.join(__dirname, 'fixtures', 'board.snapshot.txt');
-  if (process.env.UPDATE_SNAPSHOTS) fs.writeFileSync(file, out + '\n');
-  assert.equal(out + '\n', fs.readFileSync(file, 'utf8'));
+  if (process.env.UPDATE_SNAPSHOTS) fs.writeFileSync(file, stable + '\n');
+  assert.equal(stable + '\n', fs.readFileSync(file, 'utf8'));
   for (const line of out.split('\n')) assert.ok(ui.strWidth(line) <= 118, line);
 });
 
@@ -467,6 +474,23 @@ test('render: line 0 uses the short load form under 105 columns', () => {
   assert.ok(!/load 0\.50 0\.50 0\.50/.test(out[0]), 'the three load numbers collapse when narrow');
 });
 
+test('render: the build sits in the right corner so two devices can compare', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const hits = [];
+  const out = board.render(m, { width: 140, height: 20, load: [0.5, 0.5, 0.5], hits }).split('\n');
+  assert.match(out[0], new RegExp(`v${VERSION.replace(/\./g, '\\.')}(@[0-9a-f]{4,40})?\\*?$`), 'the version ends line 0');
+  const ver = hits.find((h) => h.action === 'tooltip' && h.y === 0 && h.text && h.text.startsWith('roostr v'));
+  assert.ok(ver, 'the build has a tooltip');
+  assert.match(ver.text, /on this device/);
+
+  const offered = board.render(m, {
+    width: 140, load: [0.5, 0.5, 0.5], hits: [],
+    menu: { tags: 'none', view: 'auto', scope: 'all', update: '0.2.1' },
+  }).split('\n');
+  assert.match(offered[0], /⬆\s*$/, 'an offered update marks the corner');
+});
+
 test('render: surge, ctx and crew check clicks flash tooltips', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
@@ -609,9 +633,10 @@ test('toJson: envelope has version, scope, summary and pane rows', () => {
   const m = board.buildModel(sample());
   m.scopeLabel = 'all';
   const j = board.toJson(m);
-  assert.deepEqual(Object.keys(j), ['schema', 'version', 'generatedAt', 'scope', 'workspace', 'summary', 'panes']);
+  assert.deepEqual(Object.keys(j), ['schema', 'version', 'commit', 'generatedAt', 'scope', 'workspace', 'summary', 'panes']);
   assert.equal(j.schema, 1);
   assert.match(j.version, /^\d+\.\d+\.\d+$/);
+  assert.ok(j.commit === null || /^[0-9a-f]{4,40}$/.test(j.commit));
   assert.equal(j.generatedAt, new Date(NOW).toISOString());
   assert.equal(j.scope, 'all');
   assert.equal(j.workspace, null);

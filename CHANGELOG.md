@@ -35,6 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - `src/init.js` creates and pre-trusts a starter `.roostr.toml` in the current project and seeds `~/.roostr/config.json` with coding agent CLIs detected on `PATH`.
 - **Symlink Path Guards & `.bak` State Recovery**:
   - `fs.realpathSync` boundary verification in `src/crewfile.js` and `src/report.js` plus automatic `.bak` fallback in `src/state.js`.
+- **Device Build Label & `scripts/update.sh`**:
+  - Line 0's right corner now shows the exact build (`v0.2.0` for a release, `v0.2.0@3f9a2c1` for a git checkout, amber `⬆` when a newer release exists), so two devices can confirm they run the same code. `--json` gains a `commit` field.
+  - `scripts/update.sh` pulls the plugin from a branch or the latest release and, when given `--skills-repo`, pulls and syncs the agent skills; `~/.roostr/update.conf` keeps those flags per device.
 
 ---
 

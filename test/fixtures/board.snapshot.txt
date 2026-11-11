@@ -1,4 +1,4 @@
-example crew   ● 2 working · ○ 1 idle · ◼ 1 blocked · ✓ 1 done                              14:30  load 1.50 1.25 1.00
+example crew ● 2 working · ○ 1 idle · ◼ 1 blocked · ✓ 1 done 14:30 load 1.50 1.25 1.00 <build>
 ● Always  ○ Never
 ◼ 1 BLOCKED: copy 30s
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
