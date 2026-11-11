@@ -80,10 +80,13 @@ function rowsFromModel(model) {
     }
     return [...byId.values()];
   }
-  if (Array.isArray(model.agents)) {
-    const panes = new Map((model.panes || []).map((p) => [p.pane_id, p]));
-    const workspaces = new Map((model.workspaces || []).map((w) => [w.workspace_id, w]));
-    return model.agents.filter((a) => a && a.pane_id)
+  // A caller may pass a snapshot alone, or the snapshot attached to a model.
+  const snap = model.snapshot && typeof model.snapshot === 'object' ? model.snapshot : null;
+  const agents = Array.isArray(model.agents) ? model.agents : (snap && snap.agents);
+  if (Array.isArray(agents)) {
+    const panes = new Map(((Array.isArray(model.panes) ? model.panes : (snap && snap.panes) || [])).map((p) => [p.pane_id, p]));
+    const workspaces = new Map(((Array.isArray(model.workspaces) ? model.workspaces : (snap && snap.workspaces) || [])).map((w) => [w.workspace_id, w]));
+    return agents.filter((a) => a && a.pane_id)
       .map((a) => fromAgent(a, panes.get(a.pane_id) || {}, workspaces.get(a.workspace_id) || {}));
   }
   return [];
@@ -110,8 +113,18 @@ function fromRow(row, model, agent) {
     effort: clean(row.effort),
     status: clean(row.status),
     task: clean(row.task),
-    session: validSession(kind, reported) ? reported : validSession(kind, agent && agent.session_id) ? clean(agent.session_id, 128) : null,
+    session: validSession(kind, reported) ? reported : agentSession(kind, agent),
   };
+}
+
+// Herdr reports an agent's session as agent_session.value. Older snapshots
+// only carry session_id, so both are read, newest form last.
+function agentSession(kind, agent) {
+  if (!agent) return null;
+  const direct = clean(agent.session_id, 128);
+  if (validSession(kind, direct)) return direct;
+  const reported = clean(agent.agent_session && agent.agent_session.value, 128);
+  return validSession(kind, reported) ? reported : null;
 }
 
 function fromAgent(agent, pane, workspace) {
@@ -128,7 +141,7 @@ function fromAgent(agent, pane, workspace) {
     effort: null,
     status: clean(agent.agent_status),
     task: parsed.task,
-    session: clean(agent.session_id, 128),
+    session: agentSession(clean(agent.agent), agent),
   };
 }
 
@@ -443,6 +456,13 @@ function opencodeTitle(agent) {
 // stays unknown; a restore then starts fresh instead of resuming the wrong chat.
 async function resolveAgentSessions(snap, options = {}) {
   const agents = snap && Array.isArray(snap.agents) ? snap.agents : [];
+  // Herdr may already know the session id even when no report did. Promote it
+  // before the store lookup, so a pane is never matched to a second session.
+  for (const a of agents) {
+    if (!a || !a.pane_id || validSession(a.agent, a.session_id)) continue;
+    const known = clean(a.agent_session && a.agent_session.value, 128);
+    if (validSession(a.agent, known)) a.session_id = known;
+  }
   const unresolved = agents.filter((a) => a && a.pane_id && a.agent && !validSession(a.agent, a.session_id));
   if (!unresolved.some((a) => String(a.agent).toLowerCase() === 'opencode')) return [];
   let list;

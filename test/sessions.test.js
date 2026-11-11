@@ -130,6 +130,31 @@ test('extractSessions: a Herdr snapshot yields every agent pane', () => {
   assert.equal(list[1].agent, 'claude');
 });
 
+test('extractSessions: accepts a bare snapshot under model.snapshot', () => {
+  const snap = {
+    workspaces: [{ workspace_id: 'w1', label: 'crew-board' }],
+    panes: [{ pane_id: 'w1:pA', cwd: '/tmp/example-app' }],
+    agents: [{ pane_id: 'w1:pA', workspace_id: 'w1', agent: 'claude', agent_status: 'idle', cwd: '/tmp/example-app' }],
+  };
+  const list = sessions.extractSessions({ snapshot: snap });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].workspace, 'crew-board');
+});
+
+test('extractSessions: reads the session from Herdr agent_session when session_id is absent', () => {
+  const snap = {
+    workspaces: [{ workspace_id: 'w1', label: 'crew-board' }],
+    panes: [{ pane_id: 'w1:pA', cwd: '/tmp/example-app' }],
+    agents: [
+      { pane_id: 'w1:pA', workspace_id: 'w1', agent: 'claude', agent_status: 'idle', cwd: '/tmp/example-app', agent_session: { value: '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae' } },
+      { pane_id: 'w1:pB', workspace_id: 'w1', agent: 'opencode', agent_status: 'idle', cwd: '/tmp/example-app', agent_session: { value: 'not-an-opencode-id' } },
+    ],
+  };
+  const list = sessions.extractSessions(snap);
+  assert.equal(list[0].session, '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae');
+  assert.equal(list[1].session, null);
+});
+
 test('loadSessions: missing or corrupt files return an empty array', () => {
   assert.deepEqual(sessions.loadSessions(fileFor('missing')), []);
   const bad = fileFor('bad');
@@ -407,6 +432,19 @@ test('agentArgs: an invalid opencode session is not passed to --session', () => 
   assert.deepEqual(sessions.agentArgs({
     agent: 'opencode', session: 'ses_abc123', model: null, modelSrc: null,
   }), ['--session', 'ses_abc123']);
+});
+
+test('resolveAgentSessions: promotes Herdr agent_session to session_id without a store lookup', async () => {
+  const snap = {
+    agents: [
+      { pane_id: 'w1:pA', agent: 'opencode', cwd: '/tmp/example-app', agent_session: { value: 'ses_known' } },
+      { pane_id: 'w1:pB', agent: 'claude', cwd: '/tmp/example-app', agent_session: { value: '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae' } },
+    ],
+  };
+  const resolved = await sessions.resolveAgentSessions(snap, { opencodeBin: '/nonexistent-opencode', noCache: true });
+  assert.deepEqual(resolved, []);
+  assert.equal(snap.agents[0].session_id, 'ses_known');
+  assert.equal(snap.agents[1].session_id, '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae');
 });
 
 test('resolveAgentSessions: fills an opencode pane from the title opencode shows', async () => {

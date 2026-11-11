@@ -162,6 +162,16 @@ async function closePane(paneId) {
   await run(['pane', 'close', paneId]);
 }
 
+// Close a workspace and every pane in it.
+async function closeWorkspace(workspaceId) {
+  await run(['workspace', 'close', workspaceId]);
+}
+
+// Rename a workspace.
+async function renameWorkspace(workspaceId, label) {
+  await run(['workspace', 'rename', workspaceId, label]);
+}
+
 // Create a workspace.
 async function createWorkspace(label, cwd, noFocus = true) {
   const args = ['workspace', 'create'];
@@ -227,5 +237,5 @@ async function installPlugin(repo, version) {
 }
 
 module.exports = {
-  installPlugin, snapshot, readPane, shellPid, focusAgent, renamePane, renameAgent, setDisplayAgent, clearDisplayAgent, reportAgentSession, setTokens, clearTokens, listPanes, openBoard, focusBoard, closeBoard, splitPane, startAgent, promptAgent, sendKeys, closePane, createWorkspace, createTab, renameTab, focusWorkspace,
+  run, installPlugin, snapshot, readPane, shellPid, focusAgent, renamePane, renameAgent, setDisplayAgent, clearDisplayAgent, reportAgentSession, setTokens, clearTokens, listPanes, openBoard, focusBoard, closeBoard, splitPane, startAgent, promptAgent, sendKeys, closePane, closeWorkspace, renameWorkspace, createWorkspace, createTab, renameTab, focusWorkspace,
 };

@@ -364,7 +364,8 @@ function buildModel({
       ram: pick([rss[a.pane_id], 'exact']),
       budget: (extra && extra.budget) || budget || (ok && crew && crew.budget) || null,
       session: sessions.validSession(a.agent, rep.session) ? rep.session
-        : (sessions.validSession(a.agent, a.session_id) ? a.session_id : null),
+        : (sessions.validSession(a.agent, a.session_id) ? a.session_id
+          : (a.agent_session && sessions.validSession(a.agent, a.agent_session.value) ? a.agent_session.value : null)),
       cwd: a.cwd || pane.cwd || null,
       crewTags: ok && crew ? crew.tags : null,
       badges,
@@ -3106,6 +3107,7 @@ ${REPORT_USAGE.replace(/^usage: /, '       ')}
        roostr init [--dir <path>] [--json]
        roostr sessions [--json]
        roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
+       roostr respawn [--workspace <id|label|here>] [--yes] [--force] [--keep-old] [--layout even|saved|columns|rows]
 
 options:
   --workspace <id|label>  only show agent panes in this workspace

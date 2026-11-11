@@ -245,6 +245,28 @@ test('executeSpawn: fresh pane split executes herdr runner, report and ledger ca
   assert.equal(ledgerEntries[0].paneId, 'w1:p99');
 });
 
+test('executeSpawn: uses herdr.run when no runner is injected', async () => {
+  const herdr = require('../src/herdr');
+  const original = herdr.run;
+  const calls = [];
+  herdr.run = async (args) => {
+    calls.push(args);
+    if (args[0] === 'pane' && args[1] === 'split') return JSON.stringify({ result: { pane_id: 'w1:p77' } });
+    return '';
+  };
+  try {
+    const res = await orchestrator.executeSpawn(
+      { task: 'default runner', name: 'builder', role: 'worker', kind: 'claude' },
+      { reportModule: { writeReport: () => {} }, ledgerModule: { spawn: () => ({ runId: 'r1' }) } },
+    );
+    assert.equal(res.success, true);
+    assert.equal(res.paneId, 'w1:p77');
+    assert.deepEqual(calls[0].slice(0, 2), ['pane', 'split']);
+  } finally {
+    herdr.run = original;
+  }
+});
+
 test('executeSpawn: warm pane reuse sends resetCmd, waits for idle, prompts and records report', async () => {
   const calls = [];
   const fakeRunner = async (args) => {

@@ -196,6 +196,7 @@ roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan 
 roostr name --language <code> [--count N] [--exclude <names>]
 roostr sessions [--json]
 roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
+roostr respawn [--workspace <id|label|here>] [--yes] [--force] [--keep-old] [--layout even|saved|columns|rows]
 roostr backups [show|restore <label|id>] [--version N] [--yes]
 ```
 

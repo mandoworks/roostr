@@ -16,7 +16,7 @@ test('help: the command list ends on the page, no truncation', () => {
   assert.match(r.stdout, /(roostr|crew-board) sessions \[--json\]/);
   assert.match(r.stdout, /(roostr|crew-board) restore \[--workspace <id\|label\|here\|all>\] \[--yes\] \[--dry-run\]/);
   assert.match(r.stdout.trimEnd(), /-h, --help +this help$/);
-  for (const cmd of ['recommend', 'spawn', 'outcome', 'summary', 'tasks', 'template', 'name', 'backups', 'analytics']) {
+  for (const cmd of ['recommend', 'spawn', 'outcome', 'summary', 'tasks', 'template', 'name', 'backups', 'analytics', 'respawn']) {
     assert.match(r.stdout, new RegExp(`(roostr|crew-board) ${cmd}\\b`), `help documents ${cmd}`);
   }
 });

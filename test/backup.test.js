@@ -94,6 +94,15 @@ test('capture: backs up workspaces with an agent, shells included, and skips the
   assert.equal(b.tabs[1].panes[0].agent.name, null);
 });
 
+test('capture: saves a session Herdr reported as agent_session.value', () => {
+  const snap = snapshot();
+  delete snap.agents[0].session_id;
+  snap.agents[0].agent_session = { value: 'sess-1' };
+  const b = backup.capture(model(snap))[0];
+  const docs = b.tabs[0].panes.find((p) => p.paneId === 'w1:p2');
+  assert.equal(docs.agent.session, 'sess-1');
+});
+
 test('saveBackups: same content writes nothing, a new task refreshes the newest version', () => {
   const dir = freshDir();
   assert.equal(backup.saveBackups(backup.capture(model()), { dir, now: 1000 }), 1);
