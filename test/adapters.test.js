@@ -50,6 +50,24 @@ test('kilo reads the opencode footer', () => {
   assert.deepEqual(parseScreen('kilo', fx('opencode.txt')), parseScreen('opencode', fx('opencode.txt')));
 });
 
+test('opencode: a clipped percentage still yields tokens, with ctx unknown', () => {
+  const screen = '  escctrl+t   90.4K ( ctrl+p\n  intvariants         commands\n';
+  assert.deepEqual(parseScreen('kilo', screen), { ctx: null, tokens: 90400, cost: null, model: null });
+});
+
+test('opencode: a footer above a side panel still parses', () => {
+  const screen = '  ▣  Build · Example Model 2 Free\n  340.9K (34%)\n  │  Subagents  Shell  Terminals\n  │  No active subagents\n';
+  assert.deepEqual(parseScreen('opencode', screen), {
+    ctx: 34, tokens: 340900, cost: null, model: 'Example Model 2 Free',
+  });
+});
+
+test('opencode: a bare count in the transcript is ignored', () => {
+  assert.equal(parseScreen('opencode', '  we passed 90.4K (\n  still writing\n').tokens, null);
+  const prose = '  the wave 2 (pg-backend, contract-tests) is ready\n';
+  assert.equal(parseScreen('opencode', prose).tokens, null);
+});
+
 test('agy: no usage numbers', () => {
   assert.deepEqual(parseScreen('agy', fx('agy.txt')), { ctx: null, tokens: null, cost: null, model: null });
 });
