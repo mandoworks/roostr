@@ -195,6 +195,7 @@ roostr summary [--json] [--days 30] [--from <path>] [--no-write]
 roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
 roostr name --language <code> [--count N] [--exclude <names>]
 roostr sessions [--json]
+roostr log [--all] [--dir <path>] [--kind opencode|kilo|all] [--json] | log --resume <id> [--workspace <id|label>]
 roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
 roostr respawn [--workspace <id|label|here>] [--yes] [--force] [--keep-old] [--layout even|saved|columns|rows]
 roostr backups [show|restore <label|id>] [--version N] [--yes]
@@ -277,6 +278,10 @@ The OpenCode TUI on the tested version rejects `--variant`. The role `args` are 
 On each refresh the board saves a backup of every workspace that has an agent, in `~/.roostr/backups/<workspace id>/` (with fallback to `~/.crew-board/backups`). A backup holds every tab, each tab's split tree, every pane's directory and label, and for agent panes the kind, name, task, effort, exact model and session id. A layout, directory, agent kind or session change makes a new version, and the last 4 are kept.
 
 Press `R` to review them. `↑` `↓` pick a workspace, `←` `→` a version, `r` then `y` rebuilds it as a new workspace named `<label> *restored`. The old workspace is never touched. A restore needs explicit confirmation before it starts any agent.
+
+## Log
+
+Press `L` to see recent conversations from the agent's own session store, newest first, scoped to the current workspace's directories. `a` switches to every directory, `r` reloads, and `enter` opens the selected session in a new pane of the current workspace using its own resume flag. `roostr log` prints the same list and `roostr log --resume <id>` opens one. Unlike a backup, the log needs no layout: the session id is enough.
 
 ## Ledger, attempts and summary
 

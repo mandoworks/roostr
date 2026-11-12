@@ -601,9 +601,9 @@ test('render: menu bar and click regions', () => {
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
-  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[d today\] \[\? keys\]/);
+  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[o options\] \[d today\] \[\? keys\]/);
   const outOrch = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
-  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[R backups\] \[o options\] \[O orchestrate\] \[d today\] \[\? keys\]/);
+  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[o options\] \[O orchestrate\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
   const tags = hits.find((h) => h.action === 'tags');
@@ -617,6 +617,19 @@ test('render: menu bar and click regions', () => {
   board.render(m, { width: 120, height: 8, menu: { tags: 'off', view: 'auto', scope: 'all' }, hits: few });
   assert.ok(few.filter((h) => h.action !== 'help').every((h) => h.y < 5));
   assert.deepEqual(few.filter((h) => h.action === 'help' && h.x1 === 119 && h.y > 1).map((h) => h.y), [7], 'the footer opens the help');
+});
+
+test('render: the log drawer lists a recent session', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const logView = {
+    items: [{ id: 'ses_a', kind: 'opencode', title: 'Fix the log', directory: '/tmp/app', updated: NOW }],
+    sel: 0, all: false, dirs: ['/tmp/app'], busy: false, status: null,
+  };
+  const out = board.render(m, { width: 120, logView }).split('\n').join('\n');
+  assert.match(out, /log/);
+  assert.match(out, /Fix the log/);
+  assert.match(out, /opencode/);
 });
 
 test('EGM is gone from the model, the keys and the parser', () => {

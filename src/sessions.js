@@ -419,7 +419,7 @@ function agentArgs(s) {
 // The agent's own session store, cached briefly: a board tick is every 2 s and
 // spawning the CLI on each one would cost more than the feature is worth.
 const SESSION_LIST_TTL_MS = 10000;
-let sessionListCache = { at: 0, key: null, list: null };
+const sessionListCache = new Map(); // kind:bin -> { at, list }
 
 function execJson(bin, args, timeout) {
   return new Promise((resolve, reject) => {
@@ -430,16 +430,30 @@ function execJson(bin, args, timeout) {
   });
 }
 
-async function opencodeSessionList(options = {}) {
+// The CLI that owns a kind's session store. opencode and kilo expose the same
+// `session list --format json` command.
+function sessionBin(kind, options = {}) {
+  if (options.bin) return options.bin;
+  const k = String(kind || 'opencode').toLowerCase();
+  if (k === 'kilo') return process.env.ROOSTR_KILO_BIN || 'kilo';
+  return options.opencodeBin || process.env.ROOSTR_OPENCODE_BIN || process.env.CREW_BOARD_OPENCODE_BIN || 'opencode';
+}
+
+async function sessionList(kind, options = {}) {
   const now = options.now || Date.now();
-  const bin = options.opencodeBin || process.env.CREW_BOARD_OPENCODE_BIN || 'opencode';
-  if (!options.noCache && sessionListCache.list && sessionListCache.key === bin
-    && now - sessionListCache.at < SESSION_LIST_TTL_MS) {
-    return sessionListCache.list;
-  }
-  const list = await execJson(bin, ['session', 'list', '--format', 'json', '-n', '200'], options.timeout || 4000);
-  sessionListCache = { at: now, key: bin, list: Array.isArray(list) ? list : [] };
-  return sessionListCache.list;
+  const k = String(kind || 'opencode').toLowerCase();
+  const bin = sessionBin(k, options);
+  const key = `${k}:${bin}`;
+  const hit = sessionListCache.get(key);
+  if (!options.noCache && hit && now - hit.at < SESSION_LIST_TTL_MS) return hit.list;
+  const list = await execJson(bin, ['session', 'list', '--format', 'json', '-n', String(options.limit || 200)], options.timeout || 4000);
+  const items = Array.isArray(list) ? list.filter((s) => s && typeof s.id === 'string') : [];
+  sessionListCache.set(key, { at: now, list: items });
+  return items;
+}
+
+function opencodeSessionList(options = {}) {
+  return sessionList('opencode', options);
 }
 
 // opencode puts "<title>" in the terminal title as "OC | <title>".
@@ -660,4 +674,5 @@ module.exports = {
   sessionsFile, extractSessions, saveSessions, loadSessions,
   formatRestorePlan, formatSessionList, mainSessions, restoreSessions, USAGE,
   workspaceSessions, planRestore, agentName, agentArgs, validSession, resolveAgentSessions, resolveSavedSessions,
+  sessionList, sessionBin,
 };

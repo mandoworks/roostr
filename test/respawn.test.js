@@ -9,12 +9,12 @@ function snapshot() {
     workspaces: [{ workspace_id: 'w1', label: 'app' }],
     tabs: [{ tab_id: 'w1:t1', workspace_id: 'w1', label: '1', number: 1 }],
     panes: [
-      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 'w1:t1', cwd: '/tmp/app', label: 'la-jefota' },
+      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 'w1:t1', cwd: '/tmp/app', label: 'alpha' },
       { pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 'w1:t1', cwd: '/tmp/app', label: 'docs · write the guide' },
     ],
     agents: [
       {
-        pane_id: 'w1:p1', workspace_id: 'w1', agent: 'opencode', name: 'la-jefota', cwd: '/tmp/app',
+        pane_id: 'w1:p1', workspace_id: 'w1', agent: 'opencode', name: 'alpha', cwd: '/tmp/app',
         agent_status: 'idle', agent_session: { value: 'ses_abc123' },
       },
       {
@@ -78,7 +78,7 @@ test('respawn: --keep-old leaves the old workspace and keeps the restored label'
   assert.equal(calls.some((c) => c[0] === 'closeWorkspace'), false);
   assert.equal(calls.some((c) => c[0] === 'renameWorkspace'), false);
   // Live names are taken, so the copies get a suffix.
-  assert.deepEqual(calls.filter((c) => c[0] === 'startAgent').map((c) => c[1]), ['la-jefota-2', 'docs-2']);
+  assert.deepEqual(calls.filter((c) => c[0] === 'startAgent').map((c) => c[1]), ['alpha-2', 'docs-2']);
 });
 
 test('respawn: refuses while an agent is working unless forced', async () => {

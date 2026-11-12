@@ -15,6 +15,7 @@
 //   roostr arena [...]       the shareable first-try pass leaderboard
 //   roostr init [...]        prepare a project for roostr in one command
 //   roostr sessions [...]    list the sessions saved before a restart
+//   roostr log [...]         recent agent sessions, reopen one after a closed tab
 //   roostr restore [...]     print the restore plan
 //   roostr respawn [...]     rebuild a workspace and resume its sessions
 
@@ -65,6 +66,9 @@ if (argv[0] === 'report') {
 } else if (argv[0] === 'backups') {
   require(path.join(src, 'backup.js')).main(argv.slice(1))
     .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr backups: ${e.message}\n`); process.exitCode = 1; });
+} else if (argv[0] === 'log') {
+  require(path.join(src, 'session-log.js')).main(argv.slice(1))
+    .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr log: ${e.message}\n`); process.exitCode = 1; });
 } else if (argv[0] === 'respawn') {
   require(path.join(src, 'respawn.js')).main(argv.slice(1))
     .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr respawn: ${e.message}\n`); process.exitCode = 1; });

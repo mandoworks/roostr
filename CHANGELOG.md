@@ -24,6 +24,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Automatically installed to `~/.herdr/skills/roostr`, `~/.claude/skills/roostr`, and `~/.config/opencode/skills/roostr` via `scripts/postinstall.js`.
   - Encodes the **Event-Woken Planner Rule** (`<20%` orchestrator token share, `<30%` orchestrator context ceiling, single-agent threshold for `<30-line` fixes) and the **Warm-Pane Subagent Context Reset Protocol** (`/clear` or `/new` before assigning a new task to an idle worker pane below `30%` context).
   - Includes [`skills/roostr/references/schemas-and-config.md`](skills/roostr/references/schemas-and-config.md) documenting `tasks.json`, `.roostr.toml`, `~/.roostr/config.json`, `summary.json`, and worker report schemas.
+- **Session Log & Workspace Respawn**:
+  - `L log` (or `roostr log`) lists recent opencode and kilo conversations from their own stores; `enter` reopens one in the current workspace, so a closed tab keeps its conversation.
+  - `roostr respawn --workspace <id|label> --yes` snapshots, closes and rebuilds a workspace with its saved layout, resuming every agent session. It refuses while an agent is working or when a resume capable pane has no session; `--force` overrides both.
+  - Session ids are now read from Herdr's `agent_session.value`, so backups, restores and respawns no longer lose a conversation Herdr already knew.
 - **Smart Spawner Execution & Daemon Escalation Triggers**:
   - `roostr spawn --execute` automates worktree pane splitting, agent initialization, pane labeling, board reporting, and ledger tracking.
   - `src/daemon.js` evaluates five deterministic procedural escalation triggers (`loop-3x`, `stalled-180s`, `blocked`, `context-ceiling` at `85%`, and `test-regression-2x`) at zero LLM token cost.

@@ -34,6 +34,7 @@ const pricing = require('./pricing');
 const state = require('./state');
 const sessions = require('./sessions');
 const backup = require('./backup');
+const sessionLog = require('./session-log');
 const ledger = require('./ledger');
 const ui = require('./ui');
 const names = require('./names');
@@ -751,6 +752,7 @@ function menuBar(arg1, arg2, arg3, arg4, arg5, arg6) {
     ['view', `view: ${menu.view}`],
     ['scope', `scope: ${menu.scope}`],
     ['edit', 'edit task'],
+    ['log', 'L log'],
     ['backups', 'R backups'],
     ['options', 'o options'],
   ];
@@ -787,7 +789,7 @@ function menuBar(arg1, arg2, arg3, arg4, arg5, arg6) {
   const orchKeys = menu.orchestration ? ' O C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
-    : ` click to select · double click jump · ↑↓ ↵ f e t v w s R o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
+    : ` click to select · double click jump · ↑↓ ↵ f e t v w s R L o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
   if (x + ui.strWidth(hint) <= width) line += (menu.notice ? hint : C.dim(hint));
   return { line, hits };
 }
@@ -1200,9 +1202,10 @@ function helpLines(menu, sources, width = 100) {
       ['u', 'install the offered update'],
       ['r', 'refresh now'],
       ['R', 'backups: check what is saved, rebuild a workspace'],
+      ['L', 'log: reopen a recent session after its tab closed'],
       ['o', 'options: tokscale, compaction, settings'],
       ['?', 'this help'],
-      ['esc', 'close details, today, backups or options'],
+      ['esc', 'close details, today, log, backups or options'],
       ['q', 'quit'],
     ]],
   };
@@ -1534,6 +1537,28 @@ function backupLines(st, width, now = Date.now()) {
   if (st.status) lines.push(C.cyan(ui.clean(st.status)));
   // previewLines cleans every saved value itself; ui.clean here would squeeze the drawing.
   for (const l of backup.previewLines(v.backup, width, now, st.layout || 'even')) lines.push(C.text(l));
+  return lines;
+}
+
+// The log view: recent conversations from the agent's own session store, so a
+// closed tab can be reopened without a workspace backup. enter resumes one in
+// the current workspace; a switches between that workspace and every directory.
+function logViewLines(st, width, now = Date.now()) {
+  const lines = [`${bold(C.title('log'))}  ${C.dim('↑↓ session · ↵ resume · a here/all · r refresh · esc close')}`];
+  const n = st.items.length;
+  const dirs = st.dirs.length;
+  const scope = st.all ? 'every directory' : `${dirs} director${dirs === 1 ? 'y' : 'ies'} of this workspace`;
+  lines.push(C.dim(`scope: ${scope} · ${n} session${n === 1 ? '' : 's'}`));
+  if (st.status) lines.push(C.cyan(ui.clean(st.status)));
+  if (!n) {
+    lines.push(C.dim(st.busy ? 'reading the session stores…' : 'No sessions yet. A closed tab leaves its conversation in the agent store.'));
+    return lines;
+  }
+  st.items.forEach((s, i) => {
+    const on = i === st.sel;
+    const text = sessionLog.line(s, now, width - 3);
+    lines.push(`${on ? bold(C.cyan('▸')) : C.dim(' ')} ${on ? bold(C.text(text)) : C.text(text)}`);
+  });
   return lines;
 }
 
@@ -2618,7 +2643,7 @@ function orchestrateKey(st, key, model = null) {
 function render(model, {
   width = 100, height = 0, error = null, load = os.loadavg(), view = 'auto', menu = null, selected = -1, edit = null, hits = null,
   folded = new Set(), provider = null, subview = null, help = false, detail = false, today = false, metric = 'tokens',
-  backups = null, setup = null, headPicker = null, options = false, orchestrate = null,
+  backups = null, logView = null, setup = null, headPicker = null, options = false, orchestrate = null,
 } = {}) {
   const lines = [];
   const regions = [];
@@ -2678,7 +2703,7 @@ function render(model, {
     text: `roostr ${VERSION_LABEL} on this device${offered ? ` · v${offered} available, press u` : ' · run scripts/update.sh to match another device'}`,
   });
   if (menu) {
-    const activeDrawer = orchestrate ? 'orchestrate' : (today ? 'today' : (backups ? 'backups' : (options ? 'options' : (help ? 'help' : null))));
+    const activeDrawer = orchestrate ? 'orchestrate' : (today ? 'today' : (logView ? 'log' : (backups ? 'backups' : (options ? 'options' : (help ? 'help' : null)))));
     const bar = menuBar(menu, width, activeDrawer);
     for (const h of bar.hits) regions.push({ ...h, y: lines.length });
     lines.push(bar.line);
@@ -2732,6 +2757,8 @@ function render(model, {
     const td = todayLines(model, width, metric);
     for (const h of td.hits) regions.push({ ...h, y: lines.length + h.y });
     lines.push(...td.lines);
+  } else if (logView) {
+    lines.push(...logViewLines(logView, width, model.now));
   } else if (backups) {
     lines.push(...backupLines(backups, width, model.now));
   } else if (options) {
@@ -2908,7 +2935,7 @@ function render(model, {
         const nextSubPaint = nextSubHint ? C.dim(nextSubHint) : '';
         return ui.clip(line + nextProvPaint + nextSubPaint, width);
       });
-  const box = detail && !help && !today && !backups && !options && !orchestrate && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
+  const box = detail && !help && !today && !backups && !logView && !options && !orchestrate && model.rows[selected] ? detailBox(model.rows[selected], width, model.tokscale, menu && menu.notice) : null;
   const body = lines.map((l) => ui.clip(l, width));
   const footer = ui.clip(foot, width);
 
@@ -3106,6 +3133,7 @@ ${REPORT_USAGE.replace(/^usage: /, '       ')}
        roostr arena [--share] | arena export [--days N] | arena import --from <file>
        roostr init [--dir <path>] [--json]
        roostr sessions [--json]
+       roostr log [--all] [--dir <path>] [--kind opencode|kilo|all] [--json] | log --resume <id> [--workspace <id|label>]
        roostr restore [--workspace <id|label|here|all>] [--yes] [--dry-run]
        roostr respawn [--workspace <id|label|here>] [--yes] [--force] [--keep-old] [--layout even|saved|columns|rows]
 
@@ -3508,6 +3536,7 @@ function runLive(opts) {
   let detail = false;
   let today = false;
   let backups = null;
+  let logView = null;
   let options = Boolean(opts.options);
   let setup = null;
   let orchestrate = null;
@@ -3567,7 +3596,7 @@ function runLive(opts) {
     const prov = shownProvider();
     const frame = render(model, {
       width: out.columns || 100, height: out.rows || 0, error, view: opts.view, menu: menu(), selected, edit, hits, folded,
-      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, setup, headPicker, options, orchestrate,
+      provider: prov, subview: prov ? shownSubview(prov) : null, help, detail, today, metric, backups, logView, setup, headPicker, options, orchestrate,
     });
     // Erase each line before writing it: erasing after a full width line would
     // eat its last cell. Keep terminal and pane title locked to 🐓ROOSTR🐓.
@@ -3593,6 +3622,7 @@ function runLive(opts) {
       try { sessions.saveSessions(model); } catch (e) { /* a full disk must not stop the board */ }
       try { backup.saveBackups(backup.capture(model)); } catch (e) { /* same for the workspace backups */ }
       if (backups) backups = refreshBackups(backups);
+      if (logView && !logView.busy && Date.now() - logView.at > 15000) refreshLog();
       saveMemory(mem, new Set(model.rows.map((r) => r.paneId)), model.live, touched);
       // Herdr reuses pane ids: a closed pane's report must not dress up the next one.
       pruneReports(model.live);
@@ -3840,6 +3870,67 @@ function runLive(opts) {
     });
   };
 
+  const workspaceDirs = () => {
+    const panes = model && model.snapshot && Array.isArray(model.snapshot.panes) ? model.snapshot.panes : [];
+    return [...new Set(panes.filter((p) => p.workspace_id === model.home && p.cwd).map((p) => p.cwd))];
+  };
+
+  const refreshLog = () => {
+    if (!logView || logView.busy) return;
+    logView.busy = true;
+    draw();
+    sessionLog.list({ dirs: logView.all ? [] : logView.dirs, all: logView.all, noCache: true })
+      .then((items) => {
+        if (!logView) return;
+        logView.items = items;
+        logView.sel = Math.max(0, Math.min(logView.sel, items.length - 1));
+        logView.at = Date.now();
+        logView.status = null;
+      }, (e) => {
+        if (logView) logView.status = `log failed: ${(e.message || String(e)).split('\n')[0]}`;
+      })
+      .then(() => {
+        if (logView) logView.busy = false;
+        draw();
+      });
+  };
+
+  const openLog = () => {
+    if (logView) {
+      logView = null;
+      draw();
+      return;
+    }
+    logView = { items: [], sel: 0, all: false, dirs: workspaceDirs(), busy: false, status: null, at: 0 };
+    refreshLog();
+  };
+
+  const resumeLogged = () => {
+    const item = logView && logView.items[logView.sel];
+    if (!item || logView.busy) return;
+    const home = model && model.home;
+    const panes = (model && model.snapshot ? model.snapshot.panes : [])
+      .filter((p) => p.workspace_id === home && p.pane_id !== myPaneId);
+    const parent = panes.find((p) => p.focused) || panes[panes.length - 1];
+    logView.busy = true;
+    logView.status = `resuming ${ui.clean(item.title || item.id)}…`;
+    draw();
+    sessionLog.resume(item, { workspace: home, pane: parent && parent.pane_id }, { herdr }).then((r) => {
+      if (logView) {
+        logView.busy = false;
+        logView.status = r.error ? `resume failed: ${r.error}` : `resumed ${r.name} in ${r.paneId}`;
+      }
+      draw();
+      tick();
+    }, (e) => {
+      if (logView) {
+        logView.busy = false;
+        logView.status = `resume failed: ${(e.message || String(e)).split('\n')[0]}`;
+      }
+      draw();
+    });
+  };
+
   const openBackups = () => {
     backups = backups ? null : refreshBackups({ list: [], sel: 0, ver: 0, confirm: false, status: null, layout: 'even' });
     draw();
@@ -3950,6 +4041,7 @@ function runLive(opts) {
         draw();
       }, 2000);
     }
+    else if (action === 'log') openLog();
     else if (action === 'backups') openBackups();
     else if (action === 'refresh') tick();
     else if (action && action.startsWith('orch-tab:') && orchestrate) {
@@ -4124,6 +4216,18 @@ function runLive(opts) {
       draw();
       return;
     }
+    if (logView) {
+      const n = logView.items.length;
+      if (k === '\x1b' || k === 'L' || k === 'q') logView = null;
+      else if (k === '\x03') return quit();
+      else if (k === '\x1b[A' || k === 'k') logView.sel = Math.max(0, logView.sel - 1);
+      else if (k === '\x1b[B' || k === 'j') logView.sel = Math.min(Math.max(0, n - 1), logView.sel + 1);
+      else if (k === 'a') { logView.all = !logView.all; refreshLog(); return; }
+      else if (k === 'r') { refreshLog(); return; }
+      else if ((k === '\r' || k === '\n') && n) { resumeLogged(); return; }
+      draw();
+      return;
+    }
     if (backups) {
       if (backups.confirm) {
         backups.confirm = false;
@@ -4178,6 +4282,7 @@ function runLive(opts) {
     else if (k === '$') act('metric');
     else if (k === 'u') act('update');
     else if (k === 'y') act('copy-id');
+    else if (k === 'L') act('log');
     else if (k === 'R') act('backups');
     else if (k === 'o') act('options');
     else if (k === 'S') act('setup');
@@ -4194,13 +4299,15 @@ function runLive(opts) {
       draw();
       return;
     }
-    if (h && ['orchestrate', 'today', 'backups', 'options', 'help'].includes(h.action)) {
+    if (h && ['orchestrate', 'today', 'log', 'backups', 'options', 'help'].includes(h.action)) {
       if (h.action === 'orchestrate') {
         if (orchestrate) orchestrate = null;
         else act('orchestrate');
       } else if (h.action === 'today') {
         if (today) today = false;
         else act('today');
+      } else if (h.action === 'log') {
+        openLog();
       } else if (h.action === 'backups') {
         if (backups) backups = null;
         else openBackups();
