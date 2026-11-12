@@ -33,9 +33,10 @@ function fakeHerdr(snap, calls) {
     closeWorkspace: async (id) => { calls.push(['closeWorkspace', id]); },
     renameWorkspace: async (id, label) => { calls.push(['renameWorkspace', id, label]); },
     focusWorkspace: async (id) => { calls.push(['focusWorkspace', id]); },
-    openBoard: async (entrypoint, split, workspaceId) => { calls.push(['openBoard', entrypoint, split, workspaceId]); },
+    openBoard: async (entrypoint, split, workspaceId, targetPane) => { calls.push(['openBoard', entrypoint, split, workspaceId, targetPane]); },
     createWorkspace: async (label, cwd) => {
       calls.push(['createWorkspace', label, cwd]);
+      snap.panes.push({ pane_id: 'w9:p1', workspace_id: 'w9', cwd });
       return { workspaceId: 'w9', rootPaneId: 'w9:p1', tabId: 'w9:t1' };
     },
     createTab: async (ws, cwd, label) => { calls.push(['createTab', ws, cwd, label]); return { rootPaneId: 'w9:t2root' }; },
@@ -74,7 +75,7 @@ test('respawn: --reopen-board opens a board in the rebuilt workspace', async () 
   const calls = [];
   const r = await respawn.run({ ...base, reopenBoard: true }, { herdr: fakeHerdr(snapshot(), calls), save: false });
   assert.deepEqual(r.errors, []);
-  assert.deepEqual(calls.find((c) => c[0] === 'openBoard'), ['openBoard', 'board', true, 'w9']);
+  assert.deepEqual(calls.find((c) => c[0] === 'openBoard'), ['openBoard', 'board', true, 'w9', 'w9:p1']);
 });
 
 test('respawn: --keep-old leaves the old workspace and keeps the restored label', async () => {

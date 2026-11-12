@@ -141,7 +141,12 @@ async function run(opts, deps = {}) {
   if (!r.workspaceId) return { error: `could not rebuild ${ws.label}`, errors: r.errors, backup: saved };
   if (!opts.keepOld) await herdr.renameWorkspace(r.workspaceId, ws.label).catch(() => {});
   await herdr.focusWorkspace(r.workspaceId).catch(() => {});
-  if (opts.reopenBoard) await herdr.openBoard('board', true, r.workspaceId).catch(() => {});
+  if (opts.reopenBoard) {
+    const after = await herdr.snapshot().catch(() => null);
+    const panes = after ? after.panes.filter((p) => p.workspace_id === r.workspaceId) : [];
+    const target = panes.length ? panes[panes.length - 1].pane_id : null;
+    if (target) await herdr.openBoard('board', true, r.workspaceId, target).catch(() => {});
+  }
   return {
     workspace: ws,
     workspaceId: r.workspaceId,
