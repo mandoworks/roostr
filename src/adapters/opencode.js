@@ -9,7 +9,7 @@ const { lastLines, parseCount, empty } = require('./util');
 function parse(screen) {
   const f = lastLines(screen, 12);
   const r = empty();
-  const all = [...f.matchAll(/(?:^|\s)(\d+(?:\.\d+)?[kKmM]?)\s+\((\d+(?:\.\d+)?)%\)(?=\s|$)/gm)];
+  const all = [...f.matchAll(/(?:^|\s)(\d+(?:\.\d+)?[kKmM]?)\s+\((\d+(?:\.\d+)?)%/gm)];
   const m = all[all.length - 1] || null;
   if (m) {
     r.tokens = parseCount(m[1]);

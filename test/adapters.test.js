@@ -55,6 +55,11 @@ test('opencode: a clipped percentage still yields tokens, with ctx unknown', () 
   assert.deepEqual(parseScreen('kilo', screen), { ctx: null, tokens: 90400, cost: null, model: null });
 });
 
+test('opencode: a clipped context line keeps tokens and the percentage', () => {
+  const screen = '   ctrl+t        97.8K (38% ctrl+p\n   variants                 commands\n';
+  assert.deepEqual(parseScreen('kilo', screen), { ctx: 38, tokens: 97800, cost: null, model: null });
+});
+
 test('opencode: a footer above a side panel still parses', () => {
   const screen = '  ▣  Build · Example Model 2 Free\n  340.9K (34%)\n  │  Subagents  Shell  Terminals\n  │  No active subagents\n';
   assert.deepEqual(parseScreen('opencode', screen), {
