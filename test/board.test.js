@@ -601,9 +601,9 @@ test('render: menu bar and click regions', () => {
   ui.setColor(false);
   const hits = [];
   const out = board.render(m, { width: 120, menu: { tags: 'off', view: 'auto', scope: 'all' }, selected: 1, hits }).split('\n');
-  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[o options\] \[d today\] \[\? keys\]/);
+  assert.match(out[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[X respawn\] \[o options\] \[d today\] \[\? keys\]/);
   const outOrch = board.render(m, { width: 160, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, selected: 1 }).split('\n');
-  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[o options\] \[O orchestrate\] \[d today\] \[\? keys\]/);
+  assert.match(outOrch[1], /^\[tags: off\] \[view: auto\] \[scope: all\] \[edit task\] \[L log\] \[R backups\] \[X respawn\] \[o options\] \[O orchestrate\] \[d today\] \[\? keys\]/);
   assert.ok(!hits.some((h) => h.action === 'egm'));
   assert.ok(hits.some((h) => h.action === 'help'));
   const tags = hits.find((h) => h.action === 'tags');

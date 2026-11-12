@@ -131,16 +131,18 @@ async function listPanes() {
   return (r && Array.isArray(r.panes)) ? r.panes : [];
 }
 
-async function openBoard(entrypoint, split) {
+async function openBoard(entrypoint, split, workspaceId = null) {
   const pluginId = process.env.ROOSTR_PLUGIN_ID || process.env.CREW_BOARD_PLUGIN_ID || 'roostr';
   const args = ['plugin', 'pane', 'open', '--plugin', pluginId, '--entrypoint', entrypoint, '--focus'];
   if (split) args.push('--placement', 'split', '--direction', 'right');
+  if (workspaceId) args.push('--workspace', workspaceId);
   try {
     await run(args);
   } catch (e) {
     if (pluginId === 'roostr') {
       const fallbackArgs = ['plugin', 'pane', 'open', '--plugin', 'crew-board', '--entrypoint', entrypoint, '--focus'];
       if (split) fallbackArgs.push('--placement', 'split', '--direction', 'right');
+      if (workspaceId) fallbackArgs.push('--workspace', workspaceId);
       await run(fallbackArgs);
     } else {
       throw e;

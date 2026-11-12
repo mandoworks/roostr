@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Session Log & Workspace Respawn**:
   - `L log` (or `roostr log`) lists recent opencode and kilo conversations from their own stores; `enter` reopens one in the current workspace, so a closed tab keeps its conversation.
   - `roostr respawn --workspace <id|label> --yes` snapshots, closes and rebuilds a workspace with its saved layout, resuming every agent session. It refuses while an agent is working or when a resume capable pane has no session; `--force` overrides both.
+  - Press `X` in the board to respawn its own workspace: a detached child rebuilds it, reopens the board there and leaves the key press free to finish.
   - Session ids are now read from Herdr's `agent_session.value`, so backups, restores and respawns no longer lose a conversation Herdr already knew.
 - **Smart Spawner Execution & Daemon Escalation Triggers**:
   - `roostr spawn --execute` automates worktree pane splitting, agent initialization, pane labeling, board reporting, and ledger tracking.

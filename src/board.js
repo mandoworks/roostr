@@ -754,6 +754,7 @@ function menuBar(arg1, arg2, arg3, arg4, arg5, arg6) {
     ['edit', 'edit task'],
     ['log', 'L log'],
     ['backups', 'R backups'],
+    ['respawn', 'X respawn'],
     ['options', 'o options'],
   ];
   if (menu.orchestration) {
@@ -789,7 +790,7 @@ function menuBar(arg1, arg2, arg3, arg4, arg5, arg6) {
   const orchKeys = menu.orchestration ? ' O C' : '';
   const hint = menu.notice
     ? bold(C.green(` ✓ ${menu.notice}`))
-    : ` click to select · double click jump · ↑↓ ↵ f e t v w s R L o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
+    : ` click to select · double click jump · ↑↓ ↵ f e t v w s R L X o d${orchKeys}${pKeys}${menu.trust ? ' a' : ''}${menu.update ? ' u' : ''} ? q`;
   if (x + ui.strWidth(hint) <= width) line += (menu.notice ? hint : C.dim(hint));
   return { line, hits };
 }
@@ -1202,6 +1203,7 @@ function helpLines(menu, sources, width = 100) {
       ['u', 'install the offered update'],
       ['r', 'refresh now'],
       ['R', 'backups: check what is saved, rebuild a workspace'],
+      ['X', 'respawn this workspace, resuming every session'],
       ['L', 'log: reopen a recent session after its tab closed'],
       ['o', 'options: tokscale, compaction, settings'],
       ['?', 'this help'],
@@ -3537,6 +3539,7 @@ function runLive(opts) {
   let today = false;
   let backups = null;
   let logView = null;
+  let respawn = null;
   let options = Boolean(opts.options);
   let setup = null;
   let orchestrate = null;
@@ -3931,6 +3934,42 @@ function runLive(opts) {
     });
   };
 
+  const respawnLabel = () => {
+    const ws = model && model.snapshot && Array.isArray(model.snapshot.workspaces)
+      ? model.snapshot.workspaces.find((w) => w.workspace_id === model.home) : null;
+    return (ws && (ws.label || ws.workspace_id)) || (model && model.home) || '?';
+  };
+
+  // The workspace closes, so the board cannot run the respawn itself: a
+  // detached child does it and reopens a board in the rebuilt workspace.
+  const startRespawn = () => {
+    const target = respawn;
+    respawn = null;
+    notice = null;
+    if (!target) return;
+    const env = { ...process.env };
+    delete env.HERDR_PANE_ID;
+    const child = child_process.spawn(
+      process.execPath,
+      [path.join(__dirname, '..', 'bin', 'roostr'), 'respawn', '--workspace', target.workspaceId, '--yes', '--reopen-board'],
+      { detached: true, stdio: 'ignore', env },
+    );
+    child.on('error', () => {});
+    child.unref();
+    quit();
+  };
+
+  const askRespawn = () => {
+    if (!model || !model.home) {
+      flash('open the board in a workspace to respawn it');
+      return;
+    }
+    respawn = { workspaceId: model.home, label: respawnLabel() };
+    clearTimeout(noticeTimer);
+    notice = `respawn ${respawn.label}? y confirm · any other key cancels`;
+    draw();
+  };
+
   const openBackups = () => {
     backups = backups ? null : refreshBackups({ list: [], sel: 0, ver: 0, confirm: false, status: null, layout: 'even' });
     draw();
@@ -4042,6 +4081,7 @@ function runLive(opts) {
       }, 2000);
     }
     else if (action === 'log') openLog();
+    else if (action === 'respawn') askRespawn();
     else if (action === 'backups') openBackups();
     else if (action === 'refresh') tick();
     else if (action && action.startsWith('orch-tab:') && orchestrate) {
@@ -4216,6 +4256,13 @@ function runLive(opts) {
       draw();
       return;
     }
+    if (respawn) {
+      if (k === 'y') { startRespawn(); return; }
+      respawn = null;
+      notice = null;
+      draw();
+      return;
+    }
     if (logView) {
       const n = logView.items.length;
       if (k === '\x1b' || k === 'L' || k === 'q') logView = null;
@@ -4283,6 +4330,7 @@ function runLive(opts) {
     else if (k === 'u') act('update');
     else if (k === 'y') act('copy-id');
     else if (k === 'L') act('log');
+    else if (k === 'X') act('respawn');
     else if (k === 'R') act('backups');
     else if (k === 'o') act('options');
     else if (k === 'S') act('setup');
@@ -4299,7 +4347,7 @@ function runLive(opts) {
       draw();
       return;
     }
-    if (h && ['orchestrate', 'today', 'log', 'backups', 'options', 'help'].includes(h.action)) {
+    if (h && ['orchestrate', 'today', 'log', 'backups', 'respawn', 'options', 'help'].includes(h.action)) {
       if (h.action === 'orchestrate') {
         if (orchestrate) orchestrate = null;
         else act('orchestrate');
@@ -4311,6 +4359,8 @@ function runLive(opts) {
       } else if (h.action === 'backups') {
         if (backups) backups = null;
         else openBackups();
+      } else if (h.action === 'respawn') {
+        askRespawn();
       } else if (h.action === 'options') {
         if (options) options = false;
         else act('options');

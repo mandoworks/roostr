@@ -33,6 +33,7 @@ function fakeHerdr(snap, calls) {
     closeWorkspace: async (id) => { calls.push(['closeWorkspace', id]); },
     renameWorkspace: async (id, label) => { calls.push(['renameWorkspace', id, label]); },
     focusWorkspace: async (id) => { calls.push(['focusWorkspace', id]); },
+    openBoard: async (entrypoint, split, workspaceId) => { calls.push(['openBoard', entrypoint, split, workspaceId]); },
     createWorkspace: async (label, cwd) => {
       calls.push(['createWorkspace', label, cwd]);
       return { workspaceId: 'w9', rootPaneId: 'w9:p1', tabId: 'w9:t1' };
@@ -67,6 +68,13 @@ test('respawn: closes the workspace, rebuilds it, and resumes both sessions', as
   const start = calls.filter((c) => c[0] === 'startAgent');
   assert.deepEqual(start[0][4], ['--session', 'ses_abc123']);
   assert.deepEqual(start[1][4], ['--resume', '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae']);
+});
+
+test('respawn: --reopen-board opens a board in the rebuilt workspace', async () => {
+  const calls = [];
+  const r = await respawn.run({ ...base, reopenBoard: true }, { herdr: fakeHerdr(snapshot(), calls), save: false });
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(calls.find((c) => c[0] === 'openBoard'), ['openBoard', 'board', true, 'w9']);
 });
 
 test('respawn: --keep-old leaves the old workspace and keeps the restored label', async () => {

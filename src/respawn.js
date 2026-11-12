@@ -15,17 +15,18 @@
 const backup = require('./backup');
 const sessions = require('./sessions');
 
-const USAGE = 'usage: roostr respawn [--workspace <id|label|here>] [--yes] [--json] [--force] [--keep-old] [--layout even|saved|columns|rows]';
+const USAGE = 'usage: roostr respawn [--workspace <id|label|here>] [--yes] [--json] [--force] [--keep-old] [--reopen-board] [--layout even|saved|columns|rows]';
 const HAS_RESUME = new Set(['claude', 'opencode', 'kilo', 'agy', 'antigravity']);
 
 function parseArgs(argv) {
-  const o = { workspace: null, yes: false, json: false, force: false, keepOld: false, layout: 'saved', help: false };
+  const o = { workspace: null, yes: false, json: false, force: false, keepOld: false, reopenBoard: false, layout: 'saved', help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--yes' || a === '-y') o.yes = true;
     else if (a === '--json') o.json = true;
     else if (a === '--force') o.force = true;
     else if (a === '--keep-old') o.keepOld = true;
+    else if (a === '--reopen-board') o.reopenBoard = true;
     else if (a === '--here') o.workspace = 'here';
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a === '--workspace' || a === '-w') {
@@ -140,6 +141,7 @@ async function run(opts, deps = {}) {
   if (!r.workspaceId) return { error: `could not rebuild ${ws.label}`, errors: r.errors, backup: saved };
   if (!opts.keepOld) await herdr.renameWorkspace(r.workspaceId, ws.label).catch(() => {});
   await herdr.focusWorkspace(r.workspaceId).catch(() => {});
+  if (opts.reopenBoard) await herdr.openBoard('board', true, r.workspaceId).catch(() => {});
   return {
     workspace: ws,
     workspaceId: r.workspaceId,

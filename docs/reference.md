@@ -279,6 +279,10 @@ On each refresh the board saves a backup of every workspace that has an agent, i
 
 Press `R` to review them. `↑` `↓` pick a workspace, `←` `→` a version, `r` then `y` rebuilds it as a new workspace named `<label> *restored`. The old workspace is never touched. A restore needs explicit confirmation before it starts any agent.
 
+## Respawn
+
+Press `X` and confirm with `y` to rebuild the board's own workspace in place. A detached child takes a backup, closes the old workspace, rebuilds the saved layout, resumes every session and reopens the board in the new workspace, so the key press itself is safe to let go of. From the CLI, `roostr respawn --workspace <id|label> --yes` does the same without reopening the board.
+
 ## Log
 
 Press `L` to see recent conversations from the agent's own session store, newest first, scoped to the current workspace's directories. `a` switches to every directory, `r` reloads, and `enter` opens the selected session in a new pane of the current workspace using its own resume flag. `roostr log` prints the same list and `roostr log --resume <id>` opens one. Unlike a backup, the log needs no layout: the session id is enough.

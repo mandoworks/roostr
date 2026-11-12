@@ -120,7 +120,7 @@ Roostr saves workspace layouts (panes, working directories, active models, split
 * **From the board**: Press `R` or click `[R backups]` in the menu bar to open the interactive backups view.
 * **Inspect and preview**: Use arrow keys to cycle through saved workspaces and versions.
 * **Restore safely**: Press `r` to restore the selected snapshot. Roostr builds a fresh workspace (`*restored`) without altering or touching your active panes.
-* **Respawn a workspace**: `roostr respawn --workspace <id|label> --yes` rebuilds it in place and resumes every agent's conversation, so new agents pick up plugin or config changes. It refuses while an agent is working or when a session cannot be found; `--force` overrides both.
+* **Respawn a workspace**: press `X` in the board to rebuild the current workspace and reopen the board in it, resuming every agent's conversation, so new agents pick up plugin or config changes. From the CLI use `roostr respawn --workspace <id|label> --yes`. It refuses while an agent is working or when a session cannot be found; `--force` overrides both.
 * **Session log**: press `L` (or run `roostr log`) to see recent opencode and kilo conversations. `enter` reopens one in the current workspace, so a closed tab is not a lost conversation.
 * **CLI usage**:
   ```sh
