@@ -10,6 +10,9 @@ const advisor = require('../src/advisor');
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-summary-'));
 const now = Date.parse('2026-11-03T12:00:00.000Z');
 
+process.env.ROOSTR_CONFIG = path.join(tmpRoot, 'missing-config.json');
+delete process.env.CREW_BOARD_CONFIG;
+
 after(() => {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });

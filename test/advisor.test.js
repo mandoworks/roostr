@@ -9,6 +9,8 @@ const advisor = require('../src/advisor');
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-advisor-'));
 const defaultSummary = path.join(tmpRoot, 'missing-summary.json');
 const defaultModels = path.join(tmpRoot, 'missing-models.json');
+process.env.ROOSTR_CONFIG = path.join(tmpRoot, 'missing-config.json');
+delete process.env.CREW_BOARD_CONFIG;
 process.env.CREW_BOARD_SUMMARY = defaultSummary;
 process.env.CREW_BOARD_MODELS = defaultModels;
 
@@ -305,7 +307,9 @@ test('advisor: loadSummary uses CREW_BOARD_SUMMARY and caches by mtime', () => {
     const s3 = advisor.loadSummary();
     assert.equal(s3.by_kind.docs.count, 10);
   } finally {
-    process.env.CREW_BOARD_SUMMARY = defaultSummary;
+    process.env.ROOSTR_CONFIG = path.join(tmpRoot, 'missing-config.json');
+delete process.env.CREW_BOARD_CONFIG;
+process.env.CREW_BOARD_SUMMARY = defaultSummary;
   }
 });
 
