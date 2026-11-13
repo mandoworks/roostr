@@ -2920,7 +2920,7 @@ function render(model, {
       C.dim('? unknown  ≥ lower bound'),
     ].filter(Boolean).join('  ');
   }
-  if (orchestrate) foot = C.dim('tab/1-3 switch · o orchestrator · p plan repo · ↑↓ row · ←→ tool · space effort · ↵ model · f fallbacks · s summary · esc close');
+  if (orchestrate) foot = C.dim('tab/1-4 switch · o orchestrator · p plan repo · ↑↓ row · ←→ tool · space effort · ↵ model · f fallbacks · s summary · esc close');
   else if (setup) foot = C.dim('↑↓ row · space effort/toggle · ←→ tool · enter model · f fallbacks · esc cancel');
   else if (headPicker) foot = C.dim('↑↓ pick · enter confirm · y start · esc close');
   if (edit) {

@@ -97,10 +97,11 @@ See the live board preview at [roostr.mando.works](https://roostr.mando.works/).
 
 Roostr includes a data-driven orchestration engine and canonical agent skill ([`skills/roostr/SKILL.md`](skills/roostr/SKILL.md)) for planning, routing, and supervising multi-agent crews inside Herdr:
 
-- **3-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
+- **4-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
   1. **`1 tasks · advisor`**: Bind your active plan (`docs/orchestration-plan.md` + `docs/orchestration/tasks.json`), inspect per-task tool/effort/model recommendations backed by historical pass rates, override effort (`Space`) or model (`Enter`) in place, and copy ready-to-run `roostr spawn` commands (`c`).
   2. **`2 analytics · summary`**: Track spend, tokens, first-try pass rates, rework rates, and delegation efficiency (`>=80%` worker token share target) by `model`, `pane`, `kind`, or `batch` across `1d`, `7d`, and `30d` windows.
-  3. **`3 setup`**: Configure enabled coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), and per-kind defaults.
+  3. **`3 daemon · plan`**: The plan next to the deterministic supervisor's live state: tracked panes, wake budget, queued escalations and the configured ladder.
+  4. **`4 setup`**: Configure enabled coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), and per-kind defaults.
 - **CLI Subcommands**:
   ```sh
   roostr init                               # create & trust a starter .roostr.toml and detect installed agent CLIs

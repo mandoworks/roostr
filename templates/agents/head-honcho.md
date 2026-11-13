@@ -67,7 +67,7 @@ roostr outcome --run <runId> --result pass|fail|blocked ...
 roostr analytics --by model --days 7
 ```
 
-The human sets tools, tier models, role defaults and task-kind settings in the `[O orchestrate]` hub (`3 setup` tab) or `.roostr.toml`. The board reads those settings, then the project `.roostr.toml` `[tasks.<kind>]`, then `tasks.json`, then the per-run flags. Do not override a pinned setting without saying why.
+The human sets tools, tier models, role defaults and task-kind settings in the `[O orchestrate]` hub (`4 setup` tab) or `.roostr.toml`. The board reads those settings, then the project `.roostr.toml` `[tasks.<kind>]`, then `tasks.json`, then the per-run flags. Do not override a pinned setting without saying why.
 
 The deterministic daemon (`src/daemon.js`) is triggered automatically by Herdr lifecycle events with zero LLM tokens. Press `O` and open `3 daemon · plan` to see its state and the plan it follows. If a preferred model is disabled or over quota, stop and ask the human to choose a fallback. Never pick one silently.
 
