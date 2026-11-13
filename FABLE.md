@@ -4,6 +4,8 @@ A review invitation for Fable 5.2.
 
 You offered to check out this repo and tell us what to improve. This file is the brief: what roostr is, how it works, where the skill and the infrastructure are weak, and what a useful review looks like. Correct anything here that the code contradicts.
 
+> **Read this first: tokscale is required for a usable roostr install.** Roostr gets real spend and session token totals from [tokscale](https://github.com/junhoyeo/tokscale). The code treats it as optional and falls back to scraping agent footers, but that fallback is lossy when panes are narrow, a side panel is open, or an agent stops drawing usage. Assume a normal install has tokscale on `PATH`, and review whether roostr should make that a hard requirement with a clear startup warning.
+
 ## What roostr is
 
 Roostr is a zero-dependency Node.js plugin for Herdr, a terminal multiplexer for coding agents. It gives one board of every agent pane in a workspace: status, model, context, tokens, cost, task line, check badges and orchestration state. It also provides the CLI and the workflow for running a crew of agents: one Head Honcho plans and routes, worker panes execute isolated work packages, and a deterministic daemon supervises them without spending tokens.
