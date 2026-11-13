@@ -1,5 +1,5 @@
 'use strict';
-// `src/daemon.js`: Deterministic plugin daemon secretary for crew-board.
+// `src/daemon.js`: Deterministic plugin daemon for crew-board.
 // Replaces the polling LLM stopgap with deterministic code bound to lifecycle events.
 //
 // D1: Listener core (lifecycle event intake, state tracking, persistence).
@@ -374,7 +374,7 @@ function evaluatePane(row = {}, report = {}, history = {}, now = Date.now()) {
 // -----------------------------------------------------------------------------
 
 async function executePlan(plan, crewConfig, options = {}) {
-  // G2 Approval Gate: secretary spawns nothing until human approves the plan.
+  // G2 Approval Gate: the daemon spawns nothing until the human approves the plan.
   if (!plan || plan.approved !== true) {
     return {
       dispatches: [],

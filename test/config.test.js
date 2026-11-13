@@ -41,8 +41,6 @@ test('config: defaults when the file is missing', () => {
   assert.deepEqual(c.models, {});
   assert.equal(c.roles['head-honcho'].effort, 'high');
   assert.deepEqual(c.taskKinds.docs, { tool: '', model: '', fallbacks: [], effort: '' });
-  assert.deepEqual(c.roles.secretary.args, []);
-  assert.deepEqual(c.secretary, { auto: true, intervalSeconds: 900, scope: 'workspace' });
 });
 
 test('config: round trip writes mode 0600 and reads back', () => {
@@ -52,8 +50,7 @@ test('config: round trip writes mode 0600 and reads back', () => {
   next.headName = 'shogun';
   next.headLanguage = 'es';
   next.models = { fast: 'fast-x', balanced: 'balanced-x', reasoning: 'reason-x' };
-  next.roles.secretary.tool = 'opencode';
-  next.secretary = { auto: false, intervalSeconds: 1200, scope: 'all' };
+  next.roles.worker.tool = 'opencode';
   const saved = config.saveConfig(next);
   assert.deepEqual(saved.warnings, []);
   const mode = fs.statSync(file).mode & 0o777;
@@ -64,9 +61,8 @@ test('config: round trip writes mode 0600 and reads back', () => {
   assert.equal(back.headName, 'shogun');
   assert.equal(back.headLanguage, 'es');
   assert.equal(back.models.fast, 'fast-x');
-  assert.equal(back.roles.secretary.tool, 'opencode');
+  assert.equal(back.roles.worker.tool, 'opencode');
   assert.equal(back.roles.worker.model, 'balanced-x', 'a role with no model follows its tier');
-  assert.deepEqual(back.secretary, { auto: false, intervalSeconds: 1200, scope: 'all' });
 });
 
 test('config: an unknown tool is dropped to customTools with a warning', () => {
@@ -82,7 +78,6 @@ test('config: invalid values fall back with warnings', () => {
     headLanguage: 'xx',
     models: 'nope',
     roles: { worker: { tool: 'ghost', effort: 'turbo', args: 'no' } },
-    secretary: { auto: 'yes', intervalSeconds: 5, scope: 'session' },
   });
   assert.equal(c.headName, 'auto');
   assert.equal(c.headLanguage, 'en');
@@ -90,10 +85,7 @@ test('config: invalid values fall back with warnings', () => {
   assert.equal(c.roles.worker.tool, 'claude');
   assert.equal(c.roles.worker.effort, 'medium');
   assert.deepEqual(c.roles.worker.args, []);
-  assert.equal(c.secretary.auto, true);
-  assert.equal(c.secretary.intervalSeconds, 900);
-  assert.equal(c.secretary.scope, 'workspace');
-  assert.ok(warnings.length >= 4);
+  assert.ok(warnings.length >= 3);
 });
 
 test('config: advisor reads the tier map from config and honors disabledModels', () => {

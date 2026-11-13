@@ -1819,14 +1819,12 @@ test('menu: backups item is visible on the main board and clickable', () => {
   assert.ok(hits.some((h) => h.action === 'backups'));
 });
 
-test('help: orchestrate, setup, secretary and monitor rows are listed when orchestration enabled', () => {
+test('help: orchestrate and setup rows are listed when orchestration enabled', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all', orchestration: true }, help: true });
   assert.match(out, /  O \/ T +orchestrate: plan, tasks, advisor, analytics, setup/);
   assert.match(out, /  S +setup: tools and preferred models/);
-  assert.match(out, /  K +start a secretary in a shell pane/);
-  assert.match(out, /  M +prompt the secretary for a monitor pass/);
   assert.match(out, /  C +allow or continue the selected stuck pane/);
 });
 
@@ -1836,8 +1834,6 @@ test('help: orchestration rows are hidden by default', () => {
   const out = board.render(m, { width: 200, menu: { tags: 'off', view: 'auto', scope: 'all' }, help: true });
   assert.doesNotMatch(out, /  O \/ T +orchestrate:/);
   assert.doesNotMatch(out, /  S +setup:/);
-  assert.doesNotMatch(out, /  K +start a secretary/);
-  assert.doesNotMatch(out, /  M +prompt the secretary/);
   assert.doesNotMatch(out, /  C +allow or continue/);
 });
 
@@ -1923,22 +1919,6 @@ test('setup: a save with no tool is refused', () => {
   st.config.customTools = [];
   assert.equal(board.setupReady(st), false);
   assert.match(st.error, /select at least one tool/);
-});
-
-test('monitor helpers: target, due, scope and prompt', () => {
-  assert.equal(board.secretaryTarget([{ paneId: 'w1:p1', name: 'api' }, { paneId: 'w1:p2', name: 'secretary-2' }, { paneId: 'w1:p3', name: 'secretary' }]).name, 'secretary');
-  assert.equal(board.secretaryTarget([{ paneId: 'w1:p4', name: 'valeria', role: 'secretary' }]).name, 'valeria');
-  assert.equal(board.secretaryTarget([{ paneId: 'w1:p4', name: 'secretary-a', role: 'secretary', workspaceId: 'w1' }, { paneId: 'w2:p4', name: 'secretary-b', role: 'secretary', workspaceId: 'w2' }], 'w2').name, 'secretary-b');
-  assert.equal(board.secretaryTarget([{ paneId: 'w1:p2', name: 'secretary-2' }]).name, 'secretary-2');
-  assert.equal(board.secretaryTarget([{ paneId: 'w1:p1', name: 'api' }]), null);
-  assert.equal(board.monitorDue(0, 1000, 900, false), false);
-  assert.equal(board.monitorDue(0, 1000, 900, true), true);
-  assert.equal(board.monitorDue(500, 1000, 900, true), false);
-  assert.equal(board.monitorScope({ secretary: { scope: 'all' } }, { secretaryScope: 'workspace' }), 'workspace');
-  assert.equal(board.monitorScope({ secretary: { scope: 'workspace' } }, { secretaryScope: null }), 'workspace');
-  assert.equal(board.monitorScope({ secretary: { scope: 'all' } }, {}), 'all');
-  assert.ok(!board.monitorPrompt('workspace').includes('--all'));
-  assert.match(board.monitorPrompt('all'), /--all\./);
 });
 
 test('head picker: lists shell panes and asks to confirm', () => {
@@ -2079,7 +2059,7 @@ test('parseArgs: --options flag is accepted', () => {
   assert.equal(o.options, true);
 });
 
-test('orchestrate TUI: renders 3 tabs, edits tasks.json overrides, cycles analytics and setup', () => {
+test('orchestrate TUI: renders 4 tabs, edits tasks.json overrides, cycles analytics, daemon and setup', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-orch-tui-'));
   try {
     const orchDir = path.join(tmp, 'docs', 'orchestration');
@@ -2107,7 +2087,7 @@ test('orchestrate TUI: renders 3 tabs, edits tasks.json overrides, cycles analyt
 
     // Render Tab 1 (tasks & advisor) with tasks.json present
     const out1 = board.render(m, { width: 140, orchestrate: st });
-    assert.match(out1, /orchestrate +\[1 tasks · advisor\] \[2 analytics · summary\] \[3 setup\]/);
+    assert.match(out1, /orchestrate +\[1 tasks · advisor\] \[2 analytics · summary\] \[3 daemon · plan\] \[4 setup\]/);
     assert.match(out1, /orchestrator/);
     assert.match(out1, /active plan/);
     assert.match(out1, /TASKS & ADVISOR/);
@@ -2139,11 +2119,18 @@ test('orchestrate TUI: renders 3 tabs, edits tasks.json overrides, cycles analyt
     board.orchestrateKey(st, 'd', m);
     assert.equal(st.windowIndex, 1);
 
-    // Switch to Tab 3 (setup) via Tab key
+    // Switch to Tab 3 (daemon · plan) via Tab key
     board.orchestrateKey(st, '\t', m);
-    assert.equal(st.tab, 'setup');
+    assert.equal(st.tab, 'daemon');
     const out3 = board.render(m, { width: 140, orchestrate: st });
-    assert.match(out3, /setup +coding tools and preferred models/);
+    assert.match(out3, /daemon +event-driven/);
+    assert.match(out3, /Build auth module/);
+
+    // Switch to Tab 4 (setup) via '4'
+    board.orchestrateKey(st, '4', m);
+    assert.equal(st.tab, 'setup');
+    const out4 = board.render(m, { width: 140, orchestrate: st });
+    assert.match(out4, /setup +coding tools and preferred models/);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

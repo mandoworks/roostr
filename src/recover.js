@@ -3,7 +3,7 @@
 //
 // Herdr has no approve API. The only way to get past a permission prompt is to
 // read the pane and send the key the prompt expects. That is useful and
-// dangerous, so the board and the secretary share one rule set:
+// dangerous, so the board and the daemon share one rule set:
 //   - a screen must show an allow, approve, continue, proceed or yes prompt;
 //   - a screen that mentions a destructive or privileged action is refused;
 //   - anything unclear is refused and escalated.

@@ -117,7 +117,7 @@ test('names: a draw with remember false leaves history alone', () => {
 
 test('names: --history prints the recent name list', () => {
   const file = path.join(dir, 'history-cli.json');
-  names.record(['valeria'], { language: 'es', role: 'secretary', file });
+  names.record(['valeria'], { language: 'es', role: 'worker', file });
   const old = process.env.CREW_BOARD_NAMES;
   process.env.CREW_BOARD_NAMES = file;
   try {
@@ -129,7 +129,7 @@ test('names: --history prints the recent name list', () => {
     } finally {
       process.stdout.write = saved;
     }
-    assert.match(out.join(''), /valeria\tes\tsecretary/);
+    assert.match(out.join(''), /valeria\tes\tworker/);
   } finally {
     if (old === undefined) delete process.env.CREW_BOARD_NAMES;
     else process.env.CREW_BOARD_NAMES = old;

@@ -31,7 +31,7 @@ The pane label is the display name only. The board row shows the display name an
 
 Worker names are randomly generated from the language the Head Honcho is using with the user. The head draws them once with `roostr name --language <code> --count N --exclude <names>` (or `crew-board name` as a legacy alias) and keeps them. A Spanish conversation draws Spanish names. An English conversation draws English names. The setup language row defaults to `en`, and `es`, `pt` and `fr` are supported.
 
-The secretary is the fixed exception: display name `Secretary - <workspace>`, Herdr name `secretary-<workspace>`, role `secretary`. The board finds the secretary by role first. Press `K` in the board to create one; it picks a shell pane or splits one. Worker names use `~/.roostr/names.json` (override with `ROOSTR_NAMES` or `CREW_BOARD_NAMES`, with fallback to `~/.crew-board/names.json`) so recent names do not repeat.
+Worker names use `~/.roostr/names.json` (override with `ROOSTR_NAMES` or `CREW_BOARD_NAMES`, with fallback to `~/.crew-board/names.json`) so recent names do not repeat.
 
 ### Claude Code statusline snippet
 
@@ -134,10 +134,6 @@ tag_scope = "here"           # here | all, label and metadata mutations
 concurrency = 3              # 1..8
 timeout_seconds = 2          # 1..10
 
-[secretary]
-auto = true                  # overrides the global setup for this project
-interval_seconds = 900       # 60..3600
-scope = "workspace"          # workspace | all
 
 [providers.explabs]
 enabled = false              # opt in with the env key or cookie
@@ -192,7 +188,7 @@ roostr spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier
 roostr tasks [--file <path>] [--crew <file>] [--json]
 roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]
 roostr summary [--json] [--days 30] [--from <path>] [--no-write]
-roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
+roostr template <head-honcho|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]
 roostr name --language <code> [--count N] [--exclude <names>]
 roostr sessions [--json]
 roostr log [--all] [--dir <path>] [--kind opencode|kilo|all] [--json] | log --resume <id> [--workspace <id|label>]
@@ -260,16 +256,14 @@ Every pane keeps `paneId`, `name`, `agentName`, `displayName`, `role`, `about`, 
   },
   "roles": {
     "head-honcho": { "tool": "claude", "model": "reasoning-model", "effort": "high", "args": [] },
-    "secretary": { "tool": "opencode", "model": "fast-model", "effort": "low", "args": [] },
     "worker": { "tool": "claude", "model": "balanced-model", "effort": "medium", "args": [] },
     "reviewer": { "tool": "claude", "model": "balanced-model", "effort": "medium", "args": [] }
   },
-  "secretary": { "auto": true, "intervalSeconds": 900, "scope": "workspace" },
   "grillSkill": { "mode": "recommended", "command": "" }
 }
 ```
 
-The setup screen writes it. `headLanguage` defaults to `en` and accepts `en`, `es`, `pt` and `fr`. `roostr recommend` (or `crew-board recommend`) reads `models` as the tier map unless `ROOSTR_MODELS` or `CREW_BOARD_MODELS` is set. A model in `disabledModels` is never recommended. A task kind may pin `tool`, `model`, `fallbacks` and `effort`; an empty value means auto. The board never silently substitutes a disabled preferred model: it returns the ordered fallbacks and asks for a choice. The secretary is always `Secretary - <workspace>` / `secretary-<workspace>` with the role `secretary`.
+The setup screen writes it. `headLanguage` defaults to `en` and accepts `en`, `es`, `pt` and `fr`. `roostr recommend` (or `crew-board recommend`) reads `models` as the tier map unless `ROOSTR_MODELS` or `CREW_BOARD_MODELS` is set. A model in `disabledModels` is never recommended. A task kind may pin `tool`, `model`, `fallbacks` and `effort`; an empty value means auto. The board never silently substitutes a disabled preferred model: it returns the ordered fallbacks and asks for a choice.
 
 The OpenCode TUI on the tested version rejects `--variant`. The role `args` are the escape hatch, and the board never passes `--variant` to OpenCode. The effort is recorded in the report, not claimed as an internal variant.
 
@@ -328,7 +322,7 @@ The Head Honcho writes `docs/orchestration/tasks.json` next to the plan and brie
 }
 ```
 
-`crew-board tasks` validates ids, kinds, paths, status, dependency names and optional overrides, then prints the recommended effort, tier, model, confidence and fallbacks per task. `--json` returns the same rows for the secretary. A broken file exits 2 and prints every error.
+`crew-board tasks` validates ids, kinds, paths, status, dependency names and optional overrides, then prints the recommended effort, tier, model, confidence and fallbacks per task. `--json` returns the same rows for the daemon. A broken file exits 2 and prints every error.
 
 A spawn entry:
 
@@ -575,7 +569,7 @@ The two attempts produce four ledger lines: two `spawn` entries and two `outcome
 - A model in `disabledModels` is never recommended. The advisor returns `recommendedModel: null` and `modelWarning: "configure an available model"`. It never silently switches to a model from the ledger.
 - The board and `roostr recommend` (or `crew-board recommend`) show `recorded: fast-model 12 runs, 83% first try, $0.12 avg` only when the sample count is at least 3.
 
-Workers report their effort and model at the start with `roostr report --pane "$HERDR_PANE_ID" --effort <effort> --model <model>` (`crew-board report` remains supported). The head reads `roostr summary` before writing the next plan. The secretary records outcomes. The worker does not grade itself.
+Workers report their effort and model at the start with `roostr report --pane "$HERDR_PANE_ID" --effort <effort> --model <model>` (`crew-board report` remains supported). The head reads `roostr summary` before writing the next plan. The Head Honcho or the human records outcomes. The worker does not grade itself.
 
 ## Troubleshooting
 
@@ -604,10 +598,9 @@ Workers report their effort and model at the start with `roostr report --pane "$
 - **role**: the stable core job, for example `board core and CLI`.
 - **about**: one line describing what the agent does in this crew.
 - **head-honcho**: the heavy reasoning role. It owns the plan, draws worker names from the head language and does not implement.
-- **secretary**: the fast monitoring role. It is always `Secretary - <workspace>` / `secretary-<workspace>` and runs monitor passes. It does not implement.
 - **task kind**: `docs`, `review`, `tests`, `tooling`, `complex` or `feature`. It selects the settings row and the ledger bucket.
 - **fallbacks**: the ordered backup models for a task kind or task. The board never uses them silently.
 - **task list**: `docs/orchestration/tasks.json`, the machine readable plan. `roostr tasks` (or `crew-board tasks`) validates it and prints a recommendation per task.
 - **name history**: `~/.roostr/names.json` (with fallback to `~/.crew-board/names.json`), the recent-name list used to avoid repeats.
 - **worker**: one work package in a fresh context. It never changes the plan, its role or its about.
-- **flock**: the whole crew of one Head Honcho, one secretary, workers and optional reviewers.
+- **flock**: the whole crew of one Head Honcho, workers and optional reviewers.

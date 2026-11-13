@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased] (v0.3.0 Preview)
 
 ### Added
-- **Consolidated 3-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
-  - **Tab 1 (`1 tasks · advisor`)**: Assign or spawn the workspace Orchestrator (`o`), bind the active plan repository (`p`), start or trigger the Secretary monitor (`k` / `m`), inspect every task in `docs/orchestration/tasks.json` alongside empirical advisor recommendations, override `tool`, `effort`, `model`, and `fallbacks` in place, or press `c` to copy the ready-to-run `roostr spawn` command.
+- **Consolidated 4-Tab `[O orchestrate]` TUI Hub (`O` or `T` key)**:
+  - **Tab 1 (`1 tasks · advisor`)**: Assign or spawn the workspace Orchestrator (`o`), bind the active plan repository (`p`), inspect every task in `docs/orchestration/tasks.json` alongside empirical advisor recommendations, override `tool`, `effort`, `model`, and `fallbacks` in place, or press `c` to copy the ready-to-run `roostr spawn` command.
   - **Tab 2 (`2 analytics · summary`)**: Live interactive breakdown of spend, tokens, first-try pass rates, rework rates, and **Delegation Efficiency Share (`>=80%` worker target bar)** across `model`, `pane`, `kind`, and `batch` over `1d`, `7d`, and `30d` windows (`b`, `d`, `s`).
-  - **Tab 3 (`3 setup`)**: Interactive configuration for coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), role defaults, and per-kind routing rules.
+  - **Tab 3 (`3 daemon · plan`)**: The plan next to the deterministic daemon's live state: tracked panes, wake budget, queued escalations and the configured nudge, recycle and escalate ladder.
+  - **Tab 4 (`4 setup`)**: Interactive configuration for coding tools (`claude`, `opencode`, `kilo`, `agy`, `codex`, `gemini`), speed tiers (`fast`, `balanced`, `reasoning`), role defaults, and per-kind routing rules.
 - **4-Zone Top Status Bar & Automatic `🐓ROOSTR🐓` Pane Naming**:
   - Automatically renames the Herdr board pane to `🐓ROOSTR🐓` via `herdr pane rename` on launch and toggle.
   - Dedicates Line 0 of the board to four live, clickable zones: Workspace/Crew title, Live Crew Pulse (`● working · ○ idle · ◼ blocked`), Orchestration & Today Spend + `⚡` burn pace bolt, and Clock + CPU load.
@@ -43,6 +44,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Device Build Label & `scripts/update.sh`**:
   - Line 0's right corner now shows the exact build (`v0.2.0` for a release, `v0.2.0@3f9a2c1` for a git checkout, amber `⬆` when a newer release exists), so two devices can confirm they run the same code. `--json` gains a `commit` field.
   - `scripts/update.sh` pulls the plugin from a branch or the latest release and, when given `--skills-repo`, pulls and syncs the agent skills; `~/.roostr/update.conf` keeps those flags per device.
+
+### Removed
+- The secretary pane, its role and template, the `K` / `M` keys, the monitor loop and the secretary settings in the global config and crew file. The deterministic daemon and the `3 daemon · plan` tab replace them.
 
 ---
 

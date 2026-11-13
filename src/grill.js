@@ -5,7 +5,7 @@
 // The output is docs/orchestration-plan.md, not code.
 //
 // G1: 7 questions with recommendations, zero dependencies.
-// G2: Approval gate, plan derives from answers, secretary spawns nothing until human approves.
+// G2: Approval gate, plan derives from answers, the daemon spawns nothing until the human approves.
 // G3: Optional page/skill runner with GRILL_HERDR_TARGET.
 // G4: Install-time choice in crew file (recommended, custom, none).
 

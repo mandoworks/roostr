@@ -8,7 +8,7 @@ These templates make a crew work with any agent that can run shell commands: Cla
 crew-board template <role> [--name <name>] [--plan <path>] [--package <text>]
 ```
 
-Roles: `head-honcho`, `secretary`, `worker`, `reviewer`.
+Roles: `head-honcho`, `worker`, `reviewer`.
 
 Set the placeholders before you send the prompt:
 
@@ -39,7 +39,7 @@ The command prints lowercase names, one per line. The head then names each worke
 
 The setup screen has a `language` row. The default is `en`. `es`, `pt` and `fr` are supported. The head may override it with `--language`.
 
-The secretary is the fixed exception: display name `Secretary - <workspace>`, Herdr name `secretary-<workspace>`, role `secretary`. Press `K` in the board to create one. The board finds the secretary by role first, scoped to the current workspace.
+The deterministic daemon (`src/daemon.js`) watches lifecycle events, nudges, recycles and escalates with zero LLM tokens. No extra agent pane is needed.
 
 The Head Honcho sets the name on the agent and the pane, then reports the stable role and the one line about. The worker updates only its current task.
 
@@ -70,7 +70,7 @@ One attempt is one `crew-board spawn` and one `crew-board outcome`.
 - Before the spawn, the Head Honcho runs `crew-board recommend "<task>"` and uses its tier and effort unless the plan overrides them.
 - The Head Honcho records the attempt with `crew-board spawn --pane <id> --task "<task>" --role worker` and keeps the printed run id.
 - The spawn writes `~/.crew-board/orchestration.jsonl`. It keeps the recommendation and the effort the run will use. It does not start an agent.
-- The secretary records `pass`, `fail` or `blocked` with `crew-board outcome --run <runId>`, plus a real rework count and cost when known.
+- The Head Honcho or the human records `pass`, `fail` or `blocked` with `crew-board outcome --run <runId>`, plus a real rework count and cost when known.
 - A first try pass is an accepted run with no rework. An imported `accepted` counts as `pass`, `abandoned` as `fail`, and partial or reworked runs are not first try passes. Rework may be text, so do not invent a number.
 - The worker reports effort and model and writes the report. It does not grade itself.
 - `crew-board summary` writes `~/.crew-board/summary.json`, and the next recommendation reads it per kind.
@@ -88,7 +88,7 @@ The full entry schema and the summary aggregates are in [docs/reference.md](../.
 
 ## Escalation
 
-The secretary handles routine status, drift, location, budget and check prompts. It escalates ambiguity, architecture tradeoffs, plan changes, two failed attempts, cross-worker conflicts and any security exposure to the Head Honcho. A security exposure also goes to the human.
+The daemon handles routine status, drift, location, budget and check signals without tokens. It escalates ambiguity, architecture tradeoffs, plan changes, two failed attempts, cross-worker conflicts and any security exposure to the Head Honcho. A security exposure also goes to the human.
 
 ## Protocol
 

@@ -14,9 +14,6 @@ const ledger = require('./ledger');
 
 const TASK = 'grilling the crew plan';
 const ROLE = 'head-honcho';
-const SECRETARY_ROLE = 'secretary';
-const SECRETARY_TASK = 'monitoring the crew';
-const SECRETARY_ABOUT = 'Runs monitor passes and records outcomes';
 const DEFAULT_HEAD_NAME = 'la-jefa';
 const PLAN = 'docs/orchestration-plan.md';
 
@@ -60,18 +57,6 @@ function projectName(snapshot, home, fallback) {
 
 function prompt(name) {
   return templates.render(ROLE, { name, plan: PLAN });
-}
-
-function secretaryPrompt(name) {
-  return templates.render(SECRETARY_ROLE, { name, plan: PLAN });
-}
-
-// The secretary is workspace scoped so two open workspaces do not share a
-// Herdr agent name and the pane itself says which crew it belongs to.
-function secretaryName(workspaceLabel) {
-  const label = String(workspaceLabel || 'crew').replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'crew';
-  const slug = projectSlug(label).slice(0, 21).replace(/-+$/, '') || 'crew';
-  return { agent: `secretary-${slug}`.slice(0, 32), display: `Secretary - ${label}` };
 }
 
 function resolveRole(cfg = null, roleKey = ROLE) {
@@ -364,7 +349,7 @@ async function mainSpawn(argv, deps = {}) {
 }
 
 module.exports = {
-  TASK, ROLE, SECRETARY_ROLE, SECRETARY_TASK, SECRETARY_ABOUT, DEFAULT_HEAD_NAME, PLAN,
-  projectSlug, nextName, shellPanes, projectName, prompt, secretaryPrompt, secretaryName, resolveRole, roleArgs,
+  TASK, ROLE, DEFAULT_HEAD_NAME, PLAN,
+  projectSlug, nextName, shellPanes, projectName, prompt, resolveRole, roleArgs,
   parseSpawnArgs, planSpawn, executeSpawn, mainSpawn,
 };

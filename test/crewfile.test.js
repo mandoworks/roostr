@@ -271,9 +271,6 @@ test('crew model: new config keys and their defaults', () => {
   assert.equal(defaults.tagScope, 'here');
   assert.equal(defaults.checkConcurrency, 3);
   assert.equal(defaults.checkTimeoutMs, 2000);
-  assert.equal(defaults.secretaryAuto, null);
-  assert.equal(defaults.secretaryIntervalMs, null);
-  assert.equal(defaults.secretaryScope, null);
   assert.equal(defaults.explabsEnabled, false);
   assert.deepEqual(defaults.errors, []);
 });
@@ -285,19 +282,12 @@ tag_scope = "all"
 [checks]
 concurrency = 8
 timeout_seconds = 10
-[secretary]
-auto = true
-interval_seconds = 3600
-scope = "workspace"
 [providers.explabs]
 enabled = true
 `), '/proj/.crew-board.toml');
   assert.equal(crew.tagScope, 'all');
   assert.equal(crew.checkConcurrency, 8);
   assert.equal(crew.checkTimeoutMs, 10000);
-  assert.equal(crew.secretaryAuto, true);
-  assert.equal(crew.secretaryIntervalMs, 3600000);
-  assert.equal(crew.secretaryScope, 'workspace');
   assert.equal(crew.explabsEnabled, true);
   assert.deepEqual(crew.errors, []);
 
@@ -305,18 +295,11 @@ enabled = true
 [checks]
 concurrency = 1
 timeout_seconds = 1
-[secretary]
-auto = false
-interval_seconds = 60
-scope = "all"
 [providers.explabs]
 enabled = false
 `), '/proj/.crew-board.toml');
   assert.equal(low.checkConcurrency, 1);
   assert.equal(low.checkTimeoutMs, 1000);
-  assert.equal(low.secretaryAuto, false);
-  assert.equal(low.secretaryIntervalMs, 60000);
-  assert.equal(low.secretaryScope, 'all');
   assert.equal(low.explabsEnabled, false);
   assert.deepEqual(low.errors, []);
 });
@@ -330,10 +313,6 @@ test('crew model: invalid config keys fall back and append an error', () => {
     ['[checks]\nconcurrency = 3.5', '[checks] concurrency must be 1..8'],
     ['[checks]\ntimeout_seconds = 0', '[checks] timeout_seconds must be 1..10'],
     ['[checks]\ntimeout_seconds = 11', '[checks] timeout_seconds must be 1..10'],
-    ['[secretary]\nauto = "yes"', '[secretary] auto must be true or false'],
-    ['[secretary]\ninterval_seconds = 0', '[secretary] interval_seconds must be 60..3600'],
-    ['[secretary]\ninterval_seconds = 3601', '[secretary] interval_seconds must be 60..3600'],
-    ['[secretary]\nscope = "session"', '[secretary] scope must be "workspace" or "all"'],
     ['[providers.explabs]\nenabled = "yes"', '[providers.explabs] enabled must be true or false'],
   ];
   for (const [src, msg] of cases) {
@@ -343,10 +322,6 @@ test('crew model: invalid config keys fall back and append an error', () => {
   const crew = toCrew(parseToml('[providers]\nname = "x"\n'), '/proj/.crew-board.toml');
   assert.equal(crew.explabsEnabled, false);
   assert.deepEqual(crew.errors, []);
-});
-
-test('parseToml: [secretary] auto without a value is a parse error', () => {
-  assert.throws(() => parseToml('[secretary]\nauto =\n'), /line 2: unsupported value/);
 });
 
 test('crew model: project task kind overrides are validated and kept', () => {

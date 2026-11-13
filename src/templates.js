@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ROLES = ['head-honcho', 'secretary', 'worker', 'reviewer'];
+const ROLES = ['head-honcho', 'worker', 'reviewer'];
 const DEFAULTS = {
   role: (role) => role,
   name: (role) => role,
@@ -42,7 +42,7 @@ function render(role, values = {}) {
   return text;
 }
 
-const USAGE = 'usage: roostr template <head-honcho|secretary|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]';
+const USAGE = 'usage: roostr template <head-honcho|worker|reviewer> [--name <name>] [--plan <path>] [--package <text>]';
 
 function parseArgs(argv) {
   let role = null;

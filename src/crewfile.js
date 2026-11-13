@@ -217,7 +217,6 @@ function toCrew(data, file) {
   const table = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
   const board = table(data.board);
   const checks = table(data.checks);
-  const secretary = table(data.secretary);
   const explabs = table(table(data.providers).explabs);
   const analytics = table(data.analytics);
   const taskKinds = table(data.tasks);
@@ -235,13 +234,6 @@ function toCrew(data, file) {
     && checks.timeout_seconds >= 1
     && checks.timeout_seconds <= 10;
   const checkTimeoutMs = timeoutOk ? Math.round(checks.timeout_seconds * 1000) : 2000;
-  const secretaryAuto = typeof secretary.auto === 'boolean' ? secretary.auto : null;
-  const intervalOk = typeof secretary.interval_seconds === 'number'
-    && Number.isFinite(secretary.interval_seconds)
-    && secretary.interval_seconds >= 60
-    && secretary.interval_seconds <= 3600;
-  const secretaryIntervalMs = intervalOk ? Math.round(secretary.interval_seconds * 1000) : null;
-  const secretaryScope = secretary.scope === 'workspace' || secretary.scope === 'all' ? secretary.scope : null;
   const explabsEnabled = typeof explabs.enabled === 'boolean' ? explabs.enabled : false;
 
   const rotationDaysOk = typeof analytics.rotation_days === 'number'
@@ -264,9 +256,6 @@ function toCrew(data, file) {
     tagScope,
     checkConcurrency,
     checkTimeoutMs,
-    secretaryAuto,
-    secretaryIntervalMs,
-    secretaryScope,
     explabsEnabled,
     rotationDays,
     grill: {
@@ -297,15 +286,6 @@ function toCrew(data, file) {
   }
   if (checks.timeout_seconds !== undefined && !timeoutOk) {
     crew.errors.push('[checks] timeout_seconds must be 1..10');
-  }
-  if (secretary.auto !== undefined && typeof secretary.auto !== 'boolean') {
-    crew.errors.push('[secretary] auto must be true or false');
-  }
-  if (secretary.interval_seconds !== undefined && secretaryIntervalMs === null) {
-    crew.errors.push('[secretary] interval_seconds must be 60..3600');
-  }
-  if (secretary.scope !== undefined && secretaryScope === null) {
-    crew.errors.push('[secretary] scope must be "workspace" or "all"');
   }
   if (explabs.enabled !== undefined && typeof explabs.enabled !== 'boolean') {
     crew.errors.push('[providers.explabs] enabled must be true or false');

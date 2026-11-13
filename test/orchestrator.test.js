@@ -70,27 +70,12 @@ test('projectName: the home pane cwd basename, else the fallback', () => {
   assert.equal(orchestrator.projectName({ panes: [] }, 'w1', '/tmp/fallback'), 'fallback');
 });
 
-test('resolveRole: the secretary role resolves independently', () => {
+test('resolveRole: the worker role resolves independently', () => {
   const c = config.defaultConfig();
-  c.roles.secretary = { tool: 'opencode', model: 'fast-x', effort: 'low', args: [] };
-  assert.deepEqual(orchestrator.resolveRole(c, 'secretary'), {
+  c.roles.worker = { tool: 'opencode', model: 'fast-x', effort: 'low', args: [] };
+  assert.deepEqual(orchestrator.resolveRole(c, 'worker'), {
     tool: 'opencode', model: 'fast-x', effort: 'low', args: [],
   });
-});
-
-test('secretaryPrompt: renders the secretary template with the drawn name', () => {
-  const prompt = orchestrator.secretaryPrompt('valeria');
-  assert.match(prompt, /valeria/);
-  assert.match(prompt, /role is `secretary`/);
-});
-
-test('secretaryName: workspace scoped display and safe Herdr name', () => {
-  assert.deepEqual(orchestrator.secretaryName('example-app'), {
-    agent: 'secretary-example-app', display: 'Secretary - example-app',
-  });
-  assert.equal(orchestrator.secretaryName('example *restored').agent, 'secretary-example-restored');
-  assert.ok(orchestrator.secretaryName('x'.repeat(80)).agent.length <= 32);
-  assert.equal(orchestrator.secretaryName('example *restored').display, 'Secretary - example *restored');
 });
 
 test('parseSpawnArgs: parses all flags for execution, reuse, and prompting', () => {

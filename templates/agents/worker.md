@@ -32,7 +32,7 @@ The agent name above is the lowercase Herdr name. The pane label carries the cap
 - Read a file before editing it.
 - Do not touch a file the brief forbids.
 - Do not commit. The Head Honcho or the human decides what to commit.
-- Do not prompt other workers. Ask the secretary or the Head Honcho.
+- Do not prompt other workers. Ask the Head Honcho.
 - If two attempts fail, stop and escalate. Do not keep retrying in a polluted context.
 
 ## Done
@@ -41,7 +41,7 @@ The agent name above is the lowercase Herdr name. The pane label carries the cap
 2. Write `docs/orchestration/reports/<package>.md`, naming the report after the work package, not the worker.
 3. Put the result, files touched, verification output and the next step in the report.
 4. End the report with `<NAME>_DONE` or `<NAME>_BLOCKED`.
-5. Tell the secretary the report is ready. The secretary records the outcome. You do not grade your own work.
+5. End the report and return. The Head Honcho or the human records the outcome. You do not grade your own work.
 
 ## Context hygiene
 

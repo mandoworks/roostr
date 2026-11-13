@@ -1,6 +1,5 @@
 'use strict';
-// The user's setup: tools, preferred models, head name and the secretary
-// defaults. `~/.crew-board/config.json`, override with CREW_BOARD_CONFIG.
+// The user's setup: tools, preferred models, head name and role defaults. `~/.crew-board/config.json`, override with CREW_BOARD_CONFIG.
 // JSON only. The crew file stays TOML.
 
 const fs = require('fs');
@@ -9,9 +8,8 @@ const path = require('path');
 const state = require('./state');
 
 const TOOLS = ['claude', 'opencode', 'kilo', 'agy', 'codex', 'gemini'];
-const ROLES = ['head-honcho', 'secretary', 'worker', 'reviewer'];
+const ROLES = ['head-honcho', 'worker', 'reviewer'];
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const SCOPES = ['workspace', 'all'];
 const GRILL_MODES = ['recommended', 'none', 'custom'];
 const LANGUAGES = ['en', 'es', 'pt', 'fr'];
 const TASK_KINDS = ['docs', 'review', 'tests', 'tooling', 'complex', 'feature'];
@@ -51,11 +49,9 @@ function defaultConfig() {
     },
     roles: {
       'head-honcho': { tool: 'claude', model: '', effort: 'high', args: [] },
-      secretary: { tool: 'claude', model: '', effort: 'low', args: [] },
       worker: { tool: 'claude', model: '', effort: 'medium', args: [] },
       reviewer: { tool: 'claude', model: '', effort: 'medium', args: [] },
     },
-    secretary: { auto: true, intervalSeconds: 900, scope: 'workspace' },
     grillSkill: { mode: 'recommended', command: '' },
     orchestration: { enabled: false },
   };
@@ -225,20 +221,6 @@ function normalize(raw) {
     if (!r.model) r.model = config.models[TIER_BY_EFFORT[r.effort]] || '';
   }
 
-  const secretary = plainObject(raw.secretary) ? raw.secretary : {};
-  config.secretary.auto = bool(secretary.auto, config.secretary.auto);
-  if (secretary.auto !== undefined && typeof secretary.auto !== 'boolean') warnings.push('secretary.auto must be true or false; using true');
-  const interval = Number(secretary.intervalSeconds);
-  if (secretary.intervalSeconds !== undefined) {
-    if (Number.isInteger(interval) && interval >= 60 && interval <= 3600) config.secretary.intervalSeconds = interval;
-    else warnings.push('secretary.intervalSeconds must be 60..3600; using 900');
-  }
-  const scope = text(secretary.scope, 20);
-  if (scope) {
-    if (SCOPES.includes(scope)) config.secretary.scope = scope;
-    else warnings.push('secretary.scope must be workspace or all; using workspace');
-  }
-
   const grill = plainObject(raw.grillSkill) ? raw.grillSkill : {};
   const mode = text(grill.mode, 20);
   if (mode) {
@@ -285,6 +267,6 @@ function saveConfig(config) {
 }
 
 module.exports = {
-  TOOLS, ROLES, EFFORTS, SCOPES, GRILL_MODES, LANGUAGES, HEAD_NAMES, TIER_BY_EFFORT, TASK_KINDS,
+  TOOLS, ROLES, EFFORTS, GRILL_MODES, LANGUAGES, HEAD_NAMES, TIER_BY_EFFORT, TASK_KINDS,
   defaultConfig, configPath, normalize, loadConfig, saveConfig, mergeTaskKinds,
 };

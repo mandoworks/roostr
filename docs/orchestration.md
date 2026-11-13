@@ -1,21 +1,20 @@
 # Run a crew
 
-This guide describes a whole crew: one Head Honcho, one secretary, workers and optional reviewers. It works with any agent that can run shell commands. The board stays zero dependency and read only by default.
+This guide describes a whole crew: one Head Honcho, workers and optional reviewers, supervised by a deterministic daemon. It works with any agent that can run shell commands. The board stays zero dependency and read only by default.
 
 Examples use neutral names: a project called `example-app`, a worker called Diego, and a plan at `docs/orchestration-plan.md`. Worker names are random examples, not defaults.
 
 ## Runbook
 
-1. Press `O` (or `T`) to open the `[O orchestrate]` hub. On the `3 setup` tab (or `S` shortcut), pick tools, tier models, role defaults and one row per task kind. Set a primary model and ordered fallbacks for each kind. Save.
+1. Press `O` (or `T`) to open the `[O orchestrate]` hub. On the `4 setup` tab (or `S` shortcut), pick tools, tier models, role defaults and one row per task kind. Set a primary model and ordered fallbacks for each kind. Save.
 2. In the `1 tasks · advisor` tab of `[O orchestrate]`, press `o` to pick an existing agent pane as Orchestrator and `g` to assign it `head-honcho` (or press `N` to spawn a new Head Honcho in a shell pane). Press `p` to bind the Active Plan repo.
 3. The Head Honcho writes one brief per package and `docs/orchestration/tasks.json`. Run `roostr tasks` (or inspect and override tools, efforts, models and fallbacks live in the `1 tasks · advisor` tab) and fix every error.
 4. Approve the plan and allocation table. No worker starts before approval.
-5. The event-driven daemon (`src/daemon.js`) supervises workers with zero tokens, or press `k` (`K` on the board) to start/focus a Secretary pane.
+5. The event-driven daemon (`src/daemon.js`) supervises workers with zero tokens. Open `3 daemon · plan` to see the plan and what it knows.
 6. Spawn a worker in an isolated worktree. Ask `roostr recommend "<task>" --kind <kind>`, split without stealing focus (`herdr pane split --current --direction right --cwd "$PWD/.worktrees/<name>" --no-focus`), start the agent (`herdr agent start <name> --kind <tool> --pane <id>`), and record the run (`roostr spawn --pane <id> --task "<task>" --kind <kind> --batch <batchId>`).
 7. Workers write one report each and end with `<NAME>_DONE` or `<NAME>_BLOCKED`. They never commit.
 8. Record one outcome per run with `roostr outcome`, then rebuild the advisor summary (`roostr summary` or `s` in `[O orchestrate]`) and review spend (`roostr analytics` or `2 analytics · summary` tab).
-9. Press `m` (`M` on the board) for a monitor pass, or let the scheduled pass run every 15 minutes.
-10. If a preferred model is disabled, pick a fallback. Never let the board substitute one silently.
+9. If a preferred model is disabled, pick a fallback. Never let the board substitute one silently.
 
 ## 1. Before you spawn
 
@@ -53,7 +52,6 @@ Do not invent numbers. The recommendation tier and effort come from the task kin
 ## 2. The crew roles
 
 - **Head Honcho**: the very expensive advisor. Owns the plan, names, work packages, acceptance tests, budgets, checks and hard decisions. Draws every worker name randomly from the language it uses with the user. Does not implement and does not run the routine loop. Template: `templates/agents/head-honcho.md`.
-- **Secretary**: fast model. Always `Secretary - <workspace>` / `secretary-<workspace>`, with the stable role `secretary`. Runs the day to day loop: compares what each worker says it did with the plan, tells aligned workers to continue, records outcomes, and escalates only difficulty, stuck sessions and finished gates. Does not implement. Template: `templates/agents/secretary.md`.
 - **Worker**: one work package in a fresh context. Has a randomly drawn human name, a stable role and a one line about. Reports effort and model. Never changes the plan, its role or its about. Does not grade itself. Template: `templates/agents/worker.md`.
 - **Reviewer**: optional quality gate. Has a human name and the role `review-<package>`. Reviews against the plan and acceptance tests. Template: `templates/agents/reviewer.md`.
 
@@ -64,9 +62,9 @@ Every agent has four names in the data:
 - `role`: the stable core job, for example `board core and CLI`.
 - `about`: one line describing what the agent does in this crew.
 
-Set the role and about once, then set the current task as it changes. The board row shows `Diego · board core and CLI`. The detail box shows the role and about. Worker names come from the random pool. The board reads `~/.crew-board/names.json` and keeps recent names out of the next draw, so the same few names do not repeat every crew. The secretary is the fixed exception, `Secretary - <workspace>` / `secretary-<workspace>`.
+Set the role and about once, then set the current task as it changes. The board row shows `Diego · board core and CLI`. The detail box shows the role and about. Worker names come from the random pool. The board reads `~/.crew-board/names.json` and keeps recent names out of the next draw, so the same few names do not repeat every crew.
 
-The setup screen picks the tool, model and effort for each role. The crew file may override the secretary defaults for one project.
+The setup screen picks the tool, model and effort for each role.
 
 ## 3. Context hygiene
 
@@ -77,7 +75,7 @@ The setup screen picks the tool, model and effort for each role. The crew file m
 - Two failed attempts means stop and escalate.
 - Never paste transcripts, secrets, `.env` files, full logs or private paths.
 
-The worker and reviewer templates carry these rules. The secretary template carries the escalation matrix.
+The worker and reviewer templates carry these rules. The daemon carries the escalation ladder.
 
 ## 4. Start Head Honcho with `O`
 
@@ -109,17 +107,20 @@ roostr spawn --pane "$NEW_PANE" --task "<task>" --role worker --kind <kind> --ba
 
 The board assigns the colour tag. Do not type a tag into the label or the role. In the default `label` tag mode the board adds the emoji to the pane name, for example `🟦 Diego · board core`. The rest of the label is the display name.
 
-## 6. Start a secretary
+## 6. The daemon
 
-Press `K`. The board finds a free shell pane in the current workspace, starts the configured secretary tool and model, names it `Secretary - <workspace>` / `secretary-<workspace>`, sets the role `secretary`, writes the monitor task and sends the secretary template. If no shell pane exists, it splits one from the selected pane. If a secretary is already running, `K` focuses it.
+`src/daemon.js` is a deterministic supervisor driven by Herdr lifecycle events, not an agent pane. It tracks pane state, classifies prompts, and walks a nudge, recycle, escalate ladder with zero LLM tokens. It never starts a worker before the plan is approved.
 
-The manual path is still available:
+Press `O`, then `3 daemon · plan`, to see the plan it follows and its live state: tracked panes, rung, wake budget and queued escalations. The ladder comes from the crew file:
 
-```sh
-crew-board template secretary --name secretary-<workspace>
+```toml
+[daemon.ladder]
+nudge_seconds = 120
+recycle_seconds = 600
+escalate_seconds = 900
 ```
 
-Start it with the Herdr name `secretary-<workspace>`, the display name `Secretary - <workspace>` and the role `secretary`, then give it the monitor task. The settings tab picks its tool, model and effort. The board finds the secretary by role first. The name is always the same so nobody has to guess who the secretary is.
+With no state file yet, the tab says so. It never invents activity.
 
 Worker names use the shared history file, so a name used in a recent crew is less likely to come back immediately.
 
@@ -129,7 +130,7 @@ Press `S`. The settings tab has four layers:
 
 1. Tools and default tool.
 2. Tier model map (`fast`, `balanced`, `reasoning`).
-3. Role defaults for Head Honcho, secretary, worker and reviewer.
+3. Role defaults for Head Honcho, worker and reviewer.
 4. One row per task kind: `docs`, `review`, `tests`, `tooling`, `complex`, `feature`.
 
 Each task kind row sets:
@@ -176,35 +177,25 @@ This table is a prior from real runs. Use the advisor and the sample count. Over
 
 Rule of thumb: effort follows hidden state, not file count. Use medium for an isolated diff with a test. Use high for engine state, visual proof, packaging, or a bug that survived one attempt. Use low for deterministic batch scripts and narrow docs.
 
-The secretary reads board JSON, not pane screens, unless it needs an answer for a blocked worker. It records the outcome of every finished, failed or blocked attempt. The worker reports effort and model and writes the report. The worker does not grade itself.
+The daemon reads lifecycle state, not transcripts. The Head Honcho or the human records the outcome of every finished, failed or blocked attempt. The worker reports effort and model and writes the report. The worker does not grade itself.
 
-## 7. Monitor pass
+## 7. Escalation and recording outcomes
 
-Press `M` for one pass. When auto monitor is on, the board also prompts the secretary every 15 minutes while it is idle. You can prompt by hand too:
+The daemon handles routine status, drift, location, budget and check signals without tokens. It escalates ambiguity, architecture tradeoffs, plan changes, two failed attempts, cross-worker conflicts and any security exposure to the Head Honcho. A security exposure also goes to the human.
 
-```sh
-herdr agent prompt <secretary-name> "Run one monitor pass now."
-```
+The daemon sends the Head Honcho one short message per stage gate: the marker, the report path, the outcome status and at most three lines of summary. It does not forward raw reports or logs. If two notifications carry the same marker, the first wins and the second is ignored.
 
-The secretary reads the Head Honcho workspace only by default. `scope = "all"` is opt in.
-
-One pass means one board read, one task list comparison, a continue prompt for each aligned worker, the outcome records, then return. It does not wait. The secretary must not use `sleep`, `tail -f`, `watch` or any polling loop inside its session.
-
-The secretary compares task lines and report claims to `docs/orchestration/tasks.json`, tells aligned workers to continue, sends status prompts when needed, records outcomes, and escalates only hard decisions, stuck sessions and finished gates. It refers to workers by display name and role. It never changes scope, assigns a work package, changes a role or about, commits or kills a pane. The automatic pass is skipped while the secretary is working or blocked.
-
-### Wake budget
-
-The Head Honcho is the very expensive advisor. Wake it only for plan approval, a scope change, a finished stage gate, two failed attempts, a stuck session, a fatal blocker, a conflict that needs judgment, or the final release decision. Never wake it to record an outcome, read a pane, run a build or smoke, or repeat a completion notice already recorded.
-
-The secretary sends the Head Honcho one short message per stage gate: the marker, the report path, the outcome status and at most three lines of summary. It does not forward raw reports or logs. If two notifications carry the same marker, the first wins and the second is ignored.
-
-When an attempt finishes, the secretary reads the report's last 30 lines and `git status --short`, then records exactly one outcome:
+When an attempt finishes, the human or the Head Honcho reads the report's last 30 lines and `git status --short`, then records exactly one outcome:
 
 ```sh
 crew-board outcome --run <runId> --result pass|fail|blocked --rework <N> --cost <N> --note "<text>"
 ```
 
 Use `--cost` only when the board or the report gives a real number. Use `--rework` for the number of extra attempts. Never invent either value. The outcome is refused for an unknown run id or a run that already has one.
+
+### Wake budget
+
+The Head Honcho is the very expensive advisor. Wake it only for plan approval, a scope change, a finished stage gate, two failed attempts, a stuck session, a fatal blocker, a conflict that needs judgment, or the final release decision. Never wake it to record an outcome, read a pane, run a build or smoke, or repeat a completion notice already recorded.
 
 ## 8. Labels, roles and task lines
 
@@ -261,7 +252,7 @@ crew-board --json-rows --all
 - Press `C` on a blocked or long-idle pane. The board reads the visible screen. A safe allow or continue prompt needs a second `C`, then it sends Enter or a continue prompt. A screen that mentions push, delete, install, deploy, secrets, credentials or another destructive action is refused.
 - Read context with `herdr pane read <pane-id>`.
 - Update the task line with `crew-board report`.
-- The secretary answers plan lookups and routing. The Head Honcho answers reasoning.
+- The daemon answers plan lookups and routing. The Head Honcho answers reasoning.
 - Never close, interrupt or kill a worker automatically.
 
 ## 11. Budgets and checks
@@ -328,7 +319,7 @@ crew-board outcome --run <runId> --result pass --rework 0 --cost 0.42 --note "te
 crew-board summary
 ```
 
-Workers report their effort and model with `crew-board report --effort <effort> --model <model>`. `crew-board spawn` keeps the recommendation and the effort the run will use, so a run can show both. The outcome keeps `pass`, `fail` or `blocked`, the rework count, the cost and a short note. The secretary records outcomes. The worker does not grade itself.
+Workers report their effort and model with `crew-board report --effort <effort> --model <model>`. `crew-board spawn` keeps the recommendation and the effort the run will use, so a run can show both. The outcome keeps `pass`, `fail` or `blocked`, the rework count, the cost and a short note. The Head Honcho or the human records outcomes. The worker does not grade itself.
 
 A first try pass means an accepted run with no rework. In an imported team ledger, `accepted` counts as `pass`, `abandoned` counts as `fail`, and `partial` is not a first try pass. Any nonempty rework also makes the run not a first try pass. `rework` may be text such as `one retry`; text marks the attempt as reworked and is never parsed into a number. A missing or unparsable cost stays unknown, never `0`. Read the sample count and the kind before drawing a conclusion about a model.
 
@@ -433,4 +424,4 @@ The reviewer writes `docs/orchestration/reports/review-<package>.md` with the sa
 
 Read the last 30 lines of a report, not the whole file, unless a line needs evidence. Workers and reviewers never commit. The Head Honcho or the human decides commits.
 
-The secretary writes the monitor log in `docs/orchestration-log.md` and records outcomes in `~/.crew-board/orchestration.jsonl` with `crew-board outcome`.
+The Head Honcho or the human writes the run log in `docs/orchestration-log.md` and records outcomes in `~/.crew-board/orchestration.jsonl` with `crew-board outcome`.

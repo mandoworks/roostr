@@ -5,7 +5,6 @@
 // crypto.randomInt. The command renames nothing: the Head Honcho passes each
 // name to `herdr agent rename`. A small history file keeps recently drawn
 // names out of the next draw so the same few names do not keep coming back.
-// The secretary is the fixed exception, `Secretary` / `secretary`.
 
 const { randomInt } = require('node:crypto');
 const fs = require('node:fs');

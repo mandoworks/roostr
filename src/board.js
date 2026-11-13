@@ -42,6 +42,7 @@ const recover = require('./recover');
 const surge = require('./surge');
 const tasks = require('./tasks');
 const analytics = require('./analytics');
+const daemon = require('./daemon');
 const summary = require('./summary');
 
 const { C, bold } = ui;
@@ -407,9 +408,6 @@ function buildModel({
     tagScope: resolvedTagScope,
     checkConcurrency: primaryCrew ? primaryCrew.checkConcurrency : 3,
     checkTimeoutMs: primaryCrew ? primaryCrew.checkTimeoutMs : 2000,
-    secretaryAuto: primaryCrew ? primaryCrew.secretaryAuto : null,
-    secretaryIntervalMs: primaryCrew ? primaryCrew.secretaryIntervalMs : null,
-    secretaryScope: primaryCrew ? primaryCrew.secretaryScope : null,
     explabsEnabled: trustedCrews.some((c) => c.explabsEnabled),
   };
 }
@@ -1194,8 +1192,6 @@ function helpLines(menu, sources, width = 100) {
       ...(menu && menu.orchestration ? [
         ['O / T', 'orchestrate: plan, tasks, advisor, analytics, setup'],
         ['S', 'setup: tools and preferred models'],
-        ['K', 'start a secretary in a shell pane'],
-        ['M', 'prompt the secretary for a monitor pass'],
         ['C', 'allow or continue the selected stuck pane'],
       ] : []),
       ['t', `colour tags (${menu.tags})`],
@@ -1669,9 +1665,9 @@ function optionsLines(model, menu, width = 100, metric = 'tokens') {
 const TASK_KIND_ROWS = config.TASK_KINDS.map((kind) => `kind:${kind}`);
 const SETUP_ROWS = [
   'tools', 'default', 'head', 'language', 'fast', 'balanced', 'reasoning',
-  'head-honcho', 'secretary', 'worker', 'reviewer',
+  'head-honcho', 'worker', 'reviewer',
   ...TASK_KIND_ROWS,
-  'monitor', 'grill', 'disabled', 'save',
+  'grill', 'disabled', 'save',
 ];
 const ROLE_EFFORTS = ['low', 'medium', 'high'];
 const KIND_EFFORTS = ['', ...config.EFFORTS];
@@ -1688,7 +1684,6 @@ function cycleValue(list, value) {
   return list[(list.indexOf(value) + 1 + list.length) % list.length];
 }
 const GRILL_MODES = ['recommended', 'none', 'custom'];
-const MONITOR_PROMPT = 'Run one monitor pass now. Follow the secretary template. Read the board JSON once and compare what each worker says it did with docs/orchestration/tasks.json. Tell an aligned worker to continue. Record a finished outcome. Escalate only a hard decision, a stuck session or a finished stage. Then return. Do not run sleep, polling or wait loops, and do not edit code.';
 
 function cloneConfig(cfg) {
   return JSON.parse(JSON.stringify(cfg));
@@ -1770,7 +1765,6 @@ function setupLines(st, width) {
     const fallbacks = Array.isArray(t.fallbacks) && t.fallbacks.length ? t.fallbacks.join(',') : 'none';
     field(`kind:${kind}`, `task ${kind}`, `${t.tool ? C.text(t.tool) : C.dim('auto')} ${C.dim('·')} ${t.model ? C.text(t.model) : C.dim('auto')} ${C.dim('·')} ${t.effort ? C.text(t.effort) : C.dim('auto')} ${C.dim('·')} fb ${C.text(fallbacks)}`);
   }
-  field('monitor', 'monitor', `${C.text(`auto ${c.secretary.auto ? 'on' : 'off'}`)} ${C.dim('·')} every ${C.text(`${c.secretary.intervalSeconds}s`)} ${C.dim('·')} ${C.text(c.secretary.scope)}`);
   const grill = c.grillSkill.mode === 'recommended' ? 'recommended (grill-with-ui)' : c.grillSkill.mode;
   field('grill', 'grill skill', C.text(grill));
   const candidates = disabledCandidates(c);
@@ -1802,7 +1796,6 @@ function setupCycle(st, dir) {
     st.headIndex = (st.headIndex + dir + config.HEAD_NAMES.length) % config.HEAD_NAMES.length;
     c.headName = config.HEAD_NAMES[st.headIndex].name;
   } else if (row === 'language') c.headLanguage = cycle(config.LANGUAGES, c.headLanguage);
-  else if (row === 'monitor') c.secretary.scope = cycle(config.SCOPES, c.secretary.scope);
   else if (row === 'grill') c.grillSkill.mode = cycle(GRILL_MODES, c.grillSkill.mode);
   else if (row === 'disabled') {
     const n = disabledCandidates(c).length;
@@ -1833,8 +1826,6 @@ function setupSpace(st) {
         ? c.disabledModels.filter((m) => m !== model)
         : [...c.disabledModels, model];
     }
-  } else if (row === 'monitor') {
-    c.secretary.auto = !c.secretary.auto;
   } else if (row === 'grill') {
     c.grillSkill.mode = GRILL_MODES[(GRILL_MODES.indexOf(c.grillSkill.mode) + 1) % GRILL_MODES.length];
   } else if (config.ROLES.includes(row)) {
@@ -1864,7 +1855,6 @@ function setupEnter(st) {
   if (row === 'default') open('default', c.defaultTool);
   else if (row === 'head') open('head', c.headName);
   else if (['fast', 'balanced', 'reasoning'].includes(row)) open('model', c.models[row] || '', { tier: row });
-  else if (row === 'monitor') open('interval', String(c.secretary.intervalSeconds));
   else if (row === 'grill') {
     if (c.grillSkill.mode === 'custom') open('command', c.grillSkill.command || '');
     else c.grillSkill.mode = GRILL_MODES[(GRILL_MODES.indexOf(c.grillSkill.mode) + 1) % GRILL_MODES.length];
@@ -1896,8 +1886,7 @@ function setupApplyEdit(st) {
     } else {
       st.error = 'head name must be auto or a known boss title; kept the old value';
     }
-  } else if (field === 'interval') c.secretary.intervalSeconds = Number(v) || c.secretary.intervalSeconds;
-  else if (field === 'command') c.grillSkill.command = v;
+  } else if (field === 'command') c.grillSkill.command = v;
   else if (field === 'task-model' && config.TASK_KINDS.includes(st.edit.kind)) {
     if (!c.taskKinds[st.edit.kind]) c.taskKinds[st.edit.kind] = { tool: '', model: '', fallbacks: [], effort: '' };
     c.taskKinds[st.edit.kind].model = v;
@@ -1954,7 +1943,7 @@ function setupReady(st) {
 // ------------------------------------------------------------------ head picker
 
 function headLines(st, width) {
-  const title = st.title || (st.role === 'secretary' ? 'secretary' : 'head-honcho');
+  const title = st.title || 'head-honcho';
   const lines = [`${bold(C.title(title))}  ${C.dim('pick a shell pane in this workspace')}`];
   if (!st.panes.length) {
     lines.push(C.amber('no shell pane in this workspace; split one and try again'));
@@ -1974,34 +1963,9 @@ function headLines(st, width) {
   return lines.map((l) => ui.clip(l, width));
 }
 
-// ------------------------------------------------------------------ monitor
-
-function secretaryTarget(rows, workspaceId = null) {
-  const list = Array.isArray(rows) ? rows.filter((r) => r && r.paneId && (!workspaceId || r.workspaceId === workspaceId)) : [];
-  return list.find((r) => r.role === 'secretary')
-    || list.find((r) => r.name === 'secretary')
-    || list.find((r) => r.name === 'sofia')
-    || list.find((r) => typeof r.name === 'string' && r.name.startsWith('secretary-'))
-    || null;
-}
-
-function monitorDue(last, now, intervalMs, auto) {
-  return Boolean(auto) && Number.isFinite(intervalMs) && intervalMs > 0 && now - last >= intervalMs;
-}
-
-function monitorScope(cfg, crew) {
-  if (crew && (crew.secretaryScope === 'workspace' || crew.secretaryScope === 'all')) return crew.secretaryScope;
-  return cfg && cfg.secretary && cfg.secretary.scope === 'all' ? 'all' : 'workspace';
-}
-
-function monitorPrompt(scope, planDir = null) {
-  const base = scope === 'all' ? `${MONITOR_PROMPT} Read every workspace with --all.` : MONITOR_PROMPT;
-  return planDir ? `${base} Active plan directory: ${planDir}.` : base;
-}
-
 // ------------------------------------------------------------ orchestrate TUI
 
-const ORCHESTRATE_TABS = ['tasks', 'analytics', 'setup'];
+const ORCHESTRATE_TABS = ['tasks', 'analytics', 'daemon', 'setup'];
 const ORCH_WINDOWS = [
   { label: '7d', days: 7, today: false },
   { label: 'today', days: 1, today: true },
@@ -2161,6 +2125,68 @@ function orchestrateState(model, cfg, warnings = [], initialTab = 'tasks', prefe
   };
 }
 
+// The daemon tab: what the deterministic supervisor knows, next to the plan
+// it follows. Reads the same state file the daemon writes; with no file yet it
+// says so instead of inventing activity.
+function daemonLines(st, model, cfg, planDir, width) {
+  const lines = [`${bold(C.title('daemon'))}  ${C.dim('event-driven · zero tokens · read only')}`, ''];
+  const loaded = loadPlanTasks(planDir, cfg);
+  const counts = { working: 0, pending: 0, done: 0, blocked: 0 };
+  for (const r of loaded.rows) if (counts[r.status] !== undefined) counts[r.status]++;
+  const planName = loaded.hasTasksFile ? 'tasks.json' : (loaded.hasPlanFile ? 'orchestration-plan.md' : 'no plan file yet');
+  lines.push(`  ${bold(C.accent('PLAN'))}  ${C.text(planName)} ${C.dim(`· ${loaded.rows.length} tasks: ${counts.working} working, ${counts.pending} pending, ${counts.done} done${counts.blocked ? `, ${counts.blocked} blocked` : ''}`)}`);
+  if (loaded.errors.length) {
+    for (const e of loaded.errors) lines.push(C.red(ui.clean(`  tasks.json: ${e}`)));
+  } else if (!loaded.rows.length) {
+    lines.push(C.dim('  no tasks to show; the Head Honcho writes docs/orchestration/tasks.json'));
+  } else {
+    for (const r of loaded.rows.slice(0, Math.max(3, Math.min(12, Math.floor((width - 20) / 6))))) {
+      const mark = r.status === 'done' ? C.green('✓') : r.status === 'working' ? C.cyan('●') : r.status === 'blocked' ? C.red('◼') : C.dim('○');
+      lines.push(`  ${mark} ${C.dim(ui.padEnd(String(r.id || '?'), 12))} ${C.dim(ui.padEnd(String(r.kind || '?'), 9))} ${C.text(ui.truncate(ui.clean(r.title || ''), Math.max(12, width - 34)))}`);
+    }
+  }
+
+  lines.push('');
+  const stateFile = daemon.daemonStateFile();
+  let dState = null;
+  if (fs.existsSync(stateFile)) {
+    try { dState = daemon.loadDaemonState(stateFile); } catch (e) { dState = null; }
+  }
+  if (!dState) {
+    lines.push(`  ${bold(C.accent('DAEMON'))}  ${C.dim('no state yet · waiting for the first lifecycle event')}`);
+    lines.push(C.dim('  start it with the crew file [daemon] ladder; it writes daemon-state.json'));
+    return lines.map((l) => ui.clip(l, width));
+  }
+  const panes = Object.values(dState.panes || {});
+  const wakes = (dState.wakes && (Number(dState.wakes.perEventCount) || 0) + (Number(dState.wakes.perDigestCount) || 0)) || 0;
+  lines.push(`  ${bold(C.accent('DAEMON'))}  ${C.text(`${panes.length} panes tracked`)} ${C.dim(`· wakes ${wakes}/${daemon.MAX_WAKES_PER_DAY} today · breaker ${(dState.circuitBreaker && dState.circuitBreaker.status) || 'normal'}`)}`);
+  const order = { blocked: 0, working: 1, idle: 2, done: 3, unknown: 4 };
+  for (const p of panes.slice().sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)).slice(0, 12)) {
+    const colour = p.status === 'blocked' ? C.red : p.status === 'working' ? C.cyan : p.status === 'done' ? C.green : C.dim;
+    const age = Number.isFinite(p.since) ? fmtDuration(Math.max(0, Date.now() - p.since)) : '?';
+    lines.push(`  ${colour(ui.padEnd(String(p.status || '?'), 8))} ${C.dim(ui.padEnd(String(p.pane || '?'), 10))} ${C.dim(`${age}${p.promptClass ? ` · ${ui.clean(p.promptClass)}` : ''}`)}`);
+  }
+  let escalations = [];
+  try { escalations = JSON.parse(fs.readFileSync(daemon.escalationsFile(), 'utf8')); } catch (e) { escalations = []; }
+  if (Array.isArray(escalations) && escalations.length) {
+    lines.push('');
+    lines.push(`  ${bold(C.accent('ESCALATIONS'))}  ${C.dim(`${escalations.length} queued`)}`);
+    for (const e of escalations.slice(-5)) {
+      lines.push(`  ${C.amber(ui.clean(String(e.severity || 'routine')))} ${C.dim(ui.padEnd(String(e.type || '?'), 18))} ${C.text(ui.truncate(ui.clean(e.reason || ''), Math.max(12, width - 38)))}`);
+    }
+  }
+  const ladders = new Set();
+  for (const r of (model && model.rows) || []) {
+    const l = r.crew && r.crew.daemon && r.crew.daemon.ladder;
+    if (!l) continue;
+    if (l.nudgeSeconds) ladders.add(`nudge ${l.nudgeSeconds}s`);
+    if (l.recycleSeconds) ladders.add(`recycle ${l.recycleSeconds}s`);
+    if (l.escalateSeconds) ladders.add(`escalate ${l.escalateSeconds}s`);
+  }
+  if (ladders.size) lines.push('', C.dim(`  ladder: ${[...ladders].join(' · ')}`));
+  return lines.map((l) => ui.clip(l, width));
+}
+
 function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null, y0 = 0) {
   let st;
   let model;
@@ -2193,7 +2219,8 @@ function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null,
   const tabLabels = [
     ['tasks', '1 tasks · advisor'],
     ['analytics', '2 analytics · summary'],
-    ['setup', '3 setup'],
+    ['daemon', '3 daemon · plan'],
+    ['setup', '4 setup'],
   ];
   let head = `${bold(C.title('orchestrate'))}  `;
   let x = ui.strWidth(head);
@@ -2214,7 +2241,7 @@ function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null,
     head += C.dim(closePill) + ' ';
     x += cw + 1;
   }
-  const hint = 'tab/1-3 switch';
+  const hint = 'tab/1-4 switch';
   if (x + ui.strWidth(hint) <= width) head += C.dim(hint);
   const lines = [head, ''];
 
@@ -2223,6 +2250,11 @@ function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null,
 
   if (st.tab === 'setup') {
     const sub = setupLines(st.setup, width);
+    return { lines: [...lines, ...sub].map((l) => ui.clip(l, width)), hits: localHits };
+  }
+
+  if (st.tab === 'daemon') {
+    const sub = daemonLines(st, model, cfg, planDir, width);
     return { lines: [...lines, ...sub].map((l) => ui.clip(l, width)), hits: localHits };
   }
 
@@ -2311,7 +2343,6 @@ function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null,
     || wsRows[0]
     || null;
   const loaded = loadPlanTasks(planDir, cfg);
-  const secRow = secretaryTarget(model ? model.rows : [], model ? model.home : null);
   const field = (k, v) => `  ${C.dim(ui.padEnd(k, 14))}${v}`;
 
   const headDesc = headRow
@@ -2330,10 +2361,6 @@ function orchestrateLines(stOrModel, modelOrWidth, widthOrSt = 100, hits = null,
   const repoIdx = st.planDirs && st.planDirs.length > 1 ? ` (${st.planIndex + 1}/${st.planDirs.length})` : '';
   lines.push(field('active plan', `${C.text(shortDir(planDir))}${C.dim(repoIdx)} · ${planStatus}   ${C.dim('p cycle repo · s summary')}`));
 
-  const secDesc = secRow
-    ? `${C.green(ui.clean(secRow.name))} ${C.dim(`(${secRow.status} · ${secRow.paneId})`)}`
-    : C.cyan('daemon active (event-driven, 0 tokens)');
-  lines.push(field('secretary', `${secDesc}   ${C.dim('k start/focus secretary · m run monitor pass')}`));
   lines.push(C.dim('  ' + '─'.repeat(Math.max(10, width - 4))));
 
   if (loaded.errors.length) {
@@ -2507,11 +2534,14 @@ function orchestrateKey(st, key, model = null) {
   }
   if (key === '1') { st.tab = 'tasks'; return null; }
   if (key === '2') { st.tab = 'analytics'; return null; }
-  if (key === '3' || key === 'S') { st.tab = 'setup'; return null; }
+  if (key === '3') { st.tab = 'daemon'; return null; }
+  if (key === '4' || key === 'S') { st.tab = 'setup'; return null; }
   if (key === 's') {
     rebuildSummaryInPlace(st);
     return null;
   }
+
+  if (st.tab === 'daemon') return null;
 
   if (st.tab === 'analytics') {
     if (key === 'b' || key === '\x1b[C' || key === 'l') {
@@ -2554,12 +2584,6 @@ function orchestrateKey(st, key, model = null) {
   }
   if (key === 'N') {
     return { spawnHeadInShell: true };
-  }
-  if (key === 'k' || key === 'K') {
-    return { startSecretary: true };
-  }
-  if (key === 'm' || key === 'M') {
-    return { runMonitor: true, planDir };
   }
 
   const tools = ['', ...cfg.tools, ...cfg.customTools];
@@ -3550,8 +3574,6 @@ function runLive(opts) {
   let hits = [];
   let notice = null;
   let noticeTimer = null;
-  let lastMonitor = Date.now();
-  let monitorNoticed = false;
   let lastRowClick = null;
   let recoverPending = null;
   const folded = new Set();
@@ -3640,7 +3662,6 @@ function runLive(opts) {
       }
     }
     draw();
-    runMonitor(true);
   };
 
   const touched = new Set();
@@ -3660,9 +3681,9 @@ function runLive(opts) {
 
   const currentConfig = () => (model && model.config) || config.loadConfig().config;
 
-  const openRolePicker = (roleKey = 'head-honcho') => {
+  const openHeadPicker = () => {
     if (!model || !model.home) {
-      flash(`open the board in a workspace to start ${roleKey === 'secretary' ? 'a secretary' : 'head-honcho'}`);
+      flash('open the board in a workspace to start head-honcho');
       return;
     }
     const agents = model.snapshot && Array.isArray(model.snapshot.agents) ? model.snapshot.agents : [];
@@ -3671,49 +3692,13 @@ function runLive(opts) {
       flash('no shell pane in this workspace; split one and try again');
       return;
     }
-    headPicker = { role: roleKey, title: roleKey === 'secretary' ? 'secretary' : 'head-honcho', panes, index: 0, confirm: false, starting: false, status: null };
+    headPicker = { role: 'head-honcho', title: 'head-honcho', panes, index: 0, confirm: false, starting: false, status: null };
     draw();
-  };
-
-  const openHeadPicker = () => openRolePicker('head-honcho');
-
-  const openSecretaryPicker = async () => {
-    if (!model || !model.home) {
-      flash('open the board in a workspace to start a secretary');
-      return;
-    }
-    const existing = secretaryTarget(model.rows, model.home);
-    if (existing) {
-      flash(`secretary is already running as ${existing.displayName || existing.name}`);
-      herdr.focusAgent(existing.paneId).catch(() => {});
-      return;
-    }
-    const agents = model.snapshot && Array.isArray(model.snapshot.agents) ? model.snapshot.agents : [];
-    const panes = orchestrator.shellPanes(model.snapshot, agents, model.home);
-    if (panes.length) {
-      headPicker = { role: 'secretary', title: 'secretary', panes, index: 0, confirm: false, starting: false, status: null };
-      draw();
-      return;
-    }
-    const target = model.rows.find((r) => r.workspaceId === model.home && r.paneId);
-    if (!target) {
-      flash('no pane in this workspace; split one and try again');
-      return;
-    }
-    try {
-      const paneId = await herdr.splitPane(target.paneId, 'right', target.cwd || process.cwd(), true);
-      if (!paneId) throw new Error('split returned no pane');
-      headPicker = { role: 'secretary', title: 'secretary', panes: [{ paneId, label: null, cwd: target.cwd || null }], index: 0, confirm: false, starting: false, status: null };
-      startPickedRole(paneId);
-    } catch (e) {
-      flash(`could not split a pane: ${(e.message || String(e)).split('\n')[0]}`);
-    }
   };
 
   const startPickedRole = async (paneId) => {
     if (!headPicker || headPicker.starting) return;
     const roleKey = headPicker.role || 'head-honcho';
-    const isSecretary = roleKey === 'secretary';
     headPicker.starting = true;
     headPicker.confirm = false;
     headPicker.status = `checking ${paneId}…`;
@@ -3747,12 +3732,10 @@ function runLive(opts) {
     const headTitle = cfg.headName === 'auto'
       ? names.pickTitle({ exclude: snap.agents.map((a) => a.name) })
       : cfg.headName;
-    const workspaceLabel = model && model.workspaces && model.workspaces.get(model.home);
-    const secretary = isSecretary ? orchestrator.secretaryName(workspaceLabel) : null;
-    const name = isSecretary ? secretary.agent : orchestrator.nextName(snap.agents, headTitle, orchestrator.projectName(snap, model.home, process.cwd()));
-    const displayName = isSecretary ? secretary.display : name;
-    const taskLine = isSecretary ? orchestrator.SECRETARY_TASK : orchestrator.TASK;
-    headPicker.status = `starting ${isSecretary ? 'secretary' : 'head-honcho'} in ${paneId}…`;
+    const name = orchestrator.nextName(snap.agents, headTitle, orchestrator.projectName(snap, model.home, process.cwd()));
+    const displayName = name;
+    const taskLine = orchestrator.TASK;
+    headPicker.status = `starting head-honcho in ${paneId}…`;
     draw();
     try {
       await herdr.startAgent(name, kind, paneId, args);
@@ -3774,12 +3757,8 @@ function runLive(opts) {
     await step(() => herdr.renamePane(paneId, `${tag ? `${tag} ` : ''}${displayName} · ${taskLine}`), 'rename pane');
     const values = { task: taskLine, taskSource: 'manual', effort: role.effort };
     if (role.model) values.model = role.model;
-    if (isSecretary) {
-      values.role = orchestrator.SECRETARY_ROLE;
-      values.about = orchestrator.SECRETARY_ABOUT;
-    }
     await step(() => writeReport(paneId, values), 'report');
-    await step(() => herdr.promptAgent(paneId, isSecretary ? orchestrator.secretaryPrompt(name) : orchestrator.prompt(name)), 'prompt');
+    await step(() => herdr.promptAgent(paneId, orchestrator.prompt(name)), 'prompt');
     const promptFailed = warnings.some((w) => w.startsWith('prompt:'));
     const hint = warnings.length ? ` (${warnings.join('; ')})` : '';
     headPicker = null;
@@ -3839,38 +3818,6 @@ function runLive(opts) {
       return;
     }
     flash(row.status === 'idle' ? 'idle for less than 10m; no action yet' : 'pane is not blocked or stuck');
-  };
-
-  const runMonitor = (auto, customPlanDir = null) => {
-    if (!model) return;
-    const cfg = currentConfig();
-    if (auto && !orchestrationEnabled(cfg, opts)) return;
-    const autoOn = model.secretaryAuto != null ? model.secretaryAuto : (cfg.secretary && cfg.secretary.auto);
-    if (auto && !autoOn) return;
-    const intervalMs = model.secretaryIntervalMs != null ? model.secretaryIntervalMs : ((cfg.secretary && cfg.secretary.intervalSeconds ? cfg.secretary.intervalSeconds : 900) * 1000);
-    if (auto && !monitorDue(lastMonitor, Date.now(), intervalMs, autoOn)) return;
-    const scope = monitorScope(cfg, model);
-    const target = secretaryTarget(model.rows, scope === 'workspace' ? model.home : null);
-    if (!target) {
-      if (!auto) flash('no secretary pane; press K to start one');
-      else monitorNoticed = true;
-      return;
-    }
-    if (target.status === 'working' || target.status === 'blocked') {
-      if (!auto) flash('secretary is busy');
-      return;
-    }
-    if (scope === 'workspace' && !model.home) {
-      if (!auto) flash('open the board in a workspace for a workspace scope pass');
-      return;
-    }
-    lastMonitor = Date.now();
-    monitorNoticed = false;
-    herdr.promptAgent(target.paneId, monitorPrompt(scope, customPlanDir || activePlanDir)).then(() => {
-      if (!auto) flash(`monitor pass sent to ${target.name || target.paneId}`);
-    }, (e) => {
-      if (!auto) flash(`monitor failed: ${(e.message || String(e)).split('\n')[0]}`);
-    });
   };
 
   const workspaceDirs = () => {
@@ -4092,7 +4039,7 @@ function runLive(opts) {
         orchestrate.error = null;
       }
     }
-    else if (['orchestrate', 'setup', 'head-honcho', 'secretary', 'monitor', 'recover'].includes(action)) {
+    else if (['orchestrate', 'setup', 'head-honcho', 'recover'].includes(action)) {
       if (!orchestrationEnabled(currentConfig(), opts)) {
         flash('orchestration is gated for v0.3.0 (set ROOSTR_EXPERIMENTAL=1)');
         return;
@@ -4112,8 +4059,6 @@ function runLive(opts) {
           orchestrate = orchestrateState(model, loaded.config, loaded.warnings, 'setup', activePlanDir);
         }
       } else if (action === 'head-honcho') openHeadPicker();
-      else if (action === 'secretary') openSecretaryPicker();
-      else if (action === 'monitor') runMonitor(false);
       else if (action === 'recover') recoverPane();
     }
     else if (action === 'update' && model && model.update && !updating) {
@@ -4204,12 +4149,6 @@ function runLive(opts) {
         orchestrate = null;
         openHeadPicker();
         return;
-      } else if (r && r.startSecretary) {
-        orchestrate = null;
-        openSecretaryPicker();
-        return;
-      } else if (r && r.runMonitor) {
-        runMonitor(false, r.planDir);
       }
       draw();
       return;
@@ -4335,8 +4274,6 @@ function runLive(opts) {
     else if (k === 'o') act('options');
     else if (k === 'S') act('setup');
     else if (k === 'O' || k === 'T') act('orchestrate');
-    else if (k === 'K') act('secretary');
-    else if (k === 'M') act('monitor');
     else if (k === 'C') act('recover');
   };
 
@@ -4521,6 +4458,6 @@ function main(argv) {
 module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
   render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups, findTokscale, optionsLines,
-  setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, secretaryTarget, monitorDue, monitorScope, monitorPrompt, surge, orchestrationEnabled,
-  orchestrateState, orchestrateLines, orchestrateKey, discoverPlanDirs, loadPlanTasks, saveTaskOverride, ORCHESTRATE_TABS,
+  setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, surge, orchestrationEnabled,
+  orchestrateState, orchestrateLines, orchestrateKey, daemonLines, discoverPlanDirs, loadPlanTasks, saveTaskOverride, ORCHESTRATE_TABS,
 };
