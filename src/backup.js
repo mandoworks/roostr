@@ -24,7 +24,7 @@ const SUFFIX = ' *restored';
 // line. Restoring defaults to `even` so a cramped backup does not come back
 // cramped.
 const LAYOUTS = ['even', 'saved', 'columns', 'rows'];
-const USAGE = 'usage: roostr backups [--json] | backups show <label|id> [--version N] | backups restore <label|id> [--version N] [--layout even|saved|columns|rows] [--yes]';
+const USAGE = 'usage: roostr backups [--json] | backups capture [--json] [--dir <dir>] | backups show <label|id> [--version N] | backups restore <label|id> [--version N] [--layout even|saved|columns|rows] [--yes]';
 
 function backupsDir(dir) {
   if (dir) return dir;
@@ -38,6 +38,25 @@ function backupsDir(dir) {
 
 function str(v, max = 240) {
   return typeof v === 'string' && v.trim() ? ui.clean(v).trim().slice(0, max) : null;
+}
+
+// The name a handoff brief is filed under: lowercase, anything that is not a
+// letter or digit becomes one dash.
+function slugify(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// The handoff brief for an agent pane, or null when the pane's project has no
+// current one. Only the path is stored, never the brief itself.
+function handoffPath(cwd, name, kind) {
+  const slug = slugify(name) || slugify(kind);
+  if (!slug || !cwd) return null;
+  const file = path.join(cwd, 'docs', 'orchestration', 'handoffs', `latest-${slug}.md`);
+  try {
+    return fs.statSync(file).isFile() ? file : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function sameRect(a, b) {
@@ -176,11 +195,17 @@ function capture(model, now = Date.now()) {
           const a = agentsByPane.get(id);
           const pane = { paneId: id, cwd: str(p.cwd, 1024), label: str(p.label) };
           if (a) {
-            pane.agent = {
+            const agent = {
               // An unnamed pane is saved under its pane id, which means nothing later.
               kind: a.agent, name: a.name && a.name !== id ? a.name : null, task: a.task, effort: a.effort,
               model: a.model, modelSrc: a.modelSrc, session: a.session,
             };
+            // A session the agent's own CLI would refuse is marked, so a
+            // restore knows it opens a blank conversation on purpose.
+            if (agent.session && !sessions.validSession(agent.kind, agent.session)) agent.sessionStale = true;
+            pane.agent = agent;
+            const handoff = handoffPath(p.cwd, agent.name || agent.kind, agent.kind);
+            if (handoff) pane.handoff = handoff;
           }
           return pane;
         }),
@@ -238,32 +263,49 @@ function writeAtomic(file, text) {
   fs.renameSync(tmp, file);
 }
 
-// Save each workspace backup. Returns the number of files written.
-function saveBackups(list, options = {}) {
+// Save one workspace capture into its folder. Returns { written, version },
+// where version counts the versions now stored. A changed task or label
+// refreshes the newest version; a changed layout starts a new one.
+function saveOne(b, options = {}) {
   const root = backupsDir(options.dir);
   const keep = options.keep || KEEP;
   const now = typeof options.now === 'number' ? options.now : Date.now();
-  let written = 0;
-  for (const b of list) {
-    const folder = path.join(root, safeName(b.workspaceId));
-    fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
-    const files = versionFiles(folder);
-    const latest = files.length ? readJson(path.join(folder, files[0])) : null;
-    if (latest && body(latest) === body(b)) continue;
-    const text = JSON.stringify(b, null, 2) + '\n';
-    if (latest && shapeKey(latest) === shapeKey(b)) {
-      writeAtomic(path.join(folder, files[0]), text);
-    } else {
-      let stamp = now;
-      while (files.includes(`${stamp}.json`)) stamp++;
-      writeAtomic(path.join(folder, `${stamp}.json`), text);
-      for (const old of [`${stamp}.json`, ...files].slice(keep)) {
-        try { fs.unlinkSync(path.join(folder, old)); } catch (e) { /* already gone */ }
-      }
-    }
-    written++;
+  const folder = path.join(root, safeName(b.workspaceId));
+  fs.mkdirSync(folder, { recursive: true, mode: 0o700 });
+  const files = versionFiles(folder);
+  const latest = files.length ? readJson(path.join(folder, files[0])) : null;
+  if (latest && body(latest) === body(b)) return { written: false, version: files.length };
+  const text = JSON.stringify(b, null, 2) + '\n';
+  if (latest && shapeKey(latest) === shapeKey(b)) {
+    writeAtomic(path.join(folder, files[0]), text);
+    return { written: true, version: files.length };
   }
+  let stamp = now;
+  while (files.includes(`${stamp}.json`)) stamp++;
+  writeAtomic(path.join(folder, `${stamp}.json`), text);
+  for (const old of [`${stamp}.json`, ...files].slice(keep)) {
+    try { fs.unlinkSync(path.join(folder, old)); } catch (e) { /* already gone */ }
+  }
+  return { written: true, version: versionFiles(folder).length };
+}
+
+// Save each workspace backup. Returns the number of files written.
+function saveBackups(list, options = {}) {
+  let written = 0;
+  for (const b of list) if (saveOne(b, options).written) written++;
   return written;
+}
+
+// What a capture did, one row per workspace: saved or unchanged, plus the
+// version the workspace is on now.
+function saveCaptures(list, options = {}) {
+  return (Array.isArray(list) ? list : []).map((b) => {
+    const r = saveOne(b, options);
+    return {
+      workspaceId: b.workspaceId, label: b.label,
+      status: r.written ? 'saved' : 'unchanged', version: r.version,
+    };
+  });
 }
 
 function counts(b) {
@@ -431,6 +473,9 @@ async function restoreBackup(b, options = {}) {
     for (const t of b.tabs) {
       for (const p of t.panes) {
         if (!p.agent) continue;
+        // A session the agent's CLI would refuse is not a lead to follow: the
+        // pane starts blank instead of opening someone else's conversation.
+        if (p.agent.sessionStale || (p.agent.session && !sessions.validSession(p.agent.kind, p.agent.session))) continue;
         pending.push({
           paneId: p.paneId, cwd: p.cwd, name: p.agent.name, task: p.agent.task,
           agent: p.agent.kind, session: p.agent.session, saved: p.agent,
@@ -500,9 +545,9 @@ async function restoreBackup(b, options = {}) {
       const a = p.agent;
       const name = sessions.agentName(a.name || a.kind, taken);
       taken.add(name);
-      const session = sessions.validSession(a.kind, a.session) ? a.session : null;
+      const session = !a.sessionStale && sessions.validSession(a.kind, a.session) ? a.session : null;
       try {
-        await herdr.startAgent(name, a.kind, paneId, sessions.agentArgs({ ...a, agent: a.kind }));
+        await herdr.startAgent(name, a.kind, paneId, sessions.agentArgs({ ...a, agent: a.kind, session }));
         agents++;
         if (session) startedSessions.push({ paneId, name, agent: a.kind, session });
         await herdr.renamePane(paneId, a.task ? `${name} · ${a.task}` : name).catch(() => {});
@@ -517,7 +562,7 @@ async function restoreBackup(b, options = {}) {
 function parseArgs(argv) {
   const o = { cmd: 'list', key: null, version: 1, yes: false, json: false, dir: null, layout: 'even' };
   const rest = [...argv];
-  if (rest[0] === 'show' || rest[0] === 'restore' || rest[0] === 'list') o.cmd = rest.shift();
+  if (rest[0] === 'capture' || rest[0] === 'show' || rest[0] === 'restore' || rest[0] === 'list') o.cmd = rest.shift();
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a === '--json') o.json = true;
@@ -537,8 +582,17 @@ function parseArgs(argv) {
     } else if (!a.startsWith('-') && !o.key) o.key = a;
     else return { error: `unknown option ${a}` };
   }
-  if (o.cmd !== 'list' && !o.key) return { error: `${o.cmd} needs a workspace label or id` };
+  if (o.cmd === 'list' || o.cmd === 'capture') return o;
+  if (!o.key) return { error: `${o.cmd} needs a workspace label or id` };
   return o;
+}
+
+// Herdr failures reach a user as one line, not a stack trace.
+function herdrError(e) {
+  const stderr = e && typeof e.stderr === 'string' ? e.stderr : '';
+  const text = stderr.trim() || (e && e.message) || '';
+  const line = String(text).split('\n').map((l) => l.trim()).find(Boolean);
+  return line || 'herdr did not answer';
 }
 
 async function main(argv, options = {}) {
@@ -552,6 +606,28 @@ async function main(argv, options = {}) {
   if (o.error) {
     err.write(`roostr backups: ${o.error}\n${USAGE}\n`);
     return 2;
+  }
+  if (o.cmd === 'capture') {
+    const herdr = options.herdr || require('./herdr');
+    let snap;
+    try {
+      snap = await herdr.snapshot();
+    } catch (e) {
+      err.write(`roostr backups: ${herdrError(e)}\n`);
+      return 1;
+    }
+    const rows = saveCaptures(capture({ snapshot: snap }, options.now), { dir: o.dir, now: options.now });
+    if (o.json) {
+      out.write(JSON.stringify({
+        saved: rows.filter((r) => r.status === 'saved'),
+        unchanged: rows.filter((r) => r.status === 'unchanged'),
+      }, null, 2) + '\n');
+    } else {
+      for (const r of rows) {
+        out.write(r.status === 'saved' ? `saved ${r.label} v${r.version}\n` : `unchanged ${r.label}\n`);
+      }
+    }
+    return 0;
   }
   const list = listBackups(o.dir);
   if (o.cmd === 'list') {
@@ -602,6 +678,6 @@ async function main(argv, options = {}) {
 
 module.exports = {
   KEEP, SUFFIX, LAYOUTS, USAGE, backupsDir, layoutTree, leaves, chain, relay, grid, treeFor,
-  capture, shapeKey, saveBackups, listBackups, subset,
+  capture, shapeKey, saveBackups, saveCaptures, listBackups, subset,
   findBackup, counts, drawTree, previewLines, restoreBackup, parseArgs, main,
 };

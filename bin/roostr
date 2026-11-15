@@ -10,7 +10,9 @@
 //   roostr tasks [...]       validate the machine readable task list
 //   roostr template <role>   print a role template
 //   roostr name [...]        draw worker names from the head language
-//   roostr backups [...]     list, show or restore a workspace backup
+//   roostr backups [...]     list, show, capture or restore a workspace backup
+//   roostr handoff [...]     write a handoff brief for an agent pane
+//   roostr workers [...]     publish a worker snapshot for the board
 //   roostr analytics [...]   query continuous usage and cost attribution
 //   roostr arena [...]       the shareable first-try pass leaderboard
 //   roostr init [...]        prepare a project for roostr in one command
@@ -66,6 +68,11 @@ if (argv[0] === 'report') {
 } else if (argv[0] === 'backups') {
   require(path.join(src, 'backup.js')).main(argv.slice(1))
     .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr backups: ${e.message}\n`); process.exitCode = 1; });
+} else if (argv[0] === 'handoff') {
+  process.exitCode = require(path.join(src, 'handoff.js')).main(argv.slice(1));
+} else if (argv[0] === 'workers') {
+  require(path.join(src, 'workers.js')).main(argv.slice(1))
+    .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr workers: ${e.message}\n`); process.exitCode = 1; });
 } else if (argv[0] === 'log') {
   require(path.join(src, 'session-log.js')).main(argv.slice(1))
     .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr log: ${e.message}\n`); process.exitCode = 1; });

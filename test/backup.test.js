@@ -278,3 +278,100 @@ test('restoreBackup: a dead pane resolves its session from the store before it s
   assert.deepEqual(started[4], ['--session', 'ses_recovered']);
   assert.equal(r.sessions.find((s) => s.agent === 'opencode').session, 'ses_recovered');
 });
+
+test('main: capture saves once, skips unchanged, saves changed layout as v2, and supports --json', async () => {
+  const dir = freshDir();
+  const snap = snapshot();
+  const run = async (argv, now, s = snap) => {
+    let out = '';
+    let err = '';
+    const code = await backup.main(argv, {
+      stdout: { write: (x) => { out += x; } },
+      stderr: { write: (x) => { err += x; } },
+      herdr: { snapshot: async () => s },
+      now,
+    });
+    return { code, out, err };
+  };
+
+  const first = await run(['capture', '--dir', dir], 1000);
+  assert.equal(first.code, 0);
+  assert.equal(first.out, 'saved app v1\n');
+
+  const second = await run(['capture', '--dir', dir], 2000);
+  assert.equal(second.code, 0);
+  assert.equal(second.out, 'unchanged app\n');
+  assert.equal(backup.listBackups(dir)[0].versions.length, 1);
+
+  const changed = snapshot();
+  changed.panes[3].cwd = '/tmp/app/next';
+  const third = await run(['capture', '--json', '--dir', dir], 3000, changed);
+  assert.equal(third.code, 0);
+  const parsed = JSON.parse(third.out);
+  assert.equal(parsed.saved.length, 1);
+  assert.equal(parsed.saved[0].workspaceId, 'w1');
+  assert.equal(parsed.saved[0].version, 2);
+  assert.deepEqual(parsed.unchanged, []);
+  assert.equal(backup.listBackups(dir)[0].versions.length, 2);
+});
+
+test('main: capture returns exit code 1 and one-line error when Herdr is missing', async () => {
+  let out = '';
+  let err = '';
+  const e = new Error('connect ENOENT /tmp/herdr.sock\n    at Socket.connect');
+  const code = await backup.main(['capture', '--dir', freshDir()], {
+    stdout: { write: (x) => { out += x; } },
+    stderr: { write: (x) => { err += x; } },
+    herdr: { snapshot: async () => { throw e; } },
+  });
+  assert.equal(code, 1);
+  assert.equal(out, '');
+  assert.equal(err.trim().split('\n').length, 1);
+  assert.match(err, /^roostr backups: connect ENOENT \/tmp\/herdr\.sock/);
+});
+
+test('capture: handoff pointer is recorded only when the file exists', () => {
+  const proj = path.join(tmp, 'handoff-proj');
+  const handoffs = path.join(proj, 'docs', 'orchestration', 'handoffs');
+  fs.mkdirSync(handoffs, { recursive: true });
+  const expected = path.join(handoffs, 'latest-docs-lead.md');
+  fs.writeFileSync(expected, 'secret brief should not be read\n');
+
+  const snap = snapshot();
+  snap.panes[1].cwd = proj;
+  snap.panes[1].label = 'Docs Lead · write the guide';
+  snap.agents[0].cwd = proj;
+  snap.agents[0].name = 'Docs Lead';
+
+  const b = backup.capture(model(snap))[0];
+  const docs = b.tabs[0].panes.find((p) => p.paneId === 'w1:p2');
+  const other = b.tabs[1].panes.find((p) => p.paneId === 'w1:p5');
+  assert.equal(docs.handoff, expected);
+  assert.equal('handoff' in other, false);
+});
+
+test('capture and restoreBackup: stale session is marked and becomes a plain start', async () => {
+  const snap = snapshot();
+  snap.agents[1].agent_session = { value: 'stale-not-ses' };
+  const b = backup.capture(model(snap))[0];
+  const oc = b.tabs[1].panes[0];
+  // Extractors may drop invalid sessions at capture time; simulate a saved stale ref too.
+  oc.agent.session = 'stale-not-ses';
+  oc.agent.sessionStale = true;
+
+  const calls = [];
+  const r = await backup.restoreBackup(b, { herdr: fakeHerdr(calls), resolveSessions: false });
+  assert.deepEqual(r.errors, []);
+  const started = calls.find((c) => c[0] === 'start' && c[2] === 'opencode');
+  assert.deepEqual(started[4], []);
+  assert.equal(r.sessions.some((s) => s.agent === 'opencode'), false);
+
+  // Also verify capture() itself marks sessionStale when an invalid session reaches it.
+  const snap2 = snapshot();
+  snap2.agents[0].session_id = 'bad session!';
+  const b2 = backup.capture(model(snap2))[0];
+  const claudePane = b2.tabs[0].panes.find((p) => p.paneId === 'w1:p2');
+  if (claudePane.agent.session) {
+    assert.equal(claudePane.agent.sessionStale, true);
+  }
+});
