@@ -124,14 +124,30 @@ function writeSecretFile(filePath, secret) {
 }
 
 async function httpJson(fetchFn, url, { method = 'GET', headers = {}, body = null } = {}) {
+  const verb = String(method || 'GET').toUpperCase();
   const reqHeaders = { Accept: 'application/json', ...headers };
   let payload;
   if (body !== null && body !== undefined) {
     reqHeaders['Content-Type'] = 'application/json';
     payload = JSON.stringify(body);
   }
-  const res = await fetchFn(url, { method, headers: reqHeaders, body: payload });
-  const text = await res.text();
+  let res;
+  let text;
+  try {
+    res = await fetchFn(url, { method: verb, headers: reqHeaders, body: payload });
+    text = await res.text();
+  } catch (err) {
+    const baseMsg = (err && typeof err === 'object' && err.message)
+      ? err.message
+      : String(err || 'network error');
+    const cause = err && typeof err === 'object' ? err.cause : null;
+    const causeDetail = cause && typeof cause === 'object'
+      ? (cause.code || cause.message || '')
+      : (typeof cause === 'string' ? cause : '');
+    const extra = causeDetail || (err && typeof err === 'object' && err.code ? err.code : '');
+    const suffix = extra && !baseMsg.includes(extra) ? ` (${extra})` : '';
+    throw new Error(`${verb} ${url} failed: ${baseMsg}${suffix}`, { cause: err });
+  }
   let data = null;
   if (text) {
     try { data = JSON.parse(text); } catch { data = text; }
@@ -140,10 +156,15 @@ async function httpJson(fetchFn, url, { method = 'GET', headers = {}, body = nul
 }
 
 function shouldAutoOnboard(opts = {}, env = process.env) {
-  if (!isOrchestratorRole(opts.role)) return false;
-  if (opts.onboard === true) return true;
-  if (env.ROOSTR_AUTO_ONBOARD === '0') return false;
-  return Boolean(env.ROOSTR_RELAY_URL || env.ROOSTR_MUSESIGHT_URL);
+  const o = opts || {};
+  const e = env || process.env;
+  if (!isOrchestratorRole(o.role)) return false;
+  if (o.onboard === false) return false;
+  if (o.onboard === true) return true;
+  if (e.ROOSTR_AUTO_ONBOARD === '0') return false;
+  const relayUrl = typeof e.ROOSTR_RELAY_URL === 'string' ? e.ROOSTR_RELAY_URL.trim() : '';
+  const museUrl = typeof e.ROOSTR_MUSESIGHT_URL === 'string' ? e.ROOSTR_MUSESIGHT_URL.trim() : '';
+  return Boolean(relayUrl || museUrl);
 }
 
 async function runOnboard(opts = {}, deps = {}) {
@@ -153,22 +174,26 @@ async function runOnboard(opts = {}, deps = {}) {
 
   const agent = validateSlug(opts.agent, 'agent');
   const project = validateSlug(opts.project || sanitizeSlug(path.basename(opts.cwd || process.cwd())), 'project');
-  const host = String(opts.host || os.hostname() || 'unknown').trim() || 'unknown';
+  const hostOpt = typeof opts.host === 'string' ? opts.host.trim() : '';
+  const host = hostOpt || String(os.hostname() || '').trim() || 'unknown';
   const displayName = opts.displayName || agent;
   const role = opts.role || 'orchestrator';
-  const capabilities = Array.isArray(opts.capabilities) && opts.capabilities.length > 0
-    ? opts.capabilities
-    : ['orchestrate', 'build'];
+  const rawCaps = typeof opts.capabilities === 'string'
+    ? opts.capabilities.split(',')
+    : (Array.isArray(opts.capabilities) ? opts.capabilities : []);
+  const cleanCaps = rawCaps.map((s) => String(s || '').trim()).filter(Boolean);
+  const capabilities = cleanCaps.length > 0 ? cleanCaps : ['orchestrate', 'build'];
 
-  const relayBase = (opts.relayUrl || env.ROOSTR_RELAY_URL || '').replace(/\/+$/, '');
-  const musesightBase = (opts.musesightUrl || env.ROOSTR_MUSESIGHT_URL || '').replace(/\/+$/, '');
-  const statusUrl = opts.statusUrl || env.ROOSTR_STATUS_URL || '';
-  const webhookUrl = opts.webhookUrl || env.ROOSTR_WEBHOOK_URL || '';
+  const relayBase = String(opts.relayUrl || env.ROOSTR_RELAY_URL || '').trim().replace(/\/+$/, '');
+  const musesightBase = String(opts.musesightUrl || env.ROOSTR_MUSESIGHT_URL || '').trim().replace(/\/+$/, '');
+  const statusUrl = String(opts.statusUrl || env.ROOSTR_STATUS_URL || '').trim();
+  const webhookUrl = String(opts.webhookUrl || env.ROOSTR_WEBHOOK_URL || '').trim();
   const announceTo = validateSlug(opts.announceTo || env.ROOSTR_ANNOUNCE_TO || 'roman', 'announceTo');
 
-  const adminToken = opts.adminToken
+  const rawToken = opts.adminToken
     || env.ROOSTR_RELAY_ADMIN_TOKEN
     || readTokenFile(opts.adminTokenFile || env.ROOSTR_RELAY_ADMIN_TOKEN_FILE);
+  const adminToken = typeof rawToken === 'string' ? rawToken.trim() : rawToken;
 
   const bankId = bankIdForProject(project);
   const skill = checkSkillInstalled({ home: opts.home, skillDirs: opts.skillDirs });
@@ -201,6 +226,7 @@ async function runOnboard(opts = {}, deps = {}) {
         webhook: relayBase && webhookUrl ? 'planned' : 'skipped',
         card: relayBase && adminToken ? 'planned' : 'skipped',
         announce: relayBase ? 'planned' : 'skipped',
+        status: statusUrl ? 'planned' : 'skipped',
         musesight: musesightBase ? 'planned' : 'skipped',
       },
     };
@@ -277,7 +303,7 @@ async function runOnboard(opts = {}, deps = {}) {
         to: announceTo,
         subject: `${displayName} onboarded for ${project}`,
         body: `Agent ${agent} onboarded on ${host} for project ${project} (role: ${role}, bank: ${bankId}).`,
-        kind: 'note',
+        kind: 'report',
         project,
         client_msg_id: clientMsgId,
       },
@@ -424,7 +450,7 @@ function parseArgs(argv) {
     else if (a === '--role') out.role = v;
     else if (a === '--host') out.host = v;
     else if (a === '--capabilities') {
-      out.capabilities = String(v).split(',').map((s) => s.trim()).filter(Boolean);
+      out.capabilities.push(...String(v).split(',').map((s) => s.trim()).filter(Boolean));
     } else if (a === '--webhook-url') out.webhookUrl = v;
     else if (a === '--relay-url') out.relayUrl = v;
     else if (a === '--musesight-url') out.musesightUrl = v;
@@ -484,6 +510,7 @@ module.exports = {
   canonicalPageSpecs,
   charterMemoryBlock,
   checkSkillInstalled,
+  httpJson,
   shouldAutoOnboard,
   runOnboard,
   parseArgs,

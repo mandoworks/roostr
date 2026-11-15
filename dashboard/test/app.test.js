@@ -556,4 +556,281 @@ describe('dashboard herdr client and HTTP app', () => {
       h.cleanup();
     }
   });
+
+  it('validates CSRF, bad JSON, rename, and start edge cases (400/403/413/502)', async () => {
+    const h = createHarness();
+    try {
+      const token = h.store.getEnrollToken();
+      const opt = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token },
+      });
+      const ver = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, challengeId: JSON.parse(opt.body).challengeId, response: { id: 'cred-1' } },
+      });
+      const cookie = ver.headers['set-cookie'].split(';')[0];
+
+      // CSRF / Origin rejections on rename, start, and names endpoints
+      for (const ep of [
+        '/agents/api/pane/w1:p1/rename',
+        '/agents/api/pane/w1:p1/start',
+        '/agents/api/names/override',
+        '/agents/api/names/orchestrator',
+        '/agents/api/names/revert',
+      ]) {
+        const missingCsrf = await invokeHandler(h.handler, {
+          method: 'POST',
+          url: ep,
+          headers: { cookie, origin: h.config.origin, 'x-forwarded-for': '100.64.0.10' },
+          body: {},
+        });
+        assert.equal(missingCsrf.status, 403, `expected 403 without CSRF on ${ep}`);
+
+        const badOrigin = await invokeHandler(h.handler, {
+          method: 'POST',
+          url: ep,
+          headers: { cookie, 'x-roostr-csrf': '1', origin: 'https://evil.example', 'x-forwarded-for': '100.64.0.10' },
+          body: {},
+        });
+        assert.equal(badOrigin.status, 403, `expected 403 on bad origin for ${ep}`);
+      }
+
+      // Bad JSON, non-object JSON, and oversized body
+      const malformed = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.11' },
+        body: '{not-json',
+      });
+      assert.equal(malformed.status, 400);
+      assert.match(malformed.body, /invalid JSON body/);
+
+      const arrayBody = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.11' },
+        body: '["not","an","object"]',
+      });
+      assert.equal(arrayBody.status, 400);
+      assert.match(arrayBody.body, /JSON body must be an object/);
+
+      const oversized = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.11' },
+        body: JSON.stringify({ label: 'a'.repeat(70 * 1024) }),
+      });
+      assert.equal(oversized.status, 413);
+
+      // Rename validation & Herdr 502
+      const badPaneRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/bad-pane/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'ok' },
+      });
+      assert.equal(badPaneRename.status, 400);
+
+      const badLabelType = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: {},
+      });
+      assert.equal(badLabelType.status, 400);
+
+      const badLabelCtrl = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'bad\nlabel' },
+      });
+      assert.equal(badLabelCtrl.status, 400);
+
+      const tooLongLabel = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'x'.repeat(81) },
+      });
+      assert.equal(tooLongLabel.status, 400);
+
+      h.setFailNextHerdr('pane not found');
+      const herdrFailRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'valid' },
+      });
+      assert.equal(herdrFailRename.status, 502);
+
+      // Start validation & Herdr 502
+      const badStartName = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.13' },
+        body: { name: 'BadName', kind: 'codex' },
+      });
+      assert.equal(badStartName.status, 400);
+
+      const missingStartKind = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.13' },
+        body: { name: 'nora' },
+      });
+      assert.equal(missingStartKind.status, 400);
+
+      const codexStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.13' },
+        body: { name: 'nora', kind: 'codex' },
+      });
+      assert.equal(codexStart.status, 200);
+
+      h.setFailNextHerdr('pane busy');
+      const herdrFailStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.13' },
+        body: { name: 'nora', kind: 'gemini' },
+      });
+      assert.equal(herdrFailStart.status, 502);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('validates names API auth, overrides, orchestrators, and revert edge cases (400/401/404/409)', async () => {
+    const h = createHarness();
+    try {
+      const token = h.store.getEnrollToken();
+      const opt = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token },
+      });
+      const ver = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, challengeId: JSON.parse(opt.body).challengeId, response: { id: 'cred-1' } },
+      });
+      const cookie = ver.headers['set-cookie'].split(';')[0];
+
+      // Unauthenticated names routes
+      const unauthNamesApi = await invokeHandler(h.handler, { url: '/agents/api/names' });
+      assert.equal(unauthNamesApi.status, 401);
+      const unauthNamesPage = await invokeHandler(h.handler, { url: '/agents/names.html' });
+      assert.equal(unauthNamesPage.status, 302);
+      assert.match(unauthNamesPage.headers.location, /^\/agents\/auth\/login\?next=/);
+
+      // Names API validation and lifecycle (override, orchestrator, revert)
+      const badSlugOv = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'Bad Slug', name: 'Name' },
+      });
+      assert.equal(badSlugOv.status, 400);
+
+      const badNameOv = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', name: 'bad\x00name' },
+      });
+      assert.equal(badNameOv.status, 400);
+
+      const setOv = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', name: 'Roosty Argon' },
+      });
+      assert.equal(setOv.status, 200);
+      const historyId = JSON.parse(setOv.body).names.history[0].id;
+
+      const clearOv = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', name: '   ' },
+      });
+      assert.equal(clearOv.status, 200);
+      assert.equal(JSON.parse(clearOv.body).names.overrides.roosty, undefined);
+
+      const badOrch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/orchestrator',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'BAD!', enabled: true },
+      });
+      assert.equal(badOrch.status, 400);
+
+      const addOrch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/orchestrator',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', enabled: true },
+      });
+      assert.equal(addOrch.status, 200);
+      assert.deepEqual(JSON.parse(addOrch.body).names.orchestrators, ['roosty']);
+
+      const rmOrch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/orchestrator',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', enabled: false },
+      });
+      assert.equal(rmOrch.status, 200);
+      assert.deepEqual(JSON.parse(rmOrch.body).names.orchestrators, []);
+
+      // Revert latest (clear -> restores Roosty Argon)
+      const revLatest = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/revert',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {},
+      });
+      assert.equal(revLatest.status, 200);
+      assert.equal(JSON.parse(revLatest.body).names.overrides.roosty.name, 'Roosty Argon');
+
+      // Revert specific historyId -> removes Roosty Argon
+      const revById = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/revert',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { historyId },
+      });
+      assert.equal(revById.status, 200);
+      assert.equal(JSON.parse(revById.body).names.overrides.roosty, undefined);
+
+      // Double-revert same id returns 409, and auto-revert when empty returns 404
+      const dupRevById = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/revert',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { historyId },
+      });
+      assert.equal(dupRevById.status, 409);
+
+      const noMoreRev = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/revert',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {},
+      });
+      assert.equal(noMoreRev.status, 404);
+    } finally {
+      h.cleanup();
+    }
+  });
 });

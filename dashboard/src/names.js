@@ -66,8 +66,8 @@ function normalizeNamesDoc(raw) {
   const overrides = {};
   if (raw.overrides && typeof raw.overrides === 'object' && !Array.isArray(raw.overrides)) {
     for (const [slug, rec] of Object.entries(raw.overrides)) {
-      if (!SLUG_RE.test(slug) || !rec || typeof rec !== 'object') continue;
-      if (typeof rec.name !== 'string' || !rec.name.trim()) continue;
+      if (!SLUG_RE.test(slug) || !rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+      if (typeof rec.name !== 'string' || SINGLE_LINE_CONTROL_RE.test(rec.name) || !rec.name.trim()) continue;
       overrides[slug] = {
         name: rec.name.trim().slice(0, MAX_NAME_LENGTH),
         updated_at: typeof rec.updated_at === 'string' ? rec.updated_at : null,
@@ -76,7 +76,7 @@ function normalizeNamesDoc(raw) {
     }
   }
   const history = Array.isArray(raw.history)
-    ? raw.history.filter((h) => h && typeof h === 'object').slice(0, MAX_HISTORY)
+    ? raw.history.filter((h) => h && typeof h === 'object' && !Array.isArray(h)).slice(0, MAX_HISTORY)
     : [];
   return {
     schema: 1,
@@ -99,7 +99,7 @@ function readJsonSafe(filePath) {
 
 function writeJsonAtomic(filePath, doc) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
   const body = JSON.stringify(doc, null, 2) + '\n';
   try {
     fs.writeFileSync(tmpPath, body, { encoding: 'utf8', mode: 0o644 });
@@ -127,7 +127,9 @@ function readWorkerHosts(staticDir, nowMs = Date.now()) {
     if (!/^workers\.[a-z0-9][a-z0-9.-]*\.json$/i.test(name)) continue;
     const doc = readJsonSafe(path.join(workersDir, name));
     if (!doc || typeof doc !== 'object') continue;
-    const rawHost = typeof doc.host === 'string' ? doc.host : name.replace(/^workers\.|\.json$/gi, '');
+    const rawHost = (typeof doc.host === 'string' && doc.host.trim())
+      ? doc.host.trim()
+      : name.replace(/^workers\.|\.json$/gi, '');
     const genEpoch = Number.isFinite(doc.generated_epoch) ? doc.generated_epoch : 0;
     const ageSec = genEpoch > 0 ? Math.max(0, nowSec - genEpoch) : null;
     const stale = ageSec === null || ageSec > STALE_WORKER_SECONDS;
@@ -138,7 +140,9 @@ function readWorkerHosts(staticDir, nowMs = Date.now()) {
       generatedAt: doc.generated_at || null,
       ageSec,
       stale,
-      workers: Array.isArray(doc.workers) ? doc.workers : [],
+      workers: Array.isArray(doc.workers)
+        ? doc.workers.filter((w) => w && typeof w === 'object' && !Array.isArray(w))
+        : [],
     });
   }
   return hosts;
@@ -165,7 +169,7 @@ function collectEligibleSlugs({ namesDoc, staticDir, statusPath }) {
   }
 
   const statusDoc = readJsonSafe(statusPath);
-  if (statusDoc && statusDoc.agents && typeof statusDoc.agents === 'object') {
+  if (statusDoc && statusDoc.agents && typeof statusDoc.agents === 'object' && !Array.isArray(statusDoc.agents)) {
     for (const [slug, ev] of Object.entries(statusDoc.agents)) {
       upsert(slug, 'announce', ev && (ev.name || ev.label));
     }
@@ -180,8 +184,8 @@ function collectEligibleSlugs({ namesDoc, staticDir, statusPath }) {
   }
 
   for (const slug of namesDoc.orchestrators) upsert(slug, 'orchestrator', null);
-  for (const [slug, rec] of Object.entries(namesDoc.overrides)) {
-    upsert(slug, 'override', rec && rec.name);
+  for (const slug of Object.keys(namesDoc.overrides)) {
+    upsert(slug, 'override', null);
   }
 
   return [...map.values()].sort((a, b) => a.slug.localeCompare(b.slug));
@@ -279,21 +283,36 @@ function createNamesStore({ namesPath, staticDir, statusPath, now = () => Date.n
 
   function revertHistory(historyId, by = 'pio') {
     const doc = load();
+    const revertedIds = new Set(
+      doc.history
+        .filter((h) => h && h.action === 'override.revert' && typeof h.reverted_id === 'string')
+        .map((h) => h.reverted_id)
+    );
+    const isRevertable = (h) => h && (h.action === 'override.set' || h.action === 'override.clear');
     const target = historyId
-      ? doc.history.find((h) => h.id === historyId && (h.action === 'override.set' || h.action === 'override.clear'))
-      : doc.history.find((h) => h.action === 'override.set' || h.action === 'override.clear');
+      ? doc.history.find((h) => h.id === historyId && isRevertable(h))
+      : doc.history.find((h) => isRevertable(h) && !revertedIds.has(h.id));
 
     if (!target) {
       return { ok: false, status: 404, error: 'no override history entry to revert' };
+    }
+    if (historyId && revertedIds.has(target.id)) {
+      return { ok: false, status: 409, error: 'history entry already reverted' };
+    }
+    if (typeof target.slug !== 'string' || !SLUG_RE.test(target.slug)) {
+      return { ok: false, status: 400, error: 'invalid slug in history entry' };
     }
 
     const nowMs = now();
     const iso = new Date(nowMs).toISOString();
     const current = doc.overrides[target.slug] ? doc.overrides[target.slug].name : null;
+    const prevName = (typeof target.prev_name === 'string' && !SINGLE_LINE_CONTROL_RE.test(target.prev_name))
+      ? target.prev_name.trim().slice(0, MAX_NAME_LENGTH)
+      : '';
 
-    if (target.prev_name) {
+    if (prevName) {
       doc.overrides[target.slug] = {
-        name: target.prev_name,
+        name: prevName,
         updated_at: iso,
         retired_at: null,
       };
@@ -307,7 +326,7 @@ function createNamesStore({ namesPath, staticDir, statusPath, now = () => Date.n
       slug: target.slug,
       action: 'override.revert',
       prev_name: current,
-      next_name: target.prev_name || null,
+      next_name: prevName || null,
       reverted_id: target.id,
       by,
     });
