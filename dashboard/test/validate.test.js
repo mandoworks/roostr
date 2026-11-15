@@ -65,13 +65,14 @@ describe('validateKeys', () => {
     assert.equal(eight.value.length, 8);
   });
 
-  it('rejects rm, ctrl-z, empty, non-arrays, and over 8 keys', () => {
+  it('rejects rm, ctrl-z, empty, non-arrays, non-strings, and over 8 keys', () => {
     assert.equal(validateKeys(['rm']).ok, false);
     assert.equal(validateKeys(['ctrl-z']).ok, false);
     assert.equal(validateKeys(['']).ok, false);
     assert.equal(validateKeys([]).ok, false);
     assert.equal(validateKeys('enter').ok, false);
     assert.equal(validateKeys(null).ok, false);
+    assert.equal(validateKeys(['enter', 123]).ok, false);
     assert.equal(validateKeys(['enter', 'rm']).ok, false);
     assert.equal(validateKeys(new Array(9).fill('enter')).ok, false);
   });
@@ -86,11 +87,14 @@ describe('validatePrompt', () => {
 
   it('rejects empty, over 4000 chars, non-strings, and control characters', () => {
     assert.equal(validatePrompt('').ok, false);
-    assert.equal(validatePrompt('   \n\t  ').ok, false);
+    assert.equal(validatePrompt('   \r\n\t  ').ok, false);
     assert.equal(validatePrompt(null).ok, false);
     assert.equal(validatePrompt(42).ok, false);
     assert.equal(validatePrompt('x'.repeat(4001)).ok, false);
     assert.equal(validatePrompt('abc\x00def').ok, false);
+    assert.equal(validatePrompt('abc\x08bs').ok, false);
+    assert.equal(validatePrompt('abc\x0bvt').ok, false);
+    assert.equal(validatePrompt('abc\x0cff').ok, false);
     assert.equal(validatePrompt('abc\x1b[31mred').ok, false);
     assert.equal(validatePrompt('abc\x07bell').ok, false);
     assert.equal(validatePrompt('abc\x7fdel').ok, false);
@@ -99,14 +103,19 @@ describe('validatePrompt', () => {
 });
 
 describe('validateLines', () => {
-  it('defaults to 40, caps at 120, and rejects non-positive inputs', () => {
+  it('defaults to 40, caps at 120, and rejects non-positive or overflow inputs', () => {
     assert.deepEqual(validateLines(undefined), { ok: true, value: 40 });
+    assert.deepEqual(validateLines(null), { ok: true, value: 40 });
     assert.deepEqual(validateLines(''), { ok: true, value: 40 });
+    assert.deepEqual(validateLines(15), { ok: true, value: 15 });
     assert.deepEqual(validateLines('25'), { ok: true, value: 25 });
     assert.deepEqual(validateLines('120'), { ok: true, value: 120 });
     assert.deepEqual(validateLines('500'), { ok: true, value: 120 });
+    assert.equal(validateLines('   ').ok, false);
     assert.equal(validateLines('0').ok, false);
     assert.equal(validateLines('-5').ok, false);
+    assert.equal(validateLines('12.5').ok, false);
+    assert.equal(validateLines('9999999999999999999999').ok, false);
     assert.equal(validateLines('abc').ok, false);
   });
 });
@@ -150,9 +159,12 @@ describe('resolveStaticPath', () => {
       assert.equal(resolveStaticPath(rootDir, 'escape-file.txt'), null);
       assert.equal(resolveStaticPath(rootDir, 'escape-dir/secret.txt'), null);
 
-      // Refuses null bytes and backslashes
+      // Refuses null bytes, backslashes, missing root, and non-strings
       assert.equal(resolveStaticPath(rootDir, 'index.html\0.png'), null);
       assert.equal(resolveStaticPath(rootDir, 'sub\\app.js'), null);
+      assert.equal(resolveStaticPath(path.join(tmpBase, 'missing'), 'index.html'), null);
+      assert.equal(resolveStaticPath(rootDir, null), null);
+      assert.equal(resolveStaticPath(rootDir, 'sub/'), null);
     } finally {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
@@ -163,15 +175,31 @@ describe('validatePaneLabel, validateAgentName, validateAgentKind', () => {
   it('validates pane labels and clears on empty', () => {
     assert.deepEqual(validatePaneLabel('  nora · garden  '), { ok: true, value: 'nora · garden' });
     assert.deepEqual(validatePaneLabel('   '), { ok: true, value: '' });
+    assert.deepEqual(validatePaneLabel(''), { ok: true, value: '' });
+    assert.deepEqual(validatePaneLabel('x'.repeat(80)), { ok: true, value: 'x'.repeat(80) });
+    assert.equal(validatePaneLabel(null).ok, false);
+    assert.equal(validatePaneLabel(123).ok, false);
     assert.equal(validatePaneLabel('bad\nline').ok, false);
+    assert.equal(validatePaneLabel('bad\rline').ok, false);
+    assert.equal(validatePaneLabel('bad\tline').ok, false);
+    assert.equal(validatePaneLabel('bad\x7fdel').ok, false);
     assert.equal(validatePaneLabel('x'.repeat(81)).ok, false);
   });
 
   it('validates agent names and allowlisted kinds', () => {
-    assert.deepEqual(validateAgentName('nora-2'), { ok: true, value: 'nora-2' });
+    assert.deepEqual(validateAgentName('  nora-2_a  '), { ok: true, value: 'nora-2_a' });
+    assert.deepEqual(validateAgentName('a'.repeat(32)), { ok: true, value: 'a'.repeat(32) });
+    assert.equal(validateAgentName('').ok, false);
+    assert.equal(validateAgentName(null).ok, false);
     assert.equal(validateAgentName('-bad').ok, false);
+    assert.equal(validateAgentName('_bad').ok, false);
     assert.equal(validateAgentName('Nora').ok, false);
-    assert.deepEqual(validateAgentKind('opencode'), { ok: true, value: 'opencode' });
+    assert.equal(validateAgentName('a'.repeat(33)).ok, false);
+    for (const kind of ['claude', 'opencode', 'kilo', 'agy', 'codex', 'gemini']) {
+      assert.deepEqual(validateAgentKind(` ${kind} `), { ok: true, value: kind });
+    }
+    assert.equal(validateAgentKind('').ok, false);
+    assert.equal(validateAgentKind(null).ok, false);
     assert.equal(validateAgentKind('bash').ok, false);
   });
 });
