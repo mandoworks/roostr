@@ -36,13 +36,19 @@ Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plug
 ## Phase 2: Machine Task List & Data-Driven Model Routing
 
 1. **Write `docs/orchestration/tasks.json` and briefs (`docs/orchestration/tasks/<id>.md`)**:
-   See [`references/schemas-and-config.md`](references/schemas-and-config.md) for the exact `tasks.json`, `.roostr.toml`, and brief/report schemas. Every task must declare its `id`, `title`, `kind` (`architecture`, `complex-impl`, `surgical-code`, `refactor`, `ui`, `docs`, `review`, `test-gen`, `research`), `brief`, `report`, `owns`, and `depends_on`.
+   See [`references/schemas-and-config.md`](references/schemas-and-config.md) for the exact `tasks.json`, `.roostr.toml`, and brief/report schemas. Every task must declare its `id`, `title`, `kind` (`docs`, `review`, `tests`, `tooling`, `complex`, `feature`), `status` (`pending`, `working`, `done`, `blocked`), `brief`, `report`, `owns`, and `depends_on`.
 2. **Validate & enrich with `roostr tasks`**:
    ```bash
    roostr tasks
    roostr tasks --json
    ```
    `roostr tasks` validates dependencies (rejecting cycles and duplicate file ownership), queries `advisor.recommend` per task against `~/.roostr/summary.json`, `.roostr.toml`, and `~/.roostr/config.json`, and prints the recommended `effort`, `tier`, `model`, `confidence`, and fallbacks.
+2b. **Effort analysis before every spawn**:
+   Before spawning any worker, match the task's `kind` and `effort` (`low`, `medium`, `high`) against your `[tiers.*]` and `[tasks.*]` config in `.roostr.toml` or `~/.roostr/config.json`:
+   - `fast` (`low`): `docs`
+   - `balanced` (`medium`): `review`, `tests`, `tooling`, `feature`
+   - `reasoning` (`high`): `complex`
+   Use `roostr recommend --task "<description>" --json` to confirm the empirical winner before overriding defaults.
 3. **Human allocation sign-off**: Present the `roostr tasks` table (or open the board's `[O orchestrate]` TUI drawer with `O` / `T` to tweak tool, effort, or model overrides interactively) and get explicit approval before spawning.
 
 ## Phase 3: Naming, Worktrees & Exact `herdr` Spawning
@@ -65,14 +71,18 @@ Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plug
    PANE_ID=$(herdr pane split --current --direction right --cwd "$PWD/.worktrees/diego" --no-focus | jq -r '.result.pane.pane_id')
    # 3. Start agent with native model/effort args after --
    herdr agent start diego --kind opencode --pane "$PANE_ID" -- -m openrouter/xiaomi/mimo-v2-pro
+   # Or for Antigravity (agy) with Hydrogen:
+   # herdr agent start diego --kind agy --pane "$PANE_ID" -- --model gemini-4-hydrogen-<low|medium|high|xhigh>
+   # Note: if agy is started per-task, each invocation starts a fresh session without warm-pane /clear or /new.
    # 4. Set human-readable pane label
    herdr pane rename "$PANE_ID" "Diego · <short task>"
    ```
-4. **Report metadata to the board & record the ledger spawn**:
+4. **Report metadata to the board & record the spawn**:
    ```bash
    roostr report --pane "$PANE_ID" --role "worker" --about "<one-line scope>" --task "<short task>" --effort medium --model "xiaomi/mimo-v2-pro"
-   RUN_ID=$(roostr spawn --pane "$PANE_ID" --task "<short task>" --kind surgical-code --effort medium --model "xiaomi/mimo-v2-pro" | awk '{print $1}')
+   roostr spawn --task "<short task>" --kind tooling --effort medium --model "xiaomi/mimo-v2-pro"
    ```
+   (Note: `roostr spawn` currently dispatches `orchestrator.spawn` rather than `ledger.spawn`.)
 5. **Dispatch the brief pointer (never paste giant specs into the prompt)**:
    ```bash
    # For full-screen TUIs like opencode, confirm the input box is mounted (--source detection) before prompting
@@ -110,8 +120,15 @@ Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plug
    # 2. Update pane title, board task metadata, and ledger spawn for the new work package
    herdr pane rename "$PANE_ID" "Diego · <next short task>"
    roostr report --pane "$PANE_ID" --task "<next short task>"
-   RUN_ID=$(roostr spawn --pane "$PANE_ID" --task "<next short task>" --kind surgical-code | awk '{print $1}')
+   RUN_ID=$(roostr spawn --task "<next short task>" --kind feature | awk '{print $1}')
    # 3. Dispatch the new brief pointer into the clean context
    herdr agent prompt diego "Read docs/orchestration/tasks/pkg-b.md and execute it. Write your report to docs/orchestration/reports/pkg-b.md ending with DIEGO_DONE or DIEGO_BLOCKED."
    ```
    When the entire batch is merged, remove worktrees (`git worktree remove .worktrees/<name>`) and close worker panes.
+
+## Operator & Fleet Utilities
+
+- `roostr onboard --agent <slug> [--project <slug>] [--host <name>] [--role <text>]`: provision a PioRelay seat/card (with optional webhook and announce), create the MuseSight bank and 5 canonical pages, and run a smoke retain/recall.
+- `roostr workers [--json] [--host <name>]`: export or inspect live worker status snapshots (`workers/workers.<host>.json`).
+- `roostr handoff`: generate or inspect a session handoff summary for the current workspace.
+- `roostr backups [show|restore <label|id>]`: manage workspace pane layout backups.

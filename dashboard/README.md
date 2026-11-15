@@ -61,6 +61,19 @@ Rollback command to restore serving the static `/agents` directory directly:
 tailscale serve --bg --set-path=/agents /home/ubuntu/service-directory/agents
 ```
 
+## Routes & Worker Discovery
+
+All `/agents/api/*` control and names routes require an authenticated passkey session.
+
+- `/agents/names.html`: Names manager UI for inspecting and overriding worker/orchestrator display names.
+- `GET /agents/api/names`: Return current name mappings, overrides, and orchestrator name.
+- `POST /agents/api/names/override`: Set a custom display name override for a worker slug.
+- `POST /agents/api/names/orchestrator`: Set the orchestrator display name.
+- `POST /agents/api/names/revert`: Revert a name override back to its default.
+- `POST /agents/api/pane/:id/rename`: Rename a Herdr pane title.
+- `POST /agents/api/pane/:id/start`: Start an agent inside a Herdr pane.
+- **Dynamic host discovery**: Reads `workers/workers.*.json` files under `STATIC_DIR`, mapping hostnames to short labels (`vps-43beb0ce` -> `ovh`, `muse` -> `muse`).
+
 ## Tests
 
 ```bash

@@ -33,7 +33,7 @@ mode = "recommended"    # "recommended" (grill-with-ui) | "none" | "custom"
 [daemon]
 enabled = true
 auto_approve = true     # auto-send Return on safe permission prompts classified by recover.js
-max_reTRIES = 2
+max_retries = 2
 stall_seconds = 900     # 30..86400
 
 [daemon.ladder]
@@ -59,9 +59,8 @@ model = "claude-opus-4-7"
 effort = "high"
 fallbacks = ["openai/gpt-5.4"]
 
-# Task-kind overrides (kinds: architecture, complex-impl, surgical-code,
-# refactor, ui, docs, review, test-gen, research)
-[tasks.surgical-code]
+# Task-kind overrides (kinds: docs, review, tests, tooling, complex, feature)
+[tasks.tooling]
 tool = "opencode"
 model = "xiaomi/mimo-v2-pro"
 effort = "medium"
@@ -98,7 +97,7 @@ Validated and enriched by `roostr tasks` (`src/tasks.js`). Acts as the single ma
     {
       "id": "pkg-a",
       "title": "Add rate-limit parser for OpenCode adapter",
-      "kind": "surgical-code",
+      "kind": "tooling",
       "brief": "docs/orchestration/tasks/pkg-a.md",
       "report": "docs/orchestration/reports/pkg-a.md",
       "status": "pending",
@@ -126,15 +125,12 @@ Validated and enriched by `roostr tasks` (`src/tasks.js`). Acts as the single ma
 ### Valid Task Kinds (`config.TASK_KINDS`)
 | Kind | Default Effort | Default Tier | Typical Scope |
 | :--- | :--- | :--- | :--- |
-| `architecture` | `high` | `reasoning` | System design, schema migrations, orchestration |
-| `complex-impl` | `high` | `reasoning` | Multi-file features, state machines, concurrency |
-| `surgical-code` | `medium` | `balanced` | Scoped bugfixes, single-module features |
-| `refactor` | `medium` | `balanced` | Behavior-preserving restructuring |
-| `ui` | `medium` | `balanced` | Components, TUI views, CSS/layout |
-| `test-gen` | `medium` | `balanced` | Unit and integration test suites |
 | `docs` | `low` | `fast` | READMEs, runbooks, comments |
-| `review` | `low` | `fast` | Diff audits, regression checks |
-| `research` | `low` | `fast` | Codebase exploration, dependency comparison |
+| `review` | `medium` | `balanced` | Diff audits, regression checks |
+| `tests` | `medium` | `balanced` | Unit and integration test suites |
+| `tooling` | `medium` | `balanced` | Scoped bugfixes, CLI/scripts, single-module features |
+| `feature` | `medium` | `balanced` | Multi-file features, UI views, refactors |
+| `complex` | `high` | `reasoning` | System architecture, concurrency, deep debugging |
 
 ---
 
