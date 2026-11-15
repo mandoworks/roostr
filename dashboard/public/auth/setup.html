@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Passkey Setup | Roostr Agents</title>
+  <link rel="stylesheet" href="/agents/auth/auth.css">
+</head>
+<body data-mode="setup">
+  <main class="auth-card">
+    <h1>Enroll Passkey</h1>
+    <p class="subtitle">Register a passkey on this device to unlock the Herdr control dashboard.</p>
+    <label for="passkey-label">Device label (optional)</label>
+    <input id="passkey-label" type="text" maxlength="64" placeholder="e.g. Pio iPhone">
+    <button id="auth-action" type="button">Create Passkey</button>
+    <div id="status-banner" class="banner" role="alert" hidden></div>
+  </main>
+  <script src="/agents/auth/auth.js"></script>
+</body>
+</html>

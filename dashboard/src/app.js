@@ -1,0 +1,582 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const {
+  validatePaneId,
+  validateKeys,
+  validatePrompt,
+  validateLines,
+  resolveStaticPath,
+} = require('./validate');
+const {
+  COOKIE_NAME,
+  signSession,
+  verifySession,
+  parseCookies,
+  formatSessionCookie,
+  formatClearSessionCookie,
+} = require('./session');
+const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
+
+const MAX_JSON_BYTES = 64 * 1024;
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+};
+
+function getClientIp(req) {
+  const remote = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const isLoopback = remote === '127.0.0.1' || remote === '::1' || remote === '::ffff:127.0.0.1';
+  if (isLoopback) {
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff.trim()) {
+      const parts = xff.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) {
+        return parts[parts.length - 1];
+      }
+    }
+  }
+  return remote;
+}
+
+function setSecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  );
+}
+
+function sendJson(res, statusCode, data, extraHeaders = {}) {
+  const body = JSON.stringify(data);
+  res.statusCode = statusCode;
+  setSecurityHeaders(res);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  for (const [k, v] of Object.entries(extraHeaders)) {
+    res.setHeader(k, v);
+  }
+  res.end(body);
+}
+
+function sendRawJson(res, statusCode, jsonString) {
+  res.statusCode = statusCode;
+  setSecurityHeaders(res);
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(jsonString);
+}
+
+function sendText(res, statusCode, text) {
+  res.statusCode = statusCode;
+  setSecurityHeaders(res);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(text);
+}
+
+function sendRedirect(res, location) {
+  res.statusCode = 302;
+  setSecurityHeaders(res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Location', location);
+  res.end();
+}
+
+function sendFile(res, filePath, isHead = false) {
+  const ext = path.extname(filePath).toLowerCase();
+  const mime = MIME_TYPES[ext] || 'application/octet-stream';
+  const stat = fs.statSync(filePath);
+  res.statusCode = 200;
+  setSecurityHeaders(res);
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Length', String(stat.size));
+  res.setHeader('Cache-Control', ext === '.html' ? 'private, no-cache' : 'private, max-age=300');
+  if (isHead) {
+    res.end();
+    return;
+  }
+  const stream = fs.createReadStream(filePath);
+  stream.on('error', () => {
+    if (!res.headersSent) {
+      sendText(res, 500, 'read error');
+    } else {
+      res.destroy();
+    }
+  });
+  stream.pipe(res);
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let settled = false;
+
+    req.on('data', (chunk) => {
+      if (settled) return;
+      size += chunk.length;
+      if (size > MAX_JSON_BYTES) {
+        settled = true;
+        const err = new Error('request body too large');
+        err.statusCode = 413;
+        reject(err);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      const raw = Buffer.concat(chunks).toString('utf8').trim();
+      if (!raw) {
+        return resolve({});
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          const err = new Error('JSON body must be an object');
+          err.statusCode = 400;
+          return reject(err);
+        }
+        resolve(parsed);
+      } catch {
+        const err = new Error('invalid JSON body');
+        err.statusCode = 400;
+        reject(err);
+      }
+    });
+
+    req.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+  });
+}
+
+function safeNextPath(rawNext) {
+  if (typeof rawNext !== 'string') return '/agents/control/';
+  if (!rawNext.startsWith('/agents/') || rawNext.startsWith('//')) {
+    return '/agents/control/';
+  }
+  return rawNext;
+}
+
+function decodeSubpath(encoded) {
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+function createApp({ config, store, auth, herdr, rateLimiter, audit }) {
+  const authPublicDir = path.join(config.publicDir, 'auth');
+  const controlPublicDir = path.join(config.publicDir, 'control');
+
+  function getSession(req) {
+    const cookies = parseCookies(req.headers.cookie);
+    const token = cookies[config.cookieName || COOKIE_NAME];
+    if (!token) return null;
+    return verifySession(token, store.getSessionSecret());
+  }
+
+  function issueSessionHeader(credential) {
+    const token = signSession(
+      {
+        sub: 'pio',
+        credId: credential.id,
+        label: credential.label || 'Passkey',
+      },
+      store.getSessionSecret(),
+      { ttlMs: config.sessionTtlMs }
+    );
+    return formatSessionCookie(token, Math.floor(config.sessionTtlMs / 1000), config.cookieName);
+  }
+
+  async function handleRequest(req, res) {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      return sendText(res, 400, 'bad request');
+    }
+
+    const pathname = url.pathname;
+    if (pathname !== '/agents' && !pathname.startsWith('/agents/')) {
+      return sendText(res, 404, 'not found');
+    }
+
+    const method = (req.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') {
+      res.setHeader('Allow', 'GET, HEAD, POST');
+      return sendText(res, 405, 'method not allowed');
+    }
+
+    const isHead = method === 'HEAD';
+    const isApi = pathname.startsWith('/agents/api/');
+    const clientIp = getClientIp(req);
+
+    if (isApi) {
+      const rl = rateLimiter.check(clientIp);
+      if (!rl.allowed) {
+        return sendJson(
+          res,
+          429,
+          { error: 'rate limit exceeded' },
+          { 'Retry-After': String(rl.retryAfterSec) }
+        );
+      }
+    }
+
+    if (method === 'POST') {
+      if (req.headers['x-roostr-csrf'] !== '1' || req.headers['origin'] !== config.origin) {
+        return sendJson(res, 403, { error: 'forbidden' });
+      }
+    }
+
+    const enrolled = auth.hasCredentials();
+
+    // Static assets for auth UI (CSS/JS only, never HTML pages).
+    if ((method === 'GET' || isHead) && (pathname === '/agents/auth/auth.css' || pathname === '/agents/auth/auth.js')) {
+      const file = resolveStaticPath(authPublicDir, pathname.slice('/agents/auth/'.length));
+      if (!file) return sendText(res, 404, 'not found');
+      return sendFile(res, file, isHead);
+    }
+
+    // Bootstrap / Registration endpoints
+    if (pathname === '/agents/auth/setup' && (method === 'GET' || isHead)) {
+      const token = url.searchParams.get('token') || '';
+      const gate = auth.canRegister(token);
+      if (!gate.ok) {
+        return sendText(res, gate.status, gate.error);
+      }
+      const file = resolveStaticPath(authPublicDir, 'setup.html');
+      if (!file) return sendText(res, 404, 'setup page missing');
+      return sendFile(res, file, isHead);
+    }
+
+    if (pathname === '/agents/api/auth/register/options' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const result = await auth.beginRegistration(body.token || '', body.label);
+      if (!result.ok) {
+        audit.log({ ip: clientIp, action: 'auth.enroll_denied', summary: result.error, ok: false });
+        return sendJson(res, result.status, { error: result.error });
+      }
+      return sendJson(res, 200, { challengeId: result.challengeId, options: result.options });
+    }
+
+    if (pathname === '/agents/api/auth/register/verify' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const result = await auth.finishRegistration(
+        body.token || '',
+        body.challengeId,
+        body.response,
+        body.label
+      );
+      if (!result.ok) {
+        audit.log({ ip: clientIp, action: 'auth.enroll_failed', summary: result.error, ok: false });
+        return sendJson(res, result.status, { error: result.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'auth.enroll',
+        summary: `label=${result.credential.label}`,
+        ok: true,
+      });
+      res.setHeader('Set-Cookie', issueSessionHeader(result.credential));
+      return sendJson(res, 200, { ok: true, redirect: '/agents/control/' });
+    }
+
+    // If no credentials exist yet, no other page or endpoint is reachable.
+    if (!enrolled) {
+      if (isApi) {
+        return sendJson(res, 403, { error: 'enrollment required' });
+      }
+      return sendText(res, 403, 'Enrollment required. Open /agents/auth/setup?token=...');
+    }
+
+    // Login & Logout routes (when enrolled)
+    if (pathname === '/agents/auth/login' && (method === 'GET' || isHead)) {
+      const existing = getSession(req);
+      if (existing) {
+        return sendRedirect(res, safeNextPath(url.searchParams.get('next')));
+      }
+      const file = resolveStaticPath(authPublicDir, 'login.html');
+      if (!file) return sendText(res, 404, 'login page missing');
+      return sendFile(res, file, isHead);
+    }
+
+    if (pathname === '/agents/api/auth/login/options' && method === 'POST') {
+      const result = await auth.beginLogin();
+      if (!result.ok) {
+        return sendJson(res, result.status, { error: result.error });
+      }
+      return sendJson(res, 200, { challengeId: result.challengeId, options: result.options });
+    }
+
+    if (pathname === '/agents/api/auth/login/verify' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const result = await auth.finishLogin(body.challengeId, body.response);
+      if (!result.ok) {
+        audit.log({ ip: clientIp, action: 'auth.login_failed', summary: result.error, ok: false });
+        return sendJson(res, result.status, { error: result.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'auth.login',
+        summary: `label=${result.credential.label}`,
+        ok: true,
+      });
+      res.setHeader('Set-Cookie', issueSessionHeader(result.credential));
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (pathname === '/agents/api/auth/logout' && method === 'POST') {
+      const session = getSession(req);
+      if (session) {
+        audit.log({ ip: clientIp, action: 'auth.logout', summary: `sub=${session.sub}`, ok: true });
+      }
+      res.setHeader('Set-Cookie', formatClearSessionCookie(config.cookieName));
+      return sendJson(res, 200, { ok: true });
+    }
+
+    // All remaining routes require a valid session cookie.
+    const session = getSession(req);
+    if (!session) {
+      if (isApi) {
+        return sendJson(res, 401, { error: 'unauthorized' });
+      }
+      const next = encodeURIComponent(safeNextPath(pathname + url.search));
+      return sendRedirect(res, `/agents/auth/login?next=${next}`);
+    }
+
+    // Authenticated API routes
+    if (pathname === '/agents/api/auth/me' && method === 'GET') {
+      return sendJson(res, 200, {
+        authenticated: true,
+        user: session.sub,
+        label: session.label,
+        credId: session.credId,
+        expiresAt: new Date(session.exp).toISOString(),
+      });
+    }
+
+    if (pathname === '/agents/api/state' && method === 'GET') {
+      try {
+        const raw = await herdr.snapshotRaw();
+        return sendRawJson(res, 200, raw);
+      } catch (err) {
+        return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+      }
+    }
+
+    if (pathname === '/agents/api/audit' && method === 'GET') {
+      return sendJson(res, 200, { entries: audit.readRecent(20) });
+    }
+
+    if (pathname.startsWith('/agents/api/pane/')) {
+      const rest = pathname.slice('/agents/api/pane/'.length);
+      const parts = rest.split('/');
+      const decodedPaneId = decodeSubpath(parts[0] || '');
+      const pv = validatePaneId(decodedPaneId);
+      if (!pv.ok) {
+        return sendJson(res, 400, { error: pv.error });
+      }
+      const paneId = pv.value;
+
+      if (parts.length === 1 && method === 'GET') {
+        const lv = validateLines(url.searchParams.get('lines'));
+        if (!lv.ok) {
+          return sendJson(res, 400, { error: lv.error });
+        }
+        try {
+          const text = await herdr.readPane(paneId, lv.value);
+          return sendJson(res, 200, { text });
+        } catch (err) {
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'keys' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const kv = validateKeys(body.keys);
+        if (!kv.ok) {
+          return sendJson(res, 400, { error: kv.error });
+        }
+        try {
+          await herdr.sendKeys(paneId, kv.value);
+          audit.log({
+            ip: clientIp,
+            action: 'pane.keys',
+            paneId,
+            summary: `keys=${kv.value.join(',')}`,
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.keys',
+            paneId,
+            summary: `keys=${kv.value.join(',')} err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'prompt' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const tv = validatePrompt(body.text);
+        if (!tv.ok) {
+          return sendJson(res, 400, { error: tv.error });
+        }
+        try {
+          const snap = await herdr.getSnapshotObject();
+          const targetName = resolveAgentTargetFromSnapshot(snap, paneId);
+          if (!targetName) {
+            return sendJson(res, 404, { error: 'pane has no active agent in snapshot' });
+          }
+          await herdr.promptAgent(targetName, tv.value);
+          audit.log({
+            ip: clientIp,
+            action: 'pane.prompt',
+            paneId,
+            summary: `target=${targetName} len=${tv.value.length}`,
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true, name: targetName });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.prompt',
+            paneId,
+            summary: `len=${tv.value.length} err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'close' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        if (body.confirm !== paneId) {
+          return sendJson(res, 400, { error: 'confirm must match pane id' });
+        }
+        try {
+          await herdr.closePane(paneId);
+          audit.log({
+            ip: clientIp,
+            action: 'pane.close',
+            paneId,
+            summary: 'closed',
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.close',
+            paneId,
+            summary: `err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      return sendJson(res, 404, { error: 'not found' });
+    }
+
+    if (isApi) {
+      return sendJson(res, 404, { error: 'not found' });
+    }
+
+    // Only GET/HEAD reach static serving
+    if (method !== 'GET' && !isHead) {
+      return sendText(res, 405, 'method not allowed');
+    }
+
+    if (pathname === '/agents') {
+      return sendRedirect(res, '/agents/');
+    }
+
+    if (pathname === '/agents/control') {
+      return sendRedirect(res, '/agents/control/');
+    }
+
+    if (pathname.startsWith('/agents/control/')) {
+      const decoded = decodeSubpath(pathname.slice('/agents/control/'.length));
+      if (decoded === null) return sendText(res, 400, 'bad path');
+      const file = resolveStaticPath(controlPublicDir, decoded);
+      if (!file) return sendText(res, 404, 'not found');
+      return sendFile(res, file, isHead);
+    }
+
+    const decoded = decodeSubpath(pathname.slice('/agents/'.length));
+    if (decoded === null) return sendText(res, 400, 'bad path');
+    const staticFile = resolveStaticPath(config.staticDir, decoded);
+    if (!staticFile) return sendText(res, 404, 'not found');
+    return sendFile(res, staticFile, isHead);
+  }
+
+  return function requestListener(req, res) {
+    Promise.resolve(handleRequest(req, res)).catch(() => {
+      if (!res.headersSent) {
+        sendText(res, 500, 'internal server error');
+      } else {
+        res.destroy();
+      }
+    });
+  };
+}
+
+module.exports = { createApp, getClientIp, safeNextPath };

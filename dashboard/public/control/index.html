@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Herdr Control | Roostr Agents</title>
+  <link rel="stylesheet" href="/agents/control/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand">Herdr Control</span>
+      <a class="back-link" href="/agents/">Agents Site</a>
+    </div>
+    <div class="topbar-right">
+      <span id="user-info" class="user-pill">Checking session...</span>
+      <button id="sign-out-btn" type="button" class="small">Sign out</button>
+    </div>
+  </header>
+
+  <div id="error-banner" class="banner error" role="alert" hidden>
+    <span id="error-text"></span>
+    <button id="error-dismiss" type="button" class="small">Dismiss</button>
+  </div>
+
+  <main class="layout">
+    <section class="card" aria-label="Panes">
+      <div class="section-head">
+        <h2>Panes</h2>
+        <span id="snapshot-age" class="muted">Loading...</span>
+      </div>
+      <div id="pane-list"></div>
+    </section>
+
+    <section class="card" aria-label="Pane detail">
+      <div class="section-head">
+        <h2 id="detail-title">Select a pane</h2>
+        <span id="detail-meta" class="muted"></span>
+      </div>
+
+      <div id="detail-empty" class="detail-empty">
+        Pick a pane from the list to view its screen and send keys or prompts.
+      </div>
+
+      <div id="detail-body" hidden>
+        <pre id="pane-screen" class="screen-box" aria-live="polite"></pre>
+
+        <div class="actions-grid">
+          <button type="button" class="approve" data-key="enter">Approve (Enter)</button>
+          <button type="button" class="deny" data-key="esc">Deny (Esc)</button>
+          <button type="button" data-key="y">Yes (y)</button>
+          <button type="button" data-key="n">No (n)</button>
+          <button type="button" data-key="up">Up</button>
+          <button type="button" data-key="down">Down</button>
+          <button type="button" data-key="tab">Tab</button>
+          <button type="button" data-key="ctrl-c">Ctrl+C</button>
+        </div>
+
+        <form id="prompt-form" class="prompt-form">
+          <label for="prompt-input" class="muted">Send prompt to agent</label>
+          <textarea id="prompt-input" maxlength="4000" placeholder="Enter instruction for agent..."></textarea>
+          <div class="prompt-row">
+            <span id="prompt-hint" class="muted">Max 4000 characters</span>
+            <button id="prompt-send" type="submit" class="primary">Send prompt</button>
+          </div>
+        </form>
+
+        <div class="danger-zone">
+          <button id="close-pane-btn" type="button" class="danger">Close pane</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <details id="audit-details" class="card audit-details">
+    <summary>Recent control audit (last 20)</summary>
+    <div id="audit-list" class="audit-list">
+      <span class="muted">Expand to load audit log.</span>
+    </div>
+  </details>
+
+  <dialog id="close-dialog">
+    <h3>Confirm close pane</h3>
+    <p id="close-dialog-msg" class="muted"></p>
+    <input id="close-confirm-input" type="text" autocomplete="off" placeholder="Type pane id">
+    <div class="dialog-actions">
+      <button id="close-cancel" type="button">Cancel</button>
+      <button id="close-submit" type="button" class="danger" disabled>Close pane</button>
+    </div>
+  </dialog>
+
+  <script src="/agents/control/app.js"></script>
+</body>
+</html>
