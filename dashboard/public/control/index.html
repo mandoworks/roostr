@@ -11,6 +11,7 @@
     <div class="topbar-left">
       <span class="brand">Herdr Control</span>
       <a class="back-link" href="/agents/">Agents Site</a>
+      <a class="back-link" href="/agents/names.html">Names</a>
     </div>
     <div class="topbar-right">
       <span id="user-info" class="user-pill">Checking session...</span>
@@ -34,15 +35,44 @@
 
     <section class="card" aria-label="Pane detail">
       <div class="section-head">
-        <h2 id="detail-title">Select a pane</h2>
-        <span id="detail-meta" class="muted"></span>
+        <div class="detail-head-text">
+          <h2 id="detail-title">Select a pane</h2>
+          <span id="detail-meta" class="muted"></span>
+        </div>
+        <div id="detail-tools" class="detail-tools" hidden>
+          <button id="rename-toggle-btn" type="button" class="small">Rename</button>
+          <button id="wrap-toggle-btn" type="button" class="small" aria-pressed="false">Wrap: Off</button>
+        </div>
       </div>
+
+      <form id="rename-form" class="inline-form" hidden>
+        <input id="rename-input" type="text" maxlength="80" placeholder="Pane label (empty clears)">
+        <button id="rename-save" type="submit" class="small primary">Save</button>
+        <button id="rename-cancel" type="button" class="small">Cancel</button>
+      </form>
 
       <div id="detail-empty" class="detail-empty">
         Pick a pane from the list to view its screen and send keys or prompts.
       </div>
 
       <div id="detail-body" hidden>
+        <div id="recovery-panel" class="recovery-panel" hidden>
+          <div id="recovery-msg" class="recovery-msg"></div>
+          <div id="recovery-actions" class="recovery-actions">
+            <form id="start-agent-form" class="start-agent-form">
+              <input id="start-agent-name" type="text" maxlength="32" placeholder="agent slug (e.g. nora)" pattern="[a-z0-9][a-z0-9_-]{0,31}">
+              <select id="start-agent-kind" aria-label="Agent tool">
+                <option value="opencode">opencode</option>
+                <option value="claude">claude</option>
+                <option value="kilo">kilo</option>
+                <option value="agy">agy</option>
+              </select>
+              <button id="start-agent-btn" type="submit" class="small primary">Start fresh session</button>
+            </form>
+            <button id="recovery-close-btn" type="button" class="small danger" hidden>Close dead pane</button>
+          </div>
+        </div>
+
         <pre id="pane-screen" class="screen-box" aria-live="polite"></pre>
 
         <div class="actions-grid">

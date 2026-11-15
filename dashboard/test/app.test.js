@@ -400,12 +400,49 @@ describe('dashboard herdr client and HTTP app', () => {
       assert.equal(okClose.status, 200);
       assert.deepEqual(h.herdrCalls[5].args, ['pane', 'close', 'w1:p1']);
 
+      // Rename pane and clear label
+      const okRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { label: 'Nora · garden' },
+      });
+      assert.equal(okRename.status, 200);
+      assert.deepEqual(h.herdrCalls[6].args, ['pane', 'rename', 'w1:p1', 'Nora · garden']);
+
+      const okClearRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { label: '' },
+      });
+      assert.equal(okClearRename.status, 200);
+      assert.deepEqual(h.herdrCalls[7].args, ['pane', 'rename', 'w1:p1', '--clear']);
+
+      // Start fresh agent (and reject disallowed kind)
+      const badStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { name: 'nora', kind: 'sh' },
+      });
+      assert.equal(badStart.status, 400);
+
+      const okStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { name: 'nora', kind: 'opencode' },
+      });
+      assert.equal(okStart.status, 200);
+      assert.deepEqual(h.herdrCalls[8].args, ['agent', 'start', 'nora', '--kind', 'opencode', '--pane', 'w1:p1']);
+
       // Audit log contains entries with no cookies/secrets
       const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie } });
       assert.equal(auditRes.status, 200);
       const { entries } = JSON.parse(auditRes.body);
-      assert.ok(entries.length >= 4);
-      assert.equal(entries[0].action, 'pane.close');
+      assert.ok(entries.length >= 6);
+      assert.equal(entries[0].action, 'pane.start');
 
       // Herdr failure returns 502 with first line of stderr
       h.setFailNextHerdr('agent_blocked: pane waiting for approval');
@@ -466,6 +503,23 @@ describe('dashboard herdr client and HTTP app', () => {
 
       const ctrlJs = await invokeHandler(h.handler, { url: '/agents/control/app.js', headers: { cookie } });
       assert.equal(ctrlJs.status, 200);
+
+      const namesHtml = await invokeHandler(h.handler, { url: '/agents/names.html', headers: { cookie } });
+      assert.equal(namesHtml.status, 200);
+      assert.match(namesHtml.body, /Orchestrator Names/);
+
+      const namesSet = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/override',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', name: 'Roosty Argon' },
+      });
+      assert.equal(namesSet.status, 200);
+      assert.equal(JSON.parse(namesSet.body).names.overrides.roosty.name, 'Roosty Argon');
+
+      const namesGet = await invokeHandler(h.handler, { url: '/agents/api/names', headers: { cookie } });
+      assert.equal(namesGet.status, 200);
+      assert.equal(JSON.parse(namesGet.body).names.overrides.roosty.name, 'Roosty Argon');
 
       // ALLOW_ADD_CREDENTIAL=1 permits second passkey with rotated token
       const token2 = h.store.getEnrollToken();

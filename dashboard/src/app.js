@@ -7,6 +7,9 @@ const {
   validateKeys,
   validatePrompt,
   validateLines,
+  validatePaneLabel,
+  validateAgentName,
+  validateAgentKind,
   resolveStaticPath,
 } = require('./validate');
 const {
@@ -18,6 +21,7 @@ const {
   formatClearSessionCookie,
 } = require('./session');
 const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
+const { createNamesStore } = require('./names');
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -187,9 +191,15 @@ function decodeSubpath(encoded) {
   }
 }
 
-function createApp({ config, store, auth, herdr, rateLimiter, audit }) {
+function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
   const authPublicDir = path.join(config.publicDir, 'auth');
   const controlPublicDir = path.join(config.publicDir, 'control');
+  const namesPublicDir = path.join(config.publicDir, 'names');
+  const namesStore = names || createNamesStore({
+    namesPath: config.namesPath || path.join(config.staticDir, 'names.json'),
+    staticDir: config.staticDir,
+    statusPath: config.statusPath || '',
+  });
 
   function getSession(req) {
     const cookies = parseCookies(req.headers.cookie);
@@ -407,6 +417,70 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit }) {
       return sendJson(res, 200, { entries: audit.readRecent(20) });
     }
 
+    if (pathname === '/agents/api/names' && method === 'GET') {
+      return sendJson(res, 200, namesStore.snapshot());
+    }
+
+    if (pathname === '/agents/api/names/override' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const resMap = namesStore.setOverride(body.slug, body.name, session.label || session.sub);
+      if (!resMap.ok) {
+        return sendJson(res, resMap.status, { error: resMap.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'names.override',
+        summary: `slug=${body.slug} name=${body.name || '(cleared)'}`,
+        ok: true,
+      });
+      return sendJson(res, 200, resMap);
+    }
+
+    if (pathname === '/agents/api/names/orchestrator' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const resMap = namesStore.setOrchestrator(body.slug, Boolean(body.enabled), session.label || session.sub);
+      if (!resMap.ok) {
+        return sendJson(res, resMap.status, { error: resMap.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'names.orchestrator',
+        summary: `slug=${body.slug} enabled=${Boolean(body.enabled)}`,
+        ok: true,
+      });
+      return sendJson(res, 200, resMap);
+    }
+
+    if (pathname === '/agents/api/names/revert' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const resMap = namesStore.revertHistory(body.historyId || null, session.label || session.sub);
+      if (!resMap.ok) {
+        return sendJson(res, resMap.status, { error: resMap.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'names.revert',
+        summary: `slug=${resMap.reverted.slug}`,
+        ok: true,
+      });
+      return sendJson(res, 200, resMap);
+    }
+
     if (pathname.startsWith('/agents/api/pane/')) {
       const rest = pathname.slice('/agents/api/pane/'.length);
       const parts = rest.split('/');
@@ -501,6 +575,76 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit }) {
         }
       }
 
+      if (parts.length === 2 && parts[1] === 'rename' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const lv = validatePaneLabel(body.label);
+        if (!lv.ok) {
+          return sendJson(res, 400, { error: lv.error });
+        }
+        try {
+          await herdr.renamePane(paneId, lv.value);
+          audit.log({
+            ip: clientIp,
+            action: 'pane.rename',
+            paneId,
+            summary: lv.value ? `label=${lv.value}` : 'cleared',
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true, label: lv.value });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.rename',
+            paneId,
+            summary: `err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'start' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const nv = validateAgentName(body.name);
+        if (!nv.ok) {
+          return sendJson(res, 400, { error: nv.error });
+        }
+        const kv = validateAgentKind(body.kind);
+        if (!kv.ok) {
+          return sendJson(res, 400, { error: kv.error });
+        }
+        try {
+          await herdr.startAgent(paneId, nv.value, kv.value);
+          audit.log({
+            ip: clientIp,
+            action: 'pane.start',
+            paneId,
+            summary: `name=${nv.value} kind=${kv.value}`,
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true, name: nv.value, kind: kv.value });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.start',
+            paneId,
+            summary: `name=${nv.value} kind=${kv.value} err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
       if (parts.length === 2 && parts[1] === 'close' && method === 'POST') {
         let body;
         try {
@@ -551,6 +695,20 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit }) {
 
     if (pathname === '/agents/control') {
       return sendRedirect(res, '/agents/control/');
+    }
+
+    if (pathname === '/agents/names.html') {
+      const file = resolveStaticPath(namesPublicDir, 'index.html');
+      if (!file) return sendText(res, 404, 'not found');
+      return sendFile(res, file, isHead);
+    }
+
+    if (pathname.startsWith('/agents/names/')) {
+      const decoded = decodeSubpath(pathname.slice('/agents/names/'.length));
+      if (decoded === null) return sendText(res, 400, 'bad path');
+      const file = resolveStaticPath(namesPublicDir, decoded);
+      if (!file) return sendText(res, 404, 'not found');
+      return sendFile(res, file, isHead);
     }
 
     if (pathname.startsWith('/agents/control/')) {

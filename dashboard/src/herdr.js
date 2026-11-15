@@ -1,7 +1,15 @@
 'use strict';
 
 const { execFile } = require('child_process');
-const { validatePaneId, validateKeys, validatePrompt, validateLines } = require('./validate');
+const {
+  validatePaneId,
+  validateKeys,
+  validatePrompt,
+  validateLines,
+  validatePaneLabel,
+  validateAgentName,
+  validateAgentKind,
+} = require('./validate');
 
 class HerdrError extends Error {
   constructor(message) {
@@ -37,7 +45,9 @@ const ALLOWED_VERBS = new Set([
   'api:snapshot',
   'pane:read',
   'pane:send-keys',
+  'pane:rename',
   'agent:prompt',
+  'agent:start',
   'pane:close',
 ]);
 
@@ -147,6 +157,29 @@ function createHerdrClient(opts = {}) {
     invalidateCache();
   }
 
+  async function renamePane(paneId, label) {
+    const pv = validatePaneId(paneId);
+    if (!pv.ok) throw new Error(pv.error);
+    const lv = validatePaneLabel(label);
+    if (!lv.ok) throw new Error(lv.error);
+    const args = lv.value
+      ? ['pane', 'rename', pv.value, lv.value]
+      : ['pane', 'rename', pv.value, '--clear'];
+    await runVerb('pane:rename', args);
+    invalidateCache();
+  }
+
+  async function startAgent(paneId, name, kind) {
+    const pv = validatePaneId(paneId);
+    if (!pv.ok) throw new Error(pv.error);
+    const nv = validateAgentName(name);
+    if (!nv.ok) throw new Error(nv.error);
+    const kv = validateAgentKind(kind);
+    if (!kv.ok) throw new Error(kv.error);
+    await runVerb('agent:start', ['agent', 'start', nv.value, '--kind', kv.value, '--pane', pv.value]);
+    invalidateCache();
+  }
+
   return {
     snapshotRaw,
     getSnapshotObject,
@@ -154,6 +187,8 @@ function createHerdrClient(opts = {}) {
     readPane,
     sendKeys,
     promptAgent,
+    renamePane,
+    startAgent,
     closePane,
   };
 }

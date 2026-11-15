@@ -12,6 +12,9 @@ const {
   validateKeys,
   validatePrompt,
   validateLines,
+  validatePaneLabel,
+  validateAgentName,
+  validateAgentKind,
   resolveStaticPath,
 } = require('../src/validate');
 
@@ -153,5 +156,22 @@ describe('resolveStaticPath', () => {
     } finally {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
+  });
+});
+
+describe('validatePaneLabel, validateAgentName, validateAgentKind', () => {
+  it('validates pane labels and clears on empty', () => {
+    assert.deepEqual(validatePaneLabel('  nora · garden  '), { ok: true, value: 'nora · garden' });
+    assert.deepEqual(validatePaneLabel('   '), { ok: true, value: '' });
+    assert.equal(validatePaneLabel('bad\nline').ok, false);
+    assert.equal(validatePaneLabel('x'.repeat(81)).ok, false);
+  });
+
+  it('validates agent names and allowlisted kinds', () => {
+    assert.deepEqual(validateAgentName('nora-2'), { ok: true, value: 'nora-2' });
+    assert.equal(validateAgentName('-bad').ok, false);
+    assert.equal(validateAgentName('Nora').ok, false);
+    assert.deepEqual(validateAgentKind('opencode'), { ok: true, value: 'opencode' });
+    assert.equal(validateAgentKind('bash').ok, false);
   });
 });

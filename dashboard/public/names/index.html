@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestrator Names | Roostr Agents</title>
+  <link rel="stylesheet" href="/agents/control/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand">Orchestrator Names</span>
+      <a class="back-link" href="/agents/">Agents Site</a>
+      <a class="back-link" href="/agents/control/">Herdr Control</a>
+    </div>
+    <div class="topbar-right">
+      <span id="user-info" class="user-pill">Checking session...</span>
+      <button id="sign-out-btn" type="button" class="small">Sign out</button>
+    </div>
+  </header>
+
+  <div id="error-banner" class="banner error" role="alert" hidden>
+    <span id="error-text"></span>
+    <button id="error-dismiss" type="button" class="small">Dismiss</button>
+  </div>
+
+  <main class="layout">
+    <section class="card" aria-label="Eligible slugs and overrides">
+      <div class="section-head">
+        <h2>Slugs &amp; Overrides</h2>
+        <button id="revert-btn" type="button" class="small">Revert last</button>
+      </div>
+      <div class="inline-form">
+        <input id="slug-filter" type="text" placeholder="Filter slugs...">
+      </div>
+      <div id="drift-box" class="recovery-panel" hidden>
+        <div id="drift-msg" class="recovery-msg"></div>
+      </div>
+      <div id="slug-list"></div>
+    </section>
+
+    <section class="card" aria-label="Workers by host and history">
+      <div class="section-head">
+        <h2>Live Hosts &amp; Workers</h2>
+        <span id="hosts-summary" class="muted">Loading...</span>
+      </div>
+      <div id="hosts-list"></div>
+
+      <div class="section-head">
+        <h2>Recent Name History</h2>
+      </div>
+      <div id="history-list" class="audit-list"></div>
+    </section>
+  </main>
+
+  <script src="/agents/names/names.js"></script>
+</body>
+</html>

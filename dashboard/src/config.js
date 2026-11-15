@@ -14,12 +14,16 @@ function loadConfig(env = process.env) {
   const configDir = env.ROOSTR_DASHBOARD_CONFIG_DIR
     || path.join(homeDir, '.config', 'roostr-dashboard');
 
+  const staticDir = env.STATIC_DIR || '/home/ubuntu/service-directory/agents';
+
   return {
     host: '127.0.0.1',
     port,
     rpId: env.RP_ID || 'ovh.tail5f1fde.ts.net',
     origin: env.ORIGIN || 'https://ovh.tail5f1fde.ts.net',
-    staticDir: env.STATIC_DIR || '/home/ubuntu/service-directory/agents',
+    staticDir,
+    namesPath: env.NAMES_PATH || path.join(staticDir, 'names.json'),
+    statusPath: env.AGENT_STATUS_PATH || '/home/ubuntu/service-directory/agent-status/status.json',
     publicDir: path.join(__dirname, '..', 'public'),
     configDir,
     allowAddCredential: env.ALLOW_ADD_CREDENTIAL === '1',

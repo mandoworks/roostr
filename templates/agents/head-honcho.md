@@ -233,6 +233,14 @@ Read the three line summary and the report path, not the raw report. If two noti
 - Never commit, push, close a pane or kill an agent unless the human told you to.
 - Never paste secrets, .env files, full logs or private paths into a prompt or a report.
 
+## Memory discipline (MuseSight)
+
+- One bank per project: `coding-agent::<project>` (never per agent; tag with `project:<project>,host:<host>,agent:<name>`).
+- Recall lean before project work (`budget: "low"`, `max_tokens: 1000`, `prefer_observations: true`).
+- Retain decisions and conventions as they happen; workers return retain-ready paragraphs and the owner is the single writer to the bank.
+- Every deliverable ends with a `Memory:` line carrying the retain result (`facts before->after`).
+- Never retain secrets, tokens, keys, or `.env` contents.
+
 ## Handoff
 
 When a package finishes, read its report. Confirm the done marker and the acceptance result. Then record the outcome with `crew-board outcome`.

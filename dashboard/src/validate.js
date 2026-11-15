@@ -33,9 +33,21 @@ const MAX_KEYS_PER_REQUEST = 8;
 const MAX_PROMPT_LENGTH = 4000;
 const MAX_PANE_LINES = 120;
 const DEFAULT_PANE_LINES = 40;
+const MAX_PANE_LABEL = 80;
+
+const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const ALLOWLIST_AGENT_KINDS = new Set([
+  'claude',
+  'opencode',
+  'kilo',
+  'agy',
+  'codex',
+  'gemini',
+]);
 
 // Reject C0 controls except \t, \n, \r, plus DEL and C1 controls.
 const DISALLOWED_CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/;
+const SINGLE_LINE_CONTROL_RE = /[\x00-\x1f\x7f-\x9f]/;
 
 function validatePaneId(paneId) {
   if (typeof paneId !== 'string' || !PANE_ID_RE.test(paneId)) {
@@ -92,6 +104,42 @@ function validateLines(raw) {
   return { ok: true, value: Math.min(n, MAX_PANE_LINES) };
 }
 
+function validatePaneLabel(raw) {
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'label must be a string' };
+  }
+  if (SINGLE_LINE_CONTROL_RE.test(raw)) {
+    return { ok: false, error: 'label contains disallowed control characters' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_PANE_LABEL) {
+    return { ok: false, error: `label exceeds ${MAX_PANE_LABEL} characters` };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function validateAgentName(raw) {
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'agent name must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (!AGENT_NAME_RE.test(trimmed)) {
+    return { ok: false, error: 'invalid agent name' };
+  }
+  return { ok: true, value: trimmed };
+}
+
+function validateAgentKind(raw) {
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'agent kind must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (!ALLOWLIST_AGENT_KINDS.has(trimmed)) {
+    return { ok: false, error: `disallowed agent kind: ${trimmed}` };
+  }
+  return { ok: true, value: trimmed };
+}
+
 function resolveStaticPath(rootDir, subpath) {
   if (typeof rootDir !== 'string' || !rootDir) return null;
   if (typeof subpath !== 'string') return null;
@@ -144,13 +192,18 @@ function resolveStaticPath(rootDir, subpath) {
 module.exports = {
   PANE_ID_RE,
   ALLOWLIST_KEYS,
+  ALLOWLIST_AGENT_KINDS,
   MAX_KEYS_PER_REQUEST,
   MAX_PROMPT_LENGTH,
   MAX_PANE_LINES,
   DEFAULT_PANE_LINES,
+  MAX_PANE_LABEL,
   validatePaneId,
   validateKeys,
   validatePrompt,
   validateLines,
+  validatePaneLabel,
+  validateAgentName,
+  validateAgentKind,
   resolveStaticPath,
 };

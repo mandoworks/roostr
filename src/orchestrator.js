@@ -11,6 +11,7 @@ const advisor = require('./advisor');
 const herdr = require('./herdr');
 const report = require('./report');
 const ledger = require('./ledger');
+const onboard = require('./onboard');
 
 const TASK = 'grilling the crew plan';
 const ROLE = 'head-honcho';
@@ -292,6 +293,21 @@ async function executeSpawn(opts = {}, deps = {}) {
     await runner(['agent', 'prompt', plan.name, plan.prompt]);
   }
 
+  let onboardResult = null;
+  if (onboard.shouldAutoOnboard({ role: plan.role, onboard: opts.onboard }, deps.env || process.env)) {
+    try {
+      onboardResult = await onboard.runOnboard({
+        agent: onboard.sanitizeSlug(plan.name),
+        project: onboard.sanitizeSlug(path.basename(opts.cwd || process.cwd())),
+        displayName: plan.name,
+        role: plan.role,
+        cwd: opts.cwd || process.cwd(),
+      }, { fetch: deps.fetch, env: deps.env || process.env });
+    } catch (err) {
+      onboardResult = { ok: false, error: err.message };
+    }
+  }
+
   return {
     success: true,
     reused: false,
@@ -302,6 +318,7 @@ async function executeSpawn(opts = {}, deps = {}) {
     model: plan.model,
     effort: plan.effort,
     runId: entry ? entry.runId : null,
+    onboard: onboardResult,
     steps: plan.steps,
   };
 }

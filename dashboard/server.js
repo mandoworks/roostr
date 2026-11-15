@@ -7,6 +7,7 @@ const { createAuthService } = require('./src/auth');
 const { createHerdrClient } = require('./src/herdr');
 const { createRateLimiter } = require('./src/ratelimit');
 const { createAuditLogger } = require('./src/audit');
+const { createNamesStore } = require('./src/names');
 const { createApp } = require('./src/app');
 
 function startServer(env = process.env) {
@@ -23,8 +24,13 @@ function startServer(env = process.env) {
     windowMs: config.rateLimitWindowMs,
   });
   const audit = createAuditLogger(store.auditPath);
+  const names = createNamesStore({
+    namesPath: config.namesPath,
+    staticDir: config.staticDir,
+    statusPath: config.statusPath,
+  });
 
-  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit });
+  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit, names });
   const server = http.createServer(handler);
 
   server.listen(config.port, config.host, () => {

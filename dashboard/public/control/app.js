@@ -10,6 +10,8 @@
     snapshotTimer: null,
     paneTimer: null,
     lastUpdatedAt: 0,
+    lastScreenText: '',
+    wrapScreen: false,
   };
 
   function showError(msg, kind) {
@@ -79,10 +81,45 @@
     return span;
   }
 
+  function shortCwd(cwd) {
+    if (typeof cwd !== 'string' || !cwd.trim()) return '';
+    const cleaned = cwd.replace(/\s*\(deleted\)\s*$/i, '').trim();
+    if (!cleaned) return '';
+    const parts = cleaned.split('/').filter(Boolean);
+    if (parts.length === 0) return '/';
+    if (parts.length <= 2 && cleaned.startsWith('/home/')) return '~';
+    return parts[parts.length - 1];
+  }
+
+  function paneDisplayName(pane, agent) {
+    return (agent && agent.name)
+      || (agent && agent.tokens && agent.tokens.name)
+      || (pane && pane.label)
+      || shortCwd(pane && (pane.foreground_cwd || pane.cwd))
+      || 'shell';
+  }
+
+  function deriveAgentSlug(pane, agent) {
+    const raw = (agent && agent.name)
+      || (pane && pane.label)
+      || shortCwd(pane && (pane.foreground_cwd || pane.cwd))
+      || 'agent';
+    const cleaned = String(raw)
+      .split(' · ')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^[^a-z0-9]+|-+$/g, '')
+      .slice(0, 32);
+    return cleaned || 'agent';
+  }
+
   function buildPaneButton(pane, agent) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'pane-item' + (pane.pane_id === state.selectedPaneId ? ' selected' : '');
+    const btn = document.createElement('div');
+    btn.setAttribute('role', 'button');
+    btn.tabIndex = 0;
+    const isSelected = pane.pane_id === state.selectedPaneId;
+    btn.className = 'pane-item' + (isSelected ? ' selected' : '');
+    if (isSelected) btn.setAttribute('aria-current', 'true');
     btn.setAttribute('data-pane-id', pane.pane_id);
 
     const top = document.createElement('div');
@@ -90,7 +127,7 @@
 
     const nameEl = document.createElement('span');
     nameEl.className = 'pane-name';
-    const agentName = (agent && agent.name) || (agent && agent.tokens && agent.tokens.name) || pane.label || 'shell';
+    const agentName = paneDisplayName(pane, agent);
     const agentKind = agent && agent.agent ? ` (${agent.agent})` : '';
     nameEl.textContent = `${agentName}${agentKind}`;
 
@@ -105,26 +142,73 @@
     const meta = document.createElement('div');
     meta.className = 'pane-meta';
 
-    const status = (agent && agent.agent_status) || pane.agent_status || 'shell';
-    meta.appendChild(badge(status, `status-${status}`));
+    let status = 'shell';
+    let statusCls = 'status-shell';
+    if (pane.restore_error) {
+      status = 'restore error';
+      statusCls = 'status-error';
+    } else if (agent && agent.agent_status) {
+      status = agent.agent_status;
+      statusCls = `status-${status}`;
+    } else if (pane.agent_status && pane.agent_status !== 'unknown') {
+      status = pane.agent_status;
+      statusCls = `status-${status}`;
+    }
+    meta.appendChild(badge(status, statusCls));
 
     if (pane.focused || (agent && agent.focused)) {
       meta.appendChild(badge('focused', 'focused'));
     }
     btn.appendChild(meta);
 
+    const cwdHint = shortCwd(pane.foreground_cwd || pane.cwd);
     const taskText = (agent && agent.tokens && agent.tokens.task)
+      || pane.restore_error
       || (agent && agent.terminal_title_stripped)
-      || pane.label
+      || (pane.label ? (pane.terminal_title_stripped || cwdHint) : pane.terminal_title_stripped)
       || '';
-    if (taskText) {
+    if (taskText && taskText !== agentName) {
       const taskEl = document.createElement('div');
       taskEl.className = 'pane-task';
       taskEl.textContent = taskText;
       btn.appendChild(taskEl);
     }
 
+    if (agent && !pane.restore_error) {
+      const quick = document.createElement('div');
+      quick.className = 'pane-quick-actions';
+
+      const appBtn = document.createElement('button');
+      appBtn.type = 'button';
+      appBtn.className = 'small approve';
+      appBtn.textContent = 'Approve';
+      appBtn.addEventListener('click', (evt) => {
+        evt.stopPropagation();
+        sendKeyToPane(pane.pane_id, 'enter');
+      });
+
+      const denBtn = document.createElement('button');
+      denBtn.type = 'button';
+      denBtn.className = 'small deny';
+      denBtn.textContent = 'Deny';
+      denBtn.addEventListener('click', (evt) => {
+        evt.stopPropagation();
+        sendKeyToPane(pane.pane_id, 'esc');
+      });
+
+      quick.appendChild(appBtn);
+      quick.appendChild(denBtn);
+      btn.appendChild(quick);
+    }
+
     btn.addEventListener('click', () => selectPane(pane.pane_id));
+    btn.addEventListener('keydown', (evt) => {
+      if (evt.target !== btn) return;
+      if (evt.key === 'Enter' || evt.key === ' ') {
+        evt.preventDefault();
+        selectPane(pane.pane_id);
+      }
+    });
     return btn;
   }
 
@@ -226,23 +310,98 @@
     }
   }
 
+  function findSelectedContext() {
+    const snap = state.snapshot || {};
+    const panes = Array.isArray(snap.panes) ? snap.panes : [];
+    const agents = Array.isArray(snap.agents) ? snap.agents : [];
+    const workspaces = Array.isArray(snap.workspaces) ? snap.workspaces : [];
+    const tabs = Array.isArray(snap.tabs) ? snap.tabs : [];
+
+    const pane = panes.find((p) => p && p.pane_id === state.selectedPaneId) || null;
+    const agent = agents.find((a) => a && a.pane_id === state.selectedPaneId) || null;
+    const wsId = (pane && pane.workspace_id) || (agent && agent.workspace_id) || null;
+    const tabId = (pane && pane.tab_id) || (agent && agent.tab_id) || null;
+    const ws = workspaces.find((w) => w && w.workspace_id === wsId) || null;
+    const tab = tabs.find((t) => t && t.tab_id === tabId) || null;
+    return { pane, agent, ws, tab };
+  }
+
+  function updateRecoveryPanel(screenText) {
+    const panel = document.getElementById('recovery-panel');
+    const msgEl = document.getElementById('recovery-msg');
+    const startForm = document.getElementById('start-agent-form');
+    const nameInput = document.getElementById('start-agent-name');
+    const closeBtn = document.getElementById('recovery-close-btn');
+    if (!panel || !msgEl || !startForm || !closeBtn) return;
+
+    if (!state.selectedPaneId) {
+      panel.hidden = true;
+      return;
+    }
+
+    const { pane, agent } = findSelectedContext();
+    const restoreErr = pane && pane.restore_error;
+    const missingSession = /Error:\s*Session not found/i.test(screenText || '');
+
+    if (restoreErr) {
+      msgEl.textContent = `Restore failed: ${restoreErr}`;
+      startForm.hidden = true;
+      closeBtn.hidden = false;
+      panel.hidden = false;
+      return;
+    }
+
+    if (missingSession || (!agent && pane)) {
+      msgEl.textContent = missingSession
+        ? 'Dead session on screen (Session not found). Start a fresh agent in this pane:'
+        : 'Shell pane has no active agent. Start an agent session here if needed:';
+      startForm.hidden = false;
+      closeBtn.hidden = true;
+      if (nameInput && document.activeElement !== nameInput && !nameInput.dataset.dirty) {
+        nameInput.value = deriveAgentSlug(pane, agent);
+      }
+      panel.hidden = false;
+      return;
+    }
+
+    panel.hidden = true;
+  }
+
   function updateDetailHeader() {
     const titleEl = document.getElementById('detail-title');
     const metaEl = document.getElementById('detail-meta');
+    const toolsEl = document.getElementById('detail-tools');
     if (!titleEl || !metaEl) return;
 
     if (!state.selectedPaneId) {
       titleEl.textContent = 'Select a pane';
       metaEl.textContent = '';
+      if (toolsEl) toolsEl.hidden = true;
       return;
     }
 
-    const snap = state.snapshot || {};
-    const agents = Array.isArray(snap.agents) ? snap.agents : [];
-    const agent = agents.find((a) => a && a.pane_id === state.selectedPaneId);
-    const name = (agent && agent.name) || (agent && agent.tokens && agent.tokens.name) || 'pane';
+    const { pane, agent, ws, tab } = findSelectedContext();
+    const name = paneDisplayName(pane, agent);
     titleEl.textContent = `${name} (${state.selectedPaneId})`;
-    metaEl.textContent = agent ? `${agent.agent || 'agent'} | ${agent.agent_status || 'unknown'}` : 'shell';
+
+    const parts = [];
+    const wsLabel = (ws && ws.label) || (pane && pane.workspace_id) || (agent && agent.workspace_id);
+    const tabLabel = (tab && tab.label) || (pane && pane.tab_id) || (agent && agent.tab_id);
+    if (wsLabel) parts.push(tabLabel ? `${wsLabel} / ${tabLabel}` : wsLabel);
+
+    if (pane && pane.restore_error) {
+      parts.push('restore error');
+    } else if (agent) {
+      parts.push(`${agent.agent || 'agent'} | ${agent.agent_status || 'unknown'}`);
+    } else {
+      parts.push('shell');
+    }
+
+    const dir = shortCwd(pane && (pane.foreground_cwd || pane.cwd));
+    if (dir) parts.push(dir);
+    metaEl.textContent = parts.join(' | ');
+    if (toolsEl) toolsEl.hidden = false;
+    updateRecoveryPanel(state.lastScreenText);
   }
 
   async function refreshPaneScreen() {
@@ -251,14 +410,16 @@
     try {
       const data = await apiFetch(`/agents/api/pane/${encodeURIComponent(paneId)}?lines=40`);
       if (state.selectedPaneId !== paneId) return;
+      state.lastScreenText = data.text || '';
       const pre = document.getElementById('pane-screen');
       if (pre) {
         const atBottom = pre.scrollHeight - pre.clientHeight - pre.scrollTop < 32;
-        pre.textContent = data.text || '';
+        pre.textContent = state.lastScreenText;
         if (atBottom) {
           pre.scrollTop = pre.scrollHeight;
         }
       }
+      updateRecoveryPanel(state.lastScreenText);
     } catch {
       // Error banner already updated
     }
@@ -266,10 +427,15 @@
 
   function selectPane(paneId) {
     state.selectedPaneId = paneId;
+    state.lastScreenText = '';
     const emptyEl = document.getElementById('detail-empty');
     const bodyEl = document.getElementById('detail-body');
+    const renameForm = document.getElementById('rename-form');
+    const startName = document.getElementById('start-agent-name');
     if (emptyEl) emptyEl.hidden = !paneId ? false : true;
     if (bodyEl) bodyEl.hidden = !paneId;
+    if (renameForm) renameForm.hidden = true;
+    if (startName) delete startName.dataset.dirty;
 
     updateDetailHeader();
     if (state.snapshot) {
@@ -341,19 +507,25 @@
     }
   }
 
-  async function sendKey(key) {
-    const paneId = state.selectedPaneId;
+  async function sendKeyToPane(paneId, key) {
     if (!paneId) return;
     try {
       await apiFetch(`/agents/api/pane/${encodeURIComponent(paneId)}/keys`, {
         method: 'POST',
         body: JSON.stringify({ keys: [key] }),
       });
-      setTimeout(refreshPaneScreen, 200);
+      if (state.selectedPaneId === paneId) {
+        setTimeout(refreshPaneScreen, 200);
+      }
+      refreshState();
       refreshAuditIfOpen();
     } catch {
       // Error banner handled
     }
+  }
+
+  async function sendKey(key) {
+    return sendKeyToPane(state.selectedPaneId, key);
   }
 
   async function sendPrompt(evt) {
@@ -432,6 +604,57 @@
     }
   }
 
+  async function savePaneRename(evt) {
+    evt.preventDefault();
+    const paneId = state.selectedPaneId;
+    const input = document.getElementById('rename-input');
+    const form = document.getElementById('rename-form');
+    if (!paneId || !input) return;
+
+    try {
+      await apiFetch(`/agents/api/pane/${encodeURIComponent(paneId)}/rename`, {
+        method: 'POST',
+        body: JSON.stringify({ label: input.value }),
+      });
+      if (form) form.hidden = true;
+      await refreshState();
+      refreshAuditIfOpen();
+    } catch {
+      // Error banner handled
+    }
+  }
+
+  async function startFreshAgent(evt) {
+    evt.preventDefault();
+    const paneId = state.selectedPaneId;
+    const nameInput = document.getElementById('start-agent-name');
+    const kindSelect = document.getElementById('start-agent-kind');
+    const btn = document.getElementById('start-agent-btn');
+    if (!paneId || !nameInput || !kindSelect) return;
+
+    const name = nameInput.value.trim();
+    const kind = kindSelect.value;
+    if (!name) {
+      showError('Agent slug is required', 'warn');
+      return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+      await apiFetch(`/agents/api/pane/${encodeURIComponent(paneId)}/start`, {
+        method: 'POST',
+        body: JSON.stringify({ name, kind }),
+      });
+      delete nameInput.dataset.dirty;
+      await refreshState();
+      setTimeout(refreshPaneScreen, 300);
+      refreshAuditIfOpen();
+    } catch {
+      // Error banner handled
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function signOut() {
     try {
       await apiFetch('/agents/api/auth/logout', { method: 'POST', body: '{}' });
@@ -460,6 +683,48 @@
 
     const closeBtn = document.getElementById('close-pane-btn');
     if (closeBtn) closeBtn.addEventListener('click', openCloseDialog);
+
+    const recoveryCloseBtn = document.getElementById('recovery-close-btn');
+    if (recoveryCloseBtn) recoveryCloseBtn.addEventListener('click', openCloseDialog);
+
+    const renameToggle = document.getElementById('rename-toggle-btn');
+    const renameForm = document.getElementById('rename-form');
+    const renameInput = document.getElementById('rename-input');
+    const renameCancel = document.getElementById('rename-cancel');
+    if (renameToggle && renameForm && renameInput) {
+      renameToggle.addEventListener('click', () => {
+        const { pane } = findSelectedContext();
+        renameInput.value = (pane && pane.label) || '';
+        renameForm.hidden = !renameForm.hidden;
+        if (!renameForm.hidden) renameInput.focus();
+      });
+      renameForm.addEventListener('submit', savePaneRename);
+    }
+    if (renameCancel && renameForm) {
+      renameCancel.addEventListener('click', () => {
+        renameForm.hidden = true;
+      });
+    }
+
+    const wrapToggle = document.getElementById('wrap-toggle-btn');
+    const paneScreen = document.getElementById('pane-screen');
+    if (wrapToggle && paneScreen) {
+      wrapToggle.addEventListener('click', () => {
+        state.wrapScreen = !state.wrapScreen;
+        paneScreen.classList.toggle('wrap', state.wrapScreen);
+        wrapToggle.textContent = state.wrapScreen ? 'Wrap: On' : 'Wrap: Off';
+        wrapToggle.setAttribute('aria-pressed', state.wrapScreen ? 'true' : 'false');
+      });
+    }
+
+    const startForm = document.getElementById('start-agent-form');
+    const startName = document.getElementById('start-agent-name');
+    if (startName) {
+      startName.addEventListener('input', () => {
+        startName.dataset.dirty = '1';
+      });
+    }
+    if (startForm) startForm.addEventListener('submit', startFreshAgent);
 
     const closeInput = document.getElementById('close-confirm-input');
     const closeSubmit = document.getElementById('close-submit');
