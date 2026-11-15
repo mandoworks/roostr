@@ -1,30 +1,17 @@
-# Orchestration plan: handoff, backup timer, worker snapshot
+# Orchestration plan: Roostr skill sync and onboarding/dashboard hardening
 
-Implementation slice for `docs/agents-board-names-design.md`, limited to things that belong in this repo. Three independent packages, one Kilo/Baidu worker each, disjoint file ownership. The OVH-side names endpoint, editor page and orchestrator list are not in this batch; Roosty builds them directly.
+Two parallel Hydrogen (`agy`) packages in workspace `w27` following `skills/roostr/SKILL.md`.
 
-## Goal
+## Goal and done check
 
-- `roostr handoff` writes an orchestrator brief plus a pointer to the raw session.
-- `roostr backups capture` plus a user timer keeps versions current while no board is open, and records handoff pointers and stale session refs.
-- `roostr workers` publishes a per-host worker snapshot for the /agents drill-down.
+1. Sync `skills/roostr/SKILL.md`, `skills/roostr/references/schemas-and-config.md`, and `dashboard/README.md` with current CLI commands, dashboard routes, valid task kinds (`docs|review|tests|tooling|complex|feature`), and `agy` Hydrogen usage.
+2. Fix the live `src/onboard.js` bugs caught on OVH (`kind: 'note'` rejected with HTTP 400 by PioRelay; bare `"fetch failed"` missing URL context), audit the recent `dashboard/` and `onboard.js` changes, and expand regression tests.
+3. Done check: both worktree branches pass `env -u HERDR_ENV ./verify.sh` and `cd dashboard && npm test`, reports end with `RUBEN_DONE` / `ENRIQUE_DONE`, and changes merge cleanly to `main`.
 
-## Non-goals
+## Constraints and routing rationale
 
-- No change to the /agents SPA, the names endpoint, or PioRelay.
-- No automatic handoff trigger yet; the daemon hook is a follow-up. This batch ships the manual command and the reusable writer.
-- No slug renames and no relay writes.
-
-## Done check
-
-- Each package passes its own `node --test test/<pkg>.test.js`.
-- `./verify.sh` passes on the merged tree.
-- No new dependencies, Node 22 only, no em dashes in shipped files.
-- `bin/roostr` is wired by the orchestrator at merge time, not by workers.
-
-## Parallelism
-
-Three worktrees, three panes, no dependencies between them.
-
-## Verification
-
-Tier 1: file ownership check against `owns`. Tier 2: package tests. Tier 3: manual smoke of each command against a temp state dir.
+- Engine requested: `agy` running Hydrogen at task-appropriate levels.
+- `pkg-skill-docs` (`kind: docs`): `roostr recommend` selects `fast` tier / `low` effort. Run on `gemini-4-hydrogen-low` (`--model gemini-4-hydrogen-low`).
+- `pkg-onboard-hardening` (`kind: tests`): `roostr summary` reports 25% first-try pass rate across 4 runs for `tests`, and the package combines bugfixes, review, and test expansion. Escalated to `gemini-4-hydrogen-high` (`--model gemini-4-hydrogen-high`).
+- File ownership (`owns`) is strictly disjoint between packages.
+- Non-goals: no OVH deploys, no edits to `PLAN.md` or `scripts/update.sh`, no items 7 to 9 from pending Roman grill.
