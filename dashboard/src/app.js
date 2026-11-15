@@ -177,7 +177,7 @@ function readJsonBody(req) {
 
 function safeNextPath(rawNext) {
   if (typeof rawNext !== 'string') return '/agents/control/';
-  if (!rawNext.startsWith('/agents/') || rawNext.startsWith('//')) {
+  if (!rawNext.startsWith('/agents/') || rawNext.startsWith('//') || /[\r\n\\]/.test(rawNext)) {
     return '/agents/control/';
   }
   return rawNext;
@@ -432,10 +432,11 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
       if (!resMap.ok) {
         return sendJson(res, resMap.status, { error: resMap.error });
       }
+      const cleared = !String(body.name || '').trim();
       audit.log({
         ip: clientIp,
         action: 'names.override',
-        summary: `slug=${body.slug} name=${body.name || '(cleared)'}`,
+        summary: `slug=${body.slug} name=${cleared ? '(cleared)' : String(body.name).trim()}`,
         ok: true,
       });
       return sendJson(res, 200, resMap);
@@ -448,14 +449,17 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
       } catch (err) {
         return sendJson(res, err.statusCode || 400, { error: err.message });
       }
-      const resMap = namesStore.setOrchestrator(body.slug, Boolean(body.enabled), session.label || session.sub);
+      if (typeof body.enabled !== 'boolean') {
+        return sendJson(res, 400, { error: 'enabled must be a boolean' });
+      }
+      const resMap = namesStore.setOrchestrator(body.slug, body.enabled, session.label || session.sub);
       if (!resMap.ok) {
         return sendJson(res, resMap.status, { error: resMap.error });
       }
       audit.log({
         ip: clientIp,
         action: 'names.orchestrator',
-        summary: `slug=${body.slug} enabled=${Boolean(body.enabled)}`,
+        summary: `slug=${body.slug} enabled=${body.enabled}`,
         ok: true,
       });
       return sendJson(res, 200, resMap);

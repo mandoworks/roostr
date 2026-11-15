@@ -775,6 +775,29 @@ describe('dashboard herdr client and HTTP app', () => {
       });
       assert.equal(badOrch.status, 400);
 
+      const badBoolOrch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/names/orchestrator',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { slug: 'roosty', enabled: 'false' },
+      });
+      assert.equal(badBoolOrch.status, 400);
+
+      const crlfNext = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/names.html?next=/agents/%0d%0aSet-Cookie:%20x=1',
+      });
+      assert.equal(crlfNext.status, 302);
+      assert.equal(crlfNext.headers.location, '/agents/auth/login?next=%2Fagents%2Fnames.html%3Fnext%3D%2Fagents%2F%250d%250aSet-Cookie%3A%2520x%3D1');
+
+      const crlfLogin = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/auth/login?next=%2Fagents%2Fcontrol%2F%0d%0aSet-Cookie%3A%20x%3D1',
+        headers: { cookie },
+      });
+      assert.equal(crlfLogin.status, 302);
+      assert.equal(crlfLogin.headers.location, '/agents/control/');
+
       const addOrch = await invokeHandler(h.handler, {
         method: 'POST',
         url: '/agents/api/names/orchestrator',
