@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "plan": "docs/orchestration-plan.md",
+  "tasks": [
+    {
+      "id": "pkg-handoff",
+      "title": "Add roostr handoff writer for orchestrator succession",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-handoff.md",
+      "report": "docs/orchestration/reports/pkg-handoff.md",
+      "status": "pending",
+      "tool": "kilo",
+      "effort": "medium",
+      "model": "baidu/ernie-5.5-flash-preview:free",
+      "fallbacks": [],
+      "owns": ["src/handoff.js", "test/handoff.test.js"],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-backup",
+      "title": "Add backups capture, handoff pointers, stale session marks, and a user timer",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-backup.md",
+      "report": "docs/orchestration/reports/pkg-backup.md",
+      "status": "pending",
+      "tool": "kilo",
+      "effort": "medium",
+      "model": "baidu/ernie-5.5-flash-preview:free",
+      "fallbacks": [],
+      "owns": ["src/backup.js", "test/backup.test.js", "scripts/install-backup-timer.sh"],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-workers",
+      "title": "Add roostr workers snapshot publisher per host",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-workers.md",
+      "report": "docs/orchestration/reports/pkg-workers.md",
+      "status": "pending",
+      "tool": "kilo",
+      "effort": "medium",
+      "model": "baidu/ernie-5.5-flash-preview:free",
+      "fallbacks": [],
+      "owns": ["src/workers.js", "test/workers.test.js"],
+      "depends_on": []
+    }
+  ]
+}
