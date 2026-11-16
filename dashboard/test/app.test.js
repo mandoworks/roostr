@@ -85,7 +85,12 @@ function createHarness(opts = {}) {
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-dash-app-'));
   const configDir = path.join(tmpBase, 'config');
   const staticDir = path.join(tmpBase, 'static');
+  const roostrStateDir = path.join(tmpBase, 'roostr-state');
+  const roostrRepoDir = path.join(tmpBase, 'roostr-repo');
+  const statusPath = path.join(tmpBase, 'status.json');
   fs.mkdirSync(staticDir, { recursive: true });
+  fs.mkdirSync(roostrStateDir, { recursive: true });
+  fs.mkdirSync(roostrRepoDir, { recursive: true });
   fs.writeFileSync(path.join(staticDir, 'index.html'), '<h1>Agents Index</h1>');
 
   const config = loadConfig({
@@ -93,6 +98,10 @@ function createHarness(opts = {}) {
     RP_ID: 'example.ts.net',
     ORIGIN: 'https://example.ts.net',
     STATIC_DIR: staticDir,
+    ROOSTR_STATE_DIR: roostrStateDir,
+    ROOSTR_REPO_DIR: roostrRepoDir,
+    AGENT_STATUS_PATH: statusPath,
+    PIORELAY_BASE: opts.piorelayBase || 'http://127.0.0.1:3016/api/v1',
     ROOSTR_DASHBOARD_CONFIG_DIR: configDir,
     ALLOW_ADD_CREDENTIAL: opts.allowAddCredential ? '1' : '0',
   });
@@ -186,6 +195,9 @@ function createHarness(opts = {}) {
     if (args[0] === 'pane' && args[1] === 'read') {
       return cb(null, 'Allow tool? (y/n)\n', '');
     }
+    if (args[0] === 'pane' && args[1] === 'split') {
+      return cb(null, JSON.stringify({ pane_id: 'w1:p2' }), '');
+    }
     return cb(null, '', '');
   };
 
@@ -199,7 +211,7 @@ function createHarness(opts = {}) {
 
   const rateLimiter = createRateLimiter({ maxRequests: 20, windowMs: 10000 });
   const audit = createAuditLogger(store.auditPath);
-  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit });
+  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit, fetch: opts.fetch });
 
   return {
     tmpBase,
@@ -878,6 +890,376 @@ describe('dashboard herdr client and HTTP app', () => {
         body: {},
       });
       assert.equal(noMoreRev.status, 404);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('handles sessions recovery, pane start options, pane split, muse snapshot, and muse messaging', async () => {
+    const relayRequests = [];
+    let relayMode = 'ok';
+    const mockFetch = async (url, init) => {
+      relayRequests.push({ url, init, body: JSON.parse(init.body) });
+      if (relayMode === 'network-error') {
+        throw new Error('connect ECONNREFUSED');
+      }
+      if (relayMode === 'http-500') {
+        return {
+          ok: false,
+          status: 500,
+          async text() {
+            return JSON.stringify({ error: 'relay down' });
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ id: 'msg-123', status: 'queued' });
+        },
+      };
+    };
+
+    const h = createHarness({ fetch: mockFetch });
+    try {
+      // Populate recovery snapshot files
+      fs.writeFileSync(
+        path.join(h.config.roostrStateDir, 'sessions.json'),
+        JSON.stringify([{ paneId: 'w2:p1', agent: 'claude', session: 'sess-1', model: 'sonnet' }])
+      );
+      const backupWsDir = path.join(h.config.roostrStateDir, 'backups', 'w2');
+      fs.mkdirSync(backupWsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(backupWsDir, 'v1.json'),
+        JSON.stringify({
+          workspaceId: 'w2',
+          label: 'doma',
+          version: 1,
+          capturedAt: '2026-11-16T10:00:00.000Z',
+          panes: [{ paneId: 'w2:p1', agent: 'claude' }],
+        })
+      );
+      const orchDir = path.join(h.config.roostrRepoDir, 'docs', 'orchestration');
+      fs.mkdirSync(path.join(orchDir, 'handoffs'), { recursive: true });
+      fs.mkdirSync(path.join(orchDir, 'reports'), { recursive: true });
+      fs.writeFileSync(
+        path.join(orchDir, 'tasks.json'),
+        JSON.stringify({ version: 1, plan: 'docs/orchestration-plan.md', tasks: [{ id: 't1', status: 'done' }] })
+      );
+      fs.writeFileSync(path.join(orchDir, 'handoffs', 'h1.md'), '# Handoff 1');
+      fs.writeFileSync(path.join(orchDir, 'reports', 'r1.md'), '# Report 1');
+
+      // Populate Muse static files + status + names override
+      fs.mkdirSync(path.join(h.config.staticDir, 'workers'), { recursive: true });
+      fs.writeFileSync(
+        path.join(h.config.staticDir, 'data.json'),
+        JSON.stringify({
+          generated_epoch: 1794835050,
+          stamp_ast: '09:17 AM AST',
+          roman_desk: {
+            chat_id: 'roman-chat-1',
+            chat_title: 'Main chat',
+            last_activity_ast: '09:13 AM AST',
+            tokens_in_today: 100,
+            tokens_out_today: 50,
+          },
+          tier1: [
+            {
+              id: 'engy',
+              name: 'Engy',
+              emoji: '✍️',
+              role: 'Copywriter',
+              cls: 'done',
+              current_task: 'Drafting',
+              next_task: 'Review',
+              blocker: null,
+              tasks: [{ title: 't1', status: 'done' }],
+              docs: [{ file: 'SOUL.md', words: 100 }],
+              bank: 'coding-agent::engy',
+            },
+          ],
+          tier2: [{ label: 'free-model-radar', status: 'running' }],
+        })
+      );
+      fs.writeFileSync(
+        path.join(h.config.staticDir, 'workers', 'workers.muse.json'),
+        JSON.stringify({
+          schema: 1,
+          host: 'muse',
+          workers: [
+            {
+              pane_id: 'muse:engy',
+              agent: 'engy',
+              state: 'working',
+              task: 'Shadow-draft',
+              model: 'ipnext/avocado-5.16-v1',
+              tokens: 42,
+              session: 'engy-sess-1',
+            },
+          ],
+        })
+      );
+      fs.writeFileSync(
+        h.config.statusPath,
+        JSON.stringify({
+          generated_epoch: 1794835418,
+          agents: {
+            engy: { agent: 'engy', state: 'working', label: 'Active copy', at_ast: '09:20 AM AST' },
+          },
+        })
+      );
+      fs.writeFileSync(
+        h.config.namesPath,
+        JSON.stringify({
+          schema: 1,
+          orchestrators: ['engy'],
+          overrides: { engy: { name: 'Engy Prime' } },
+          history: [],
+        })
+      );
+
+      // Enroll and authenticate
+      const token = h.store.getEnrollToken();
+      const regOpts = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, label: 'Test Mac' },
+      });
+      assert.equal(regOpts.status, 200);
+      const { challengeId } = JSON.parse(regOpts.body);
+      const regVerify = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, challengeId, response: { id: 'cred-1' }, label: 'Test Mac' },
+      });
+      assert.equal(regVerify.status, 200);
+      const cookie = regVerify.headers['set-cookie'].split(';')[0];
+
+      // 1. GET /agents/api/sessions
+      const sessionsRes = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/sessions',
+        headers: { cookie },
+      });
+      assert.equal(sessionsRes.status, 200);
+      const sessionsBody = JSON.parse(sessionsRes.body);
+      assert.equal(sessionsBody.sessions.length, 1);
+      assert.equal(sessionsBody.sessions[0].paneId, 'w2:p1');
+      assert.equal(sessionsBody.backups.length, 1);
+      assert.equal(sessionsBody.backups[0].workspaceId, 'w2');
+      assert.equal(sessionsBody.backups[0].paneCount, 1);
+      assert.equal(sessionsBody.orchestration.tasks.length, 1);
+      assert.equal(sessionsBody.orchestration.handoffs[0].file, 'h1.md');
+      assert.equal(sessionsBody.orchestration.reports[0].file, 'r1.md');
+
+      // 2. POST /agents/api/pane/:id/start with session, model, effort
+      const startClaude = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'nora',
+          kind: 'claude',
+          session: 'sess-abc',
+          model: 'claude-sonnet-4-5',
+          effort: 'high',
+        },
+      });
+      assert.equal(startClaude.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'nora',
+        '--kind',
+        'claude',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--resume',
+        'sess-abc',
+        '--model',
+        'claude-sonnet-4-5',
+        '--effort',
+        'high',
+      ]);
+
+      const startOpencode = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'kilo-1',
+          kind: 'opencode',
+          session: 'oc-1',
+          model: 'openrouter/free',
+          effort: 'medium',
+        },
+      });
+      assert.equal(startOpencode.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'kilo-1',
+        '--kind',
+        'opencode',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--session',
+        'oc-1',
+        '--model',
+        'openrouter/free',
+      ]);
+
+      const startAgy = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'agy-1',
+          kind: 'agy',
+          session: 'conv-1',
+          model: 'gemini-4-hydrogen-medium',
+          effort: 'xhigh',
+        },
+      });
+      assert.equal(startAgy.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'agy-1',
+        '--kind',
+        'agy',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--conversation',
+        'conv-1',
+        '--model',
+        'gemini-4-hydrogen-medium',
+        '--effort',
+        'xhigh',
+      ]);
+
+      const badStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { name: 'nora', kind: 'claude', effort: 'invalid' },
+      });
+      assert.equal(badStart.status, 400);
+
+      // 3. POST /agents/api/pane/:id/split
+      const splitRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/split',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          direction: 'down',
+          cwd: '/tmp/work',
+          startAgent: {
+            name: 'valentin',
+            kind: 'agy',
+            model: 'gemini-4-hydrogen-medium',
+          },
+        },
+      });
+      assert.equal(splitRes.status, 200);
+      assert.deepEqual(JSON.parse(splitRes.body), { ok: true, paneId: 'w1:p2' });
+      const lastTwo = h.herdrCalls.slice(-2).map((c) => c.args);
+      assert.deepEqual(lastTwo[0], [
+        'pane',
+        'split',
+        '--pane',
+        'w1:p1',
+        '--direction',
+        'down',
+        '--cwd',
+        '/tmp/work',
+        '--no-focus',
+      ]);
+      assert.deepEqual(lastTwo[1], [
+        'agent',
+        'start',
+        'valentin',
+        '--kind',
+        'agy',
+        '--pane',
+        'w1:p2',
+        '--',
+        '--model',
+        'gemini-4-hydrogen-medium',
+      ]);
+
+      const badSplit = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/split',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { direction: 'up' },
+      });
+      assert.equal(badSplit.status, 400);
+
+      // 4. GET /agents/api/muse
+      const museRes = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse',
+        headers: { cookie },
+      });
+      assert.equal(museRes.status, 200);
+      const museBody = JSON.parse(museRes.body);
+      assert.equal(museBody.romanDesk.chat_id, 'roman-chat-1');
+      assert.equal(museBody.tier2.length, 1);
+      assert.equal(museBody.agents.length, 2);
+      const roman = museBody.agents.find((a) => a.slug === 'roman');
+      assert.equal(roman.isOrchestrator, true);
+      assert.equal(roman.tokensToday, 150);
+      const engy = museBody.agents.find((a) => a.slug === 'engy');
+      assert.equal(engy.name, 'Engy Prime');
+      assert.equal(engy.sourceName, 'Engy');
+      assert.equal(engy.overrideName, 'Engy Prime');
+      assert.equal(engy.isOrchestrator, true);
+      assert.equal(engy.model, 'ipnext/avocado-5.16-v1');
+      assert.equal(engy.session, 'engy-sess-1');
+      assert.equal(engy.state, 'working');
+
+      // 5. POST /agents/api/muse/message
+      const msgRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          to: 'engy',
+          subject: 'Check slide 3',
+          body: 'Please update the headline',
+        },
+      });
+      assert.equal(msgRes.status, 200);
+      const msgBody = JSON.parse(msgRes.body);
+      assert.equal(msgBody.ok, true);
+      assert.equal(msgBody.relay.id, 'msg-123');
+      assert.equal(relayRequests[0].body.to_agent, 'engy');
+      assert.equal(relayRequests[0].body.project, 'muse');
+      assert.equal(relayRequests[0].body.kind, 'task');
+
+      const badMsg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { to: 'INVALID', subject: '', body: '' },
+      });
+      assert.equal(badMsg.status, 400);
+
+      relayMode = 'network-error';
+      const downMsg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { to: 'engy', subject: 'Ping', body: 'Hello' },
+      });
+      assert.equal(downMsg.status, 502);
     } finally {
       h.cleanup();
     }

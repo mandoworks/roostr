@@ -15,6 +15,11 @@ const {
   validatePaneLabel,
   validateAgentName,
   validateAgentKind,
+  validateOptionalModel,
+  validateOptionalEffort,
+  validateOptionalSessionId,
+  validateSplitDirection,
+  validateMuseMessage,
   resolveStaticPath,
 } = require('../src/validate');
 
@@ -206,5 +211,102 @@ describe('validatePaneLabel, validateAgentName, validateAgentKind', () => {
     assert.equal(validateAgentKind('').ok, false);
     assert.equal(validateAgentKind(null).ok, false);
     assert.equal(validateAgentKind('bash').ok, false);
+  });
+});
+
+describe('validateOptionalModel, validateOptionalEffort, validateOptionalSessionId, validateSplitDirection', () => {
+  it('validates optional model strings', () => {
+    assert.deepEqual(validateOptionalModel(undefined), { ok: true, value: null });
+    assert.deepEqual(validateOptionalModel(null), { ok: true, value: null });
+    assert.deepEqual(validateOptionalModel('   '), { ok: true, value: null });
+    assert.deepEqual(validateOptionalModel('  claude-sonnet-4-5:latest  '), {
+      ok: true,
+      value: 'claude-sonnet-4-5:latest',
+    });
+    assert.deepEqual(validateOptionalModel('ipnext/avocado-5.16-v1'), {
+      ok: true,
+      value: 'ipnext/avocado-5.16-v1',
+    });
+    assert.equal(validateOptionalModel(123).ok, false);
+    assert.equal(validateOptionalModel('-bad').ok, false);
+    assert.equal(validateOptionalModel('bad model').ok, false);
+    assert.equal(validateOptionalModel('a'.repeat(81)).ok, false);
+  });
+
+  it('validates optional effort allowlist', () => {
+    assert.deepEqual(validateOptionalEffort(undefined), { ok: true, value: null });
+    assert.deepEqual(validateOptionalEffort(''), { ok: true, value: null });
+    for (const eff of ['low', 'medium', 'high', 'xhigh']) {
+      assert.deepEqual(validateOptionalEffort(` ${eff} `), { ok: true, value: eff });
+    }
+    assert.equal(validateOptionalEffort('ultra').ok, false);
+    assert.equal(validateOptionalEffort(42).ok, false);
+  });
+
+  it('validates optional session id', () => {
+    assert.deepEqual(validateOptionalSessionId(undefined), { ok: true, value: null });
+    assert.deepEqual(validateOptionalSessionId(''), { ok: true, value: null });
+    assert.deepEqual(validateOptionalSessionId(' 669c7ff3-dff5-4366-b0e7-b4b0dba7dcae '), {
+      ok: true,
+      value: '669c7ff3-dff5-4366-b0e7-b4b0dba7dcae',
+    });
+    assert.deepEqual(validateOptionalSessionId('sess_1:abc'), { ok: true, value: 'sess_1:abc' });
+    assert.equal(validateOptionalSessionId('-bad').ok, false);
+    assert.equal(validateOptionalSessionId('bad space').ok, false);
+    assert.equal(validateOptionalSessionId('s'.repeat(129)).ok, false);
+    assert.equal(validateOptionalSessionId(123).ok, false);
+  });
+
+  it('validates split direction with right default', () => {
+    assert.deepEqual(validateSplitDirection(undefined), { ok: true, value: 'right' });
+    assert.deepEqual(validateSplitDirection(null), { ok: true, value: 'right' });
+    assert.deepEqual(validateSplitDirection(''), { ok: true, value: 'right' });
+    assert.deepEqual(validateSplitDirection('right'), { ok: true, value: 'right' });
+    assert.deepEqual(validateSplitDirection(' down '), { ok: true, value: 'down' });
+    assert.equal(validateSplitDirection('left').ok, false);
+    assert.equal(validateSplitDirection(123).ok, false);
+  });
+});
+
+describe('validateMuseMessage', () => {
+  it('accepts valid message payloads with default project', () => {
+    const res = validateMuseMessage({
+      to: 'engy',
+      subject: 'Review RAVE copy',
+      body: 'Please check slide 3\n\tThanks!',
+    });
+    assert.deepEqual(res, {
+      ok: true,
+      value: {
+        to: 'engy',
+        subject: 'Review RAVE copy',
+        body: 'Please check slide 3\n\tThanks!',
+        project: 'muse',
+        threadId: null,
+      },
+    });
+  });
+
+  it('accepts custom project and threadId and rejects invalid fields', () => {
+    const res = validateMuseMessage({
+      to: 'buildy-1',
+      subject: 'Deploy',
+      body: 'Go ahead',
+      project: 'roostr',
+      threadId: 'thread-42',
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.value.project, 'roostr');
+    assert.equal(res.value.threadId, 'thread-42');
+
+    assert.equal(validateMuseMessage(null).ok, false);
+    assert.equal(validateMuseMessage({ to: 'Bad_Slug', subject: 's', body: 'b' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: '', body: 'b' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'bad\nsub', body: 'b' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'x'.repeat(141), body: 'b' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'ok', body: '' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'ok', body: 'b'.repeat(16001) }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'ok', body: 'ok', project: 'BAD' }).ok, false);
+    assert.equal(validateMuseMessage({ to: 'engy', subject: 'ok', body: 'ok', threadId: 't'.repeat(81) }).ok, false);
   });
 });
