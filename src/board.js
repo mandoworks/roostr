@@ -1535,18 +1535,50 @@ function backupLines(st, width, now = Date.now()) {
   if (st.status) lines.push(C.cyan(ui.clean(st.status)));
   // previewLines cleans every saved value itself; ui.clean here would squeeze the drawing.
   for (const l of backup.previewLines(v.backup, width, now, st.layout || 'even')) lines.push(C.text(l));
+  const agentPanes = [];
+  for (const t of (v.backup.tabs || [])) {
+    for (const p of (t.panes || [])) {
+      if (p.agent) agentPanes.push(p.agent);
+    }
+  }
+  if (agentPanes.length) {
+    lines.push('');
+    lines.push(bold(C.dim('recovery readiness')));
+    for (const a of agentPanes) {
+      const badge = a.session
+        ? C.green('[resumable]')
+        : (a.handoff ? C.amber('[handoff]') : C.dim('[fresh]'));
+      const who = ui.clean(a.name || a.kind || 'agent');
+      const me = [a.model && ui.clean(a.model), a.effort && `effort ${ui.clean(a.effort)}`].filter(Boolean).join(' · ');
+      const detail = me ? ` ${C.dim(me)}` : '';
+      lines.push(`  ${badge} ${C.text(who)}${detail}`);
+    }
+  }
   return lines;
+}
+
+const LOG_KINDS = ['all', 'opencode', 'claude', 'agy', 'kilo'];
+
+function logAgo(updated, now) {
+  const t = typeof updated === 'number' ? updated : Date.parse(updated);
+  if (!Number.isFinite(t)) return '?';
+  const m = Math.max(0, Math.round((now - t) / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / 1440)}d`;
 }
 
 // The log view: recent conversations from the agent's own session store, so a
 // closed tab can be reopened without a workspace backup. enter resumes one in
 // the current workspace; a switches between that workspace and every directory.
 function logViewLines(st, width, now = Date.now()) {
-  const lines = [`${bold(C.title('log'))}  ${C.dim('↑↓ session · ↵ resume · a here/all · r refresh · esc close')}`];
+  const kind = st.kind || 'all';
+  const lines = [`${bold(C.title('log'))}  ${C.dim(`↑↓ session · ↵ resume · k kind:${kind} · a here/all · r refresh · esc close`)}`];
   const n = st.items.length;
   const dirs = st.dirs.length;
   const scope = st.all ? 'every directory' : `${dirs} director${dirs === 1 ? 'y' : 'ies'} of this workspace`;
-  lines.push(C.dim(`scope: ${scope} · ${n} session${n === 1 ? '' : 's'}`));
+  const kindLabel = LOG_KINDS.map((k) => (k === kind ? bold(C.cyan(k)) : C.dim(k))).join(C.dim(' ▸ '));
+  lines.push(`${C.dim(`scope: ${scope} · ${n} session${n === 1 ? '' : 's'} · kind: `)}${kindLabel}`);
   if (st.status) lines.push(C.cyan(ui.clean(st.status)));
   if (!n) {
     lines.push(C.dim(st.busy ? 'reading the session stores…' : 'No sessions yet. A closed tab leaves its conversation in the agent store.'));
@@ -1554,8 +1586,13 @@ function logViewLines(st, width, now = Date.now()) {
   }
   st.items.forEach((s, i) => {
     const on = i === st.sel;
-    const text = sessionLog.line(s, now, width - 3);
-    lines.push(`${on ? bold(C.cyan('▸')) : C.dim(' ')} ${on ? bold(C.text(text)) : C.text(text)}`);
+    const tool = ui.clean(s.kind || '?');
+    const idPrefix = ui.clean(String(s.id || '').slice(0, 8));
+    const age = logAgo(s.updated, now);
+    const dirBase = s.directory ? ui.clean(path.basename(s.directory)) : '?';
+    const title = ui.clean(s.title || s.id || '');
+    const row = ui.truncate(`[${tool}] ${idPrefix} ${age} ${dirBase}  ${title}`, width - 3);
+    lines.push(`${on ? bold(C.cyan('▸')) : C.dim(' ')} ${on ? bold(C.text(row)) : C.text(row)}`);
   });
   return lines;
 }
@@ -3829,7 +3866,7 @@ function runLive(opts) {
     if (!logView || logView.busy) return;
     logView.busy = true;
     draw();
-    sessionLog.list({ dirs: logView.all ? [] : logView.dirs, all: logView.all, noCache: true })
+    sessionLog.list({ dirs: logView.all ? [] : logView.dirs, all: logView.all, kind: logView.kind || 'all', noCache: true })
       .then((items) => {
         if (!logView) return;
         logView.items = items;
@@ -3851,7 +3888,7 @@ function runLive(opts) {
       draw();
       return;
     }
-    logView = { items: [], sel: 0, all: false, dirs: workspaceDirs(), busy: false, status: null, at: 0 };
+    logView = { items: [], sel: 0, all: false, kind: 'all', dirs: workspaceDirs(), busy: false, status: null, at: 0 };
     refreshLog();
   };
 
@@ -4206,8 +4243,9 @@ function runLive(opts) {
       const n = logView.items.length;
       if (k === '\x1b' || k === 'L' || k === 'q') logView = null;
       else if (k === '\x03') return quit();
-      else if (k === '\x1b[A' || k === 'k') logView.sel = Math.max(0, logView.sel - 1);
+      else if (k === '\x1b[A') logView.sel = Math.max(0, logView.sel - 1);
       else if (k === '\x1b[B' || k === 'j') logView.sel = Math.min(Math.max(0, n - 1), logView.sel + 1);
+      else if (k === 'k') { logView.kind = cycle(LOG_KINDS, logView.kind || 'all'); refreshLog(); return; }
       else if (k === 'a') { logView.all = !logView.all; refreshLog(); return; }
       else if (k === 'r') { refreshLog(); return; }
       else if ((k === '\r' || k === '\n') && n) { resumeLogged(); return; }

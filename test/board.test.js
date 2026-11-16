@@ -589,6 +589,45 @@ test('saveMemory: boards sharing board.json keep panes of other boards, drop dea
   }
 });
 
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
+});
+
 test('ui.clean: control characters from pane data never reach the terminal', () => {
   assert.equal(ui.clean('x\x1b]52;c;aGk=\x07y\x1b[2Jz\u009bq'), 'x]52;c;aGk=y[2Jzq');
   assert.deepEqual(board.parseLabel('api\x1b[2J · fix\nit'), { name: 'api[2J', task: 'fix it' });
@@ -623,13 +662,17 @@ test('render: the log drawer lists a recent session', () => {
   const m = board.buildModel(sample());
   ui.setColor(false);
   const logView = {
-    items: [{ id: 'ses_a', kind: 'opencode', title: 'Fix the log', directory: '/tmp/app', updated: NOW }],
-    sel: 0, all: false, dirs: ['/tmp/app'], busy: false, status: null,
+    items: [{ id: 'ses_a1234567', kind: 'opencode', title: 'Fix the log', directory: '/tmp/app', updated: NOW }],
+    sel: 0, all: false, kind: 'all', dirs: ['/tmp/app'], busy: false, status: null,
   };
   const out = board.render(m, { width: 120, logView }).split('\n').join('\n');
   assert.match(out, /log/);
+  assert.match(out, /k kind:all/);
+  assert.match(out, /all ▸ opencode ▸ claude ▸ agy ▸ kilo/);
+  assert.match(out, /\[opencode\]/);
+  assert.match(out, /ses_a123/);
+  assert.match(out, /app/);
   assert.match(out, /Fix the log/);
-  assert.match(out, /opencode/);
 });
 
 test('EGM is gone from the model, the keys and the parser', () => {
@@ -800,6 +843,45 @@ test('refreshBackups: reloads, keeps the selected workspace and version, and sho
     else process.env.CREW_BOARD_STATE_DIR = saved;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
 });
 
 test('render: the edit prompt replaces the footer', () => {
@@ -1634,6 +1716,45 @@ test('loadMemory: tags, status and prefs must be plain objects', () => {
   }
 });
 
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
+});
+
 test('saveMemory: seen stays in memory, so an unchanged status does not rewrite board.json', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-mem-seen-'));
   const saved = process.env.CREW_BOARD_STATE_DIR;
@@ -1658,6 +1779,45 @@ test('saveMemory: seen stays in memory, so an unchanged status does not rewrite 
   }
 });
 
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
+});
+
 test('crewResolver: --crew is checked again on every load', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-crew-'));
   const file = path.join(dir, '.crew-board.toml');
@@ -1671,6 +1831,45 @@ test('crewResolver: --crew is checked again on every load', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
 });
 
 test('buildModel: rows carry workspaceId for workspace-safe dispatch', () => {
@@ -1889,6 +2088,45 @@ test('setup: the screen renders at 80 columns and saves', () => {
     else process.env.CREW_BOARD_SUMMARY = savedSummary;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('render: backups drawer shows recovery readiness badges and model/effort summary', () => {
+  const m = board.buildModel(sample());
+  ui.setColor(false);
+  const backups = {
+    list: [{
+      workspaceId: 'w1',
+      label: 'app',
+      versions: [{
+        savedAt: '2026-10-01T10:00:00.000Z',
+        backup: {
+          version: 1,
+          workspaceId: 'w1',
+          label: 'app',
+          savedAt: '2026-10-01T10:00:00.000Z',
+          tabs: [{
+            label: null,
+            focused: true,
+            tree: { pane: 'w1:p1' },
+            panes: [
+              { paneId: 'w1:p1', cwd: '/tmp/app', agent: { kind: 'claude', name: 'alice', session: 's1', model: 'sonnet', effort: 'high' } },
+              { paneId: 'w1:p2', cwd: '/tmp/app', agent: { kind: 'opencode', name: 'bob', handoff: '/tmp/handoff.md', model: 'gpt-5' } },
+              { paneId: 'w1:p3', cwd: '/tmp/app', agent: { kind: 'kilo', name: 'carol' } },
+            ],
+          }],
+        },
+      }],
+    }],
+    sel: 0,
+    ver: 0,
+    confirm: false,
+    status: null,
+  };
+  const out = board.render(m, { width: 120, backups });
+  assert.match(out, /recovery readiness/);
+  assert.match(out, /\[resumable\] alice sonnet · effort high/);
+  assert.match(out, /\[handoff\] bob gpt-5/);
+  assert.match(out, /\[fresh\] carol/);
 });
 
 test('setup: task kind rows edit tool, effort, model and fallbacks', () => {
