@@ -3,12 +3,58 @@
   "plan": "docs/orchestration-plan.md",
   "tasks": [
     {
-      "id": "pkg-skill-docs",
-      "title": "Sync roostr skill, schema reference, and dashboard README",
+      "id": "pkg-cli-consolidate",
+      "title": "Consolidate ~/.crew-board to ~/.roostr and fix spawn/name CLI",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-cli-consolidate.md",
+      "report": "docs/orchestration/reports/pkg-cli-consolidate.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "high",
+      "model": "gemini-4-hydrogen-high",
+      "fallbacks": [
+        "gemini-4-hydrogen-xhigh"
+      ],
+      "owns": [
+        "bin/roostr",
+        "src/**",
+        "test/**",
+        "docs/orchestration/reports/pkg-cli-consolidate.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-ui-audit-fixes",
+      "title": "Fix remaining dashboard audit findings and expand tests",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-ui-audit-fixes.md",
+      "report": "docs/orchestration/reports/pkg-ui-audit-fixes.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-high"
+      ],
+      "owns": [
+        "dashboard/src/herdr.js",
+        "dashboard/src/validate.js",
+        "dashboard/public/control/index.html",
+        "dashboard/public/control/app.js",
+        "dashboard/public/names/names.js",
+        "dashboard/test/validate.test.js",
+        "dashboard/test/app.test.js",
+        "docs/orchestration/reports/pkg-ui-audit-fixes.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-skill-sync",
+      "title": "Update roostr skill to supersede crew-board and sync OVH skills repo",
       "kind": "docs",
-      "brief": "docs/orchestration/tasks/pkg-skill-docs.md",
-      "report": "docs/orchestration/reports/pkg-skill-docs.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-skill-sync.md",
+      "report": "docs/orchestration/reports/pkg-skill-sync.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "low",
       "model": "gemini-4-hydrogen-low",
@@ -18,32 +64,7 @@
       "owns": [
         "skills/roostr/SKILL.md",
         "skills/roostr/references/schemas-and-config.md",
-        "dashboard/README.md",
-        "docs/orchestration/reports/pkg-skill-docs.md"
-      ],
-      "depends_on": []
-    },
-    {
-      "id": "pkg-onboard-hardening",
-      "title": "Fix onboard announce kind and fetch diagnostics, audit, and expand tests",
-      "kind": "tests",
-      "brief": "docs/orchestration/tasks/pkg-onboard-hardening.md",
-      "report": "docs/orchestration/reports/pkg-onboard-hardening.md",
-      "status": "done",
-      "tool": "agy",
-      "effort": "high",
-      "model": "gemini-4-hydrogen-high",
-      "fallbacks": [
-        "gemini-4-hydrogen-xhigh"
-      ],
-      "owns": [
-        "src/onboard.js",
-        "test/onboard.test.js",
-        "dashboard/src/names.js",
-        "dashboard/test/names.test.js",
-        "dashboard/test/app.test.js",
-        "dashboard/test/validate.test.js",
-        "docs/orchestration/reports/pkg-onboard-hardening.md"
+        "docs/orchestration/reports/pkg-skill-sync.md"
       ],
       "depends_on": []
     }
