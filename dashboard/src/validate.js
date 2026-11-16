@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PANE_ID_RE = /^[A-Za-z0-9_-]{1,32}:[A-Za-z0-9_-]{1,32}$/;
+const PANE_ID_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,31}:[A-Za-z0-9_-]{1,32}$/;
 
 const ALLOWLIST_KEYS = new Set([
   'enter',
@@ -112,6 +112,9 @@ function validatePaneLabel(raw) {
     return { ok: false, error: 'label contains disallowed control characters' };
   }
   const trimmed = raw.trim();
+  if (trimmed.startsWith('-')) {
+    return { ok: false, error: 'label cannot start with -' };
+  }
   if (trimmed.length > MAX_PANE_LABEL) {
     return { ok: false, error: `label exceeds ${MAX_PANE_LABEL} characters` };
   }

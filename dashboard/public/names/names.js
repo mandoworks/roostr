@@ -131,20 +131,42 @@
       orchBtn.textContent = isOrch ? 'Orchestrator' : 'Mark orch';
 
       orchBtn.addEventListener('click', async () => {
-        await apiFetch('/agents/api/names/orchestrator', {
-          method: 'POST',
-          body: JSON.stringify({ slug: item.slug, enabled: !isOrch }),
-        });
-        await refresh();
+        orchBtn.disabled = true;
+        saveBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/orchestrator', {
+            method: 'POST',
+            body: JSON.stringify({ slug: item.slug, enabled: !isOrch }),
+          });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to update orchestrator', 'error');
+          }
+        } finally {
+          orchBtn.disabled = false;
+          saveBtn.disabled = false;
+        }
       });
 
       form.addEventListener('submit', async (evt) => {
         evt.preventDefault();
-        await apiFetch('/agents/api/names/override', {
-          method: 'POST',
-          body: JSON.stringify({ slug: item.slug, name: input.value }),
-        });
-        await refresh();
+        saveBtn.disabled = true;
+        orchBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/override', {
+            method: 'POST',
+            body: JSON.stringify({ slug: item.slug, name: input.value }),
+          });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to save override', 'error');
+          }
+        } finally {
+          saveBtn.disabled = false;
+          orchBtn.disabled = false;
+        }
       });
 
       form.appendChild(input);
@@ -241,8 +263,17 @@
     const revertBtn = document.getElementById('revert-btn');
     if (revertBtn) {
       revertBtn.addEventListener('click', async () => {
-        await apiFetch('/agents/api/names/revert', { method: 'POST', body: '{}' });
-        await refresh();
+        revertBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/revert', { method: 'POST', body: '{}' });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to revert', 'error');
+          }
+        } finally {
+          revertBtn.disabled = false;
+        }
       });
     }
 

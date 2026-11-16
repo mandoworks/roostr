@@ -20,7 +20,7 @@ const {
 
 describe('validatePaneId', () => {
   it('accepts valid pane ids', () => {
-    for (const id of ['w1:p1', 'w1W:pA', 'ws_01:pane-99', 'a:b', 'A'.repeat(32) + ':' + '9'.repeat(32)]) {
+    for (const id of ['w1:p1', 'w1W:pA', 'ws_01:pane-99', '_w1:p1', 'a:b', 'A'.repeat(32) + ':' + '9'.repeat(32)]) {
       const res = validatePaneId(id);
       assert.equal(res.ok, true, `expected ${id} to be valid`);
       assert.equal(res.value, id);
@@ -41,6 +41,8 @@ describe('validatePaneId', () => {
       'w1/p1:p2',
       'w1:p1;rm',
       'w1:p1 p2',
+      '--help:p1',
+      '-w1:p1',
       ':p1',
       'w1:',
       'A'.repeat(33) + ':p1',
@@ -183,6 +185,9 @@ describe('validatePaneLabel, validateAgentName, validateAgentKind', () => {
     assert.equal(validatePaneLabel('bad\rline').ok, false);
     assert.equal(validatePaneLabel('bad\tline').ok, false);
     assert.equal(validatePaneLabel('bad\x7fdel').ok, false);
+    assert.equal(validatePaneLabel('-bad').ok, false);
+    assert.equal(validatePaneLabel('--clear').ok, false);
+    assert.equal(validatePaneLabel('  --clear  ').ok, false);
     assert.equal(validatePaneLabel('x'.repeat(81)).ok, false);
   });
 
