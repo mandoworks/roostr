@@ -5,7 +5,7 @@ description: Orchestrate multi-agent coding crews in Herdr with the roostr board
 
 # Roostr Orchestration Skill
 
-Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plugin and CLI (`roostr`, or `./bin/roostr` inside the plugin repo). Load the `herdr` skill alongside this skill for cross-machine or advanced pane operations.
+Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plugin and CLI (`roostr`, or `./bin/roostr` inside the plugin repo). `roostr` supersedes `crew-board`, and `~/.roostr/` is the canonical state directory for board, ledger, sessions, and backups. Load the `herdr` skill alongside this skill for cross-machine or advanced pane operations.
 
 ## Critical Traps (Read First)
 
@@ -73,7 +73,11 @@ Canonical runbook for multi-agent orchestration in Herdr using the `roostr` plug
    herdr agent start diego --kind opencode --pane "$PANE_ID" -- -m openrouter/xiaomi/mimo-v2-pro
    # Or for Antigravity (agy) with Hydrogen:
    # herdr agent start diego --kind agy --pane "$PANE_ID" -- --model gemini-4-hydrogen-<low|medium|high|xhigh>
+   # In a fresh .worktrees/<name>, confirm the folder trust dialog and wait until idle before prompting:
+   # herdr agent send-keys diego enter
+   # Keep ~/.roostr/config.json explicit for agy tiers when Hydrogen is the primary worker pool.
    # Note: if agy is started per-task, each invocation starts a fresh session without warm-pane /clear or /new.
+   # Instruct agy workers never to background long verification commands (./verify.sh) and end turn early; wait for exit 0 synchronously before writing final reports.
    # 4. Set human-readable pane label
    herdr pane rename "$PANE_ID" "Diego · <short task>"
    ```
