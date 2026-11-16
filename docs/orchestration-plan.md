@@ -11,6 +11,6 @@ Three parallel Hydrogen (`agy`) workers + OVH lead (`roosty-argon`) in `/home/ub
 
 ## Routing rationale
 
-- `pkg-cli-consolidate` (`santiago`, `feature`, `gemini-4-hydrogen-high`): multi-module state path refactoring + CLI flag/ledger contracts.
+- `pkg-cli-consolidate` (`santiago`, `feature`, `gemini-4-hydrogen-medium`): multi-module state path refactoring + CLI flag/ledger contracts.
 - `pkg-ui-audit-fixes` (`pablo`, `feature`, `gemini-4-hydrogen-medium`): targeted security/UI fixes and dashboard unit tests.
 - `pkg-skill-sync` (`joaquin`, `docs`, `gemini-4-hydrogen-low`): skill documentation and sync.

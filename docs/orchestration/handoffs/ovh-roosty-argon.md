@@ -4,7 +4,7 @@ You are `roosty-argon` running directly on `ovh` (`/home/ubuntu/workspace/roostr
 
 ## Active worker crew in this workspace
 
-1. `santiago` (`crew/santiago`, `.worktrees/santiago`, `gemini-4-hydrogen-high`): `pkg-cli-consolidate`
+1. `santiago` (`crew/santiago`, `.worktrees/santiago`, `gemini-4-hydrogen-medium`): `pkg-cli-consolidate`
 2. `pablo` (`crew/pablo`, `.worktrees/pablo`, `gemini-4-hydrogen-medium`): `pkg-ui-audit-fixes`
 3. `joaquin` (`crew/joaquin`, `.worktrees/joaquin`, `gemini-4-hydrogen-low`): `pkg-skill-sync`
 

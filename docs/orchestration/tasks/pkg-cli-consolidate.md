@@ -1,6 +1,6 @@
 # Task pkg-cli-consolidate
 
-- Owner: Santiago (`santiago`), `gemini-4-hydrogen-high`, branch `crew/santiago`
+- Owner: Santiago (`santiago`), `gemini-4-hydrogen-medium`, branch `crew/santiago`
 - Report: `docs/orchestration/reports/pkg-cli-consolidate.md` ending with `SANTIAGO_DONE` or `SANTIAGO_BLOCKED`
 
 ## Scope (touch ONLY `bin/roostr`, `src/**`, `test/**`, and your report)

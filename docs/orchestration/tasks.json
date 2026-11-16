@@ -8,12 +8,12 @@
       "kind": "feature",
       "brief": "docs/orchestration/tasks/pkg-cli-consolidate.md",
       "report": "docs/orchestration/reports/pkg-cli-consolidate.md",
-      "status": "pending",
+      "status": "done",
       "tool": "agy",
-      "effort": "high",
-      "model": "gemini-4-hydrogen-high",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
       "fallbacks": [
-        "gemini-4-hydrogen-xhigh"
+        "gemini-4-hydrogen-high"
       ],
       "owns": [
         "bin/roostr",
@@ -29,7 +29,7 @@
       "kind": "feature",
       "brief": "docs/orchestration/tasks/pkg-ui-audit-fixes.md",
       "report": "docs/orchestration/reports/pkg-ui-audit-fixes.md",
-      "status": "pending",
+      "status": "done",
       "tool": "agy",
       "effort": "medium",
       "model": "gemini-4-hydrogen-medium",
@@ -54,7 +54,7 @@
       "kind": "docs",
       "brief": "docs/orchestration/tasks/pkg-skill-sync.md",
       "report": "docs/orchestration/reports/pkg-skill-sync.md",
-      "status": "pending",
+      "status": "done",
       "tool": "agy",
       "effort": "low",
       "model": "gemini-4-hydrogen-low",
