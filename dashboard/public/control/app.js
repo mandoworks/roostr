@@ -42,7 +42,9 @@
 
     const res = await fetch(url, options);
     if (res.status === 401) {
-      window.location.assign('/agents/auth/login?next=' + encodeURIComponent(window.location.pathname));
+      window.location.assign(
+        '/agents/auth/login?next=' + encodeURIComponent(window.location.pathname + (window.location.search || ''))
+      );
       throw new Error('unauthorized');
     }
     if (res.status === 429) {

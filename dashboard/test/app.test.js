@@ -382,6 +382,16 @@ describe('dashboard herdr client and HTTP app', () => {
       assert.equal(promptRes.status, 200);
       assert.deepEqual(h.herdrCalls[4].args, ['agent', 'prompt', 'miguel', 'run tests now']);
 
+      // Leading '-' in prompt text is prefixed with space to prevent CLI flag injection
+      const dashPromptRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/prompt',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { text: '--wait' },
+      });
+      assert.equal(dashPromptRes.status, 200);
+      assert.deepEqual(h.herdrCalls[5].args, ['agent', 'prompt', 'miguel', ' --wait']);
+
       // POST /agents/api/pane/<paneId>/close requires matching confirm
       const badClose = await invokeHandler(h.handler, {
         method: 'POST',
@@ -398,7 +408,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { confirm: 'w1:p1' },
       });
       assert.equal(okClose.status, 200);
-      assert.deepEqual(h.herdrCalls[5].args, ['pane', 'close', 'w1:p1']);
+      assert.deepEqual(h.herdrCalls[6].args, ['pane', 'close', 'w1:p1']);
 
       // Rename pane and clear label
       const okRename = await invokeHandler(h.handler, {
@@ -408,7 +418,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { label: 'Nora · garden' },
       });
       assert.equal(okRename.status, 200);
-      assert.deepEqual(h.herdrCalls[6].args, ['pane', 'rename', 'w1:p1', 'Nora · garden']);
+      assert.deepEqual(h.herdrCalls[7].args, ['pane', 'rename', 'w1:p1', 'Nora · garden']);
 
       const okClearRename = await invokeHandler(h.handler, {
         method: 'POST',
@@ -417,7 +427,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { label: '' },
       });
       assert.equal(okClearRename.status, 200);
-      assert.deepEqual(h.herdrCalls[7].args, ['pane', 'rename', 'w1:p1', '--clear']);
+      assert.deepEqual(h.herdrCalls[8].args, ['pane', 'rename', 'w1:p1', '--clear']);
 
       // Start fresh agent (and reject disallowed kind)
       const badStart = await invokeHandler(h.handler, {
@@ -435,7 +445,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { name: 'nora', kind: 'opencode' },
       });
       assert.equal(okStart.status, 200);
-      assert.deepEqual(h.herdrCalls[8].args, ['agent', 'start', 'nora', '--kind', 'opencode', '--pane', 'w1:p1']);
+      assert.deepEqual(h.herdrCalls[9].args, ['agent', 'start', 'nora', '--kind', 'opencode', '--pane', 'w1:p1']);
 
       // Audit log contains entries with no cookies/secrets
       const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie } });
@@ -659,6 +669,22 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { label: 'x'.repeat(81) },
       });
       assert.equal(tooLongLabel.status, 400);
+
+      const dashLabel = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: '--clear' },
+      });
+      assert.equal(dashLabel.status, 400);
+
+      const dashPaneRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/--help:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'ok' },
+      });
+      assert.equal(dashPaneRename.status, 400);
 
       h.setFailNextHerdr('pane not found');
       const herdrFailRename = await invokeHandler(h.handler, {

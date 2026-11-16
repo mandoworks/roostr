@@ -142,12 +142,15 @@ function createHerdrClient(opts = {}) {
   }
 
   async function promptAgent(targetName, text) {
-    if (typeof targetName !== 'string' || !targetName.trim() || targetName.startsWith('-')) {
+    const target = typeof targetName === 'string' ? targetName.trim() : '';
+    if (!target || target.startsWith('-')) {
       throw new Error('invalid agent target');
     }
     const tv = validatePrompt(text);
     if (!tv.ok) throw new Error(tv.error);
-    await runVerb('agent:prompt', ['agent', 'prompt', targetName, tv.value]);
+    // herdr agent prompt does not support `--` option terminator; prefix leading `-` with a space.
+    const safeText = tv.value.startsWith('-') ? ` ${tv.value}` : tv.value;
+    await runVerb('agent:prompt', ['agent', 'prompt', target, safeText]);
   }
 
   async function closePane(paneId) {
