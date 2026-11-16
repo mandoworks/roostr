@@ -3,58 +3,36 @@
   "plan": "docs/orchestration-plan.md",
   "tasks": [
     {
-      "id": "pkg-cli-consolidate",
-      "title": "Consolidate ~/.crew-board to ~/.roostr and fix spawn/name CLI",
+      "id": "pkg-session-recovery",
+      "title": "Auto-detect and persist agy/claude/opencode/kilo sessions and models for restore/log",
       "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-cli-consolidate.md",
-      "report": "docs/orchestration/reports/pkg-cli-consolidate.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-session-recovery.md",
+      "report": "docs/orchestration/reports/pkg-session-recovery.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "medium",
       "model": "gemini-4-hydrogen-medium",
       "fallbacks": [
-        "gemini-4-hydrogen-high"
+        "gemini-4-hydrogen-low"
       ],
       "owns": [
         "bin/roostr",
-        "src/**",
-        "test/**",
-        "docs/orchestration/reports/pkg-cli-consolidate.md"
+        "src/sessions.js",
+        "src/session-log.js",
+        "src/workers.js",
+        "test/sessions.test.js",
+        "test/session-log.test.js",
+        "docs/orchestration/reports/pkg-session-recovery.md"
       ],
       "depends_on": []
     },
     {
-      "id": "pkg-ui-audit-fixes",
-      "title": "Fix remaining dashboard audit findings and expand tests",
+      "id": "pkg-tui-recovery-ui",
+      "title": "Upgrade TUI Board [L log] and [B backups] drawers for multi-agent session recovery",
       "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-ui-audit-fixes.md",
-      "report": "docs/orchestration/reports/pkg-ui-audit-fixes.md",
-      "status": "done",
-      "tool": "agy",
-      "effort": "medium",
-      "model": "gemini-4-hydrogen-medium",
-      "fallbacks": [
-        "gemini-4-hydrogen-high"
-      ],
-      "owns": [
-        "dashboard/src/herdr.js",
-        "dashboard/src/validate.js",
-        "dashboard/public/control/index.html",
-        "dashboard/public/control/app.js",
-        "dashboard/public/names/names.js",
-        "dashboard/test/validate.test.js",
-        "dashboard/test/app.test.js",
-        "docs/orchestration/reports/pkg-ui-audit-fixes.md"
-      ],
-      "depends_on": []
-    },
-    {
-      "id": "pkg-skill-sync",
-      "title": "Update roostr skill to supersede crew-board and sync OVH skills repo",
-      "kind": "docs",
-      "brief": "docs/orchestration/tasks/pkg-skill-sync.md",
-      "report": "docs/orchestration/reports/pkg-skill-sync.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-tui-recovery-ui.md",
+      "report": "docs/orchestration/reports/pkg-tui-recovery-ui.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "low",
       "model": "gemini-4-hydrogen-low",
@@ -62,9 +40,60 @@
         "gemini-4-hydrogen-medium"
       ],
       "owns": [
-        "skills/roostr/SKILL.md",
-        "skills/roostr/references/schemas-and-config.md",
-        "docs/orchestration/reports/pkg-skill-sync.md"
+        "src/ui.js",
+        "src/board.js",
+        "test/ui.test.js",
+        "test/board.test.js",
+        "docs/orchestration/reports/pkg-tui-recovery-ui.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-web-backend-muse",
+      "title": "Add dashboard backend APIs for session recovery, pane split/resume, and Muse agents workflow",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-web-backend-muse.md",
+      "report": "docs/orchestration/reports/pkg-web-backend-muse.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "dashboard/src/config.js",
+        "dashboard/src/validate.js",
+        "dashboard/src/herdr.js",
+        "dashboard/src/muse.js",
+        "dashboard/src/sessions-bridge.js",
+        "dashboard/src/app.js",
+        "dashboard/test/validate.test.js",
+        "dashboard/test/app.test.js",
+        "docs/orchestration/reports/pkg-web-backend-muse.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-web-control-ui",
+      "title": "Build collapsible panes, session recovery, orchestration view, and Muse workflow in Web UI",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-web-control-ui.md",
+      "report": "docs/orchestration/reports/pkg-web-control-ui.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "dashboard/public/control/index.html",
+        "dashboard/public/control/style.css",
+        "dashboard/public/control/app.js",
+        "dashboard/public/names/index.html",
+        "dashboard/public/names/names.js",
+        "docs/orchestration/reports/pkg-web-control-ui.md"
       ],
       "depends_on": []
     }
