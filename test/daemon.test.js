@@ -9,8 +9,26 @@ const ledger = require('../src/ledger');
 const statusEvent = require('../scripts/status-event');
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-board-daemon-'));
+const savedEnv = {
+  ROOSTR_SUMMARY: process.env.ROOSTR_SUMMARY,
+  ROOSTR_CONFIG: process.env.ROOSTR_CONFIG,
+  ROOSTR_MODELS: process.env.ROOSTR_MODELS,
+  ROOSTR_STATE_DIR: process.env.ROOSTR_STATE_DIR,
+  CREW_BOARD_SUMMARY: process.env.CREW_BOARD_SUMMARY,
+  CREW_BOARD_CONFIG: process.env.CREW_BOARD_CONFIG,
+  CREW_BOARD_MODELS: process.env.CREW_BOARD_MODELS,
+  CREW_BOARD_STATE_DIR: process.env.CREW_BOARD_STATE_DIR,
+};
+process.env.ROOSTR_SUMMARY = path.join(tmpRoot, 'summary.json');
+process.env.ROOSTR_CONFIG = path.join(tmpRoot, 'config.json');
+process.env.ROOSTR_MODELS = path.join(tmpRoot, 'models.json');
+process.env.ROOSTR_STATE_DIR = path.join(tmpRoot, 'state');
 
 after(() => {
+  for (const [k, v] of Object.entries(savedEnv)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 });
 

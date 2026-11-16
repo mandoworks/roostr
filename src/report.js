@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { stateDir, validPaneId, paneFile, eventFile, readJson, writeJson } = require('./state');
+const stateDirHelper = require('./state-dir');
 const rotate = require('./rotate');
 
 // Reports older than this are ignored by the board (the pane may be gone and
@@ -185,12 +186,7 @@ function checked(raw) {
 const FROM = { claude: fromClaude, agy: fromAgy };
 
 function usagePath() {
-  if (process.env.ROOSTR_USAGE) return process.env.ROOSTR_USAGE;
-  if (process.env.CREW_BOARD_USAGE) return process.env.CREW_BOARD_USAGE;
-  const roostr = path.join(os.homedir(), '.roostr', 'usage.jsonl');
-  const legacy = path.join(os.homedir(), '.crew-board', 'usage.jsonl');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDirHelper.resolvePath('usage.jsonl', ['ROOSTR_USAGE', 'CREW_BOARD_USAGE']);
 }
 
 function readUsage(file = usagePath(), options = {}) {

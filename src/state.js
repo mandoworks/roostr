@@ -1,20 +1,16 @@
 'use strict';
-// The small state dir crew-board keeps: exact usage reports per pane, and the
+// The small state dir roostr keeps: exact usage reports per pane, and the
 // board's own memory (colour tag per pane, when each status started).
-// Default ~/.crew-board/state, override with CREW_BOARD_STATE_DIR.
+// Default ~/.roostr/state, override with ROOSTR_STATE_DIR / CREW_BOARD_STATE_DIR.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const log = require('./log');
+const stateDirHelper = require('./state-dir');
 
 function stateDir() {
-  if (process.env.ROOSTR_STATE_DIR) return process.env.ROOSTR_STATE_DIR;
-  if (process.env.CREW_BOARD_STATE_DIR) return process.env.CREW_BOARD_STATE_DIR;
-  const roostr = path.join(os.homedir(), '.roostr', 'state');
-  const legacy = path.join(os.homedir(), '.crew-board', 'state');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDirHelper.resolvePath('state', ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR']);
 }
 
 // Pane ids look like "w11:p3". Require exactly one colon separating workspace and pane.

@@ -322,3 +322,19 @@ test('mainSpawn: planning mode outputs plan JSON when --json passed without --ex
     process.stdout.write = origWrite;
   }
 });
+
+test('executeSpawn: extracts runId from real ledger.spawn shape { entry: { runId }, recommendation }', async () => {
+  const fakeRunner = async (args) => {
+    if (args[0] === 'pane' && args[1] === 'split') return JSON.stringify({ result: { pane_id: 'w1:p88' } });
+    return '';
+  };
+  const res = await orchestrator.executeSpawn(
+    { task: 'check run id', name: 'tester', role: 'worker', kind: 'claude' },
+    {
+      herdrRunner: fakeRunner,
+      reportModule: { writeReport: () => {} },
+      ledgerModule: { spawn: () => ({ entry: { runId: 'run-real-shape-1' }, recommendation: {} }) },
+    }
+  );
+  assert.equal(res.runId, 'run-real-shape-1');
+});

@@ -147,3 +147,13 @@ test('names: boss titles rotate from the head pool and record history', () => {
   assert.equal(history.length, 2);
   assert.ok(history.every((e) => e.language === 'titles' && e.role === 'head-honcho'));
 });
+
+test('names: --json prints structured JSON with drawn names while plain text stays default', () => {
+  const r = spawnSync(process.execPath, [bin, 'name', '--language', 'es', '--count', '2', '--no-record', '--json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(parsed.language, 'es');
+  assert.ok(Array.isArray(parsed.names));
+  assert.equal(parsed.names.length, 2);
+  for (const n of parsed.names) assert.match(n, /^[a-z]+(?:-\d+)?$/);
+});

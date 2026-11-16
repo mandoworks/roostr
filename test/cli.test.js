@@ -76,6 +76,16 @@ test('spawn, outcome and summary dispatch to the ledger and the summary', () => 
     assert.equal(sum.status, 0, sum.stderr);
     const data = JSON.parse(sum.stdout);
     assert.equal(data.runs, 1);
+
+    const ls = spawnSync(process.execPath, [bin, 'ledger', 'spawn', '--pane', 'w1:p3', '--task', 'add tests', '--json'], { env, encoding: 'utf8' });
+    assert.equal(ls.status, 0, ls.stderr);
+    const lsData = JSON.parse(ls.stdout);
+    assert.ok(lsData.runId);
+    const lo = spawnSync(process.execPath, [bin, 'outcome', '--run', lsData.runId, '--result', 'pass', '--json'], { env, encoding: 'utf8' });
+    assert.equal(lo.status, 0, lo.stderr);
+    const loData = JSON.parse(lo.stdout);
+    assert.equal(loData.runId, lsData.runId);
+    assert.equal(loData.outcome, 'pass');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -12,6 +12,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const stateDir = require('./state-dir');
 
 const DEFAULT_RATES = {
   'gemini-3.8-flash': { input: 0.75, output: 3.75 },
@@ -23,12 +24,7 @@ function normalize(name) {
 }
 
 function overrideFile() {
-  if (process.env.ROOSTR_PRICES) return process.env.ROOSTR_PRICES;
-  if (process.env.CREW_BOARD_PRICES) return process.env.CREW_BOARD_PRICES;
-  const roostr = path.join(os.homedir(), '.roostr', 'prices.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'prices.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('prices.json', ['ROOSTR_PRICES', 'CREW_BOARD_PRICES']);
 }
 
 let overrideCache = null; // { file, key, value }

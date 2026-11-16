@@ -3,14 +3,15 @@
 // board tick so a crash or restart still knows which workspaces, panes,
 // directories, models and tasks were open. The file is small and disposable.
 //
-// Default location is ~/.crew-board/sessions.json. CREW_BOARD_STATE_DIR moves
-// it into that directory instead. Writes go to a temp file and are then
+// Default location is ~/.roostr/sessions.json. ROOSTR_STATE_DIR or CREW_BOARD_STATE_DIR
+// moves it into that directory instead. Writes go to a temp file and are then
 // renamed, so a crash never leaves half a JSON document behind.
 
 const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const stateDir = require('./state-dir');
 
 // Per file memory: the last payload written, plus each pane's signature and
 // updatedAt, so unchanged panes keep their original timestamp and unchanged
@@ -19,10 +20,9 @@ const memory = new Map();
 
 function sessionsFile(filePath) {
   if (filePath) return path.resolve(filePath);
-  if (process.env.CREW_BOARD_STATE_DIR) {
-    return path.join(process.env.CREW_BOARD_STATE_DIR, 'sessions.json');
-  }
-  return path.join(os.homedir(), '.crew-board', 'sessions.json');
+  return stateDir.resolvePath('sessions.json', ['ROOSTR_SESSIONS', 'CREW_BOARD_SESSIONS'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
 }
 
 function clean(value, max = 240) {

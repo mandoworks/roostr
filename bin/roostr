@@ -48,8 +48,8 @@ if (argv[0] === 'report') {
   } else {
     process.exitCode = p || 0;
   }
-} else if (argv[0] === 'outcome') {
-  process.exitCode = require(path.join(src, 'ledger.js')).main(argv);
+} else if (argv[0] === 'outcome' || argv[0] === 'ledger') {
+  process.exitCode = require(path.join(src, 'ledger.js')).main(argv[0] === 'ledger' ? argv.slice(1) : argv);
 } else if (argv[0] === 'summary') {
   process.exitCode = require(path.join(src, 'summary.js')).main(argv.slice(1));
 } else if (argv[0] === 'analytics') {

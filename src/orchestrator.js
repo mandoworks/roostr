@@ -220,7 +220,7 @@ async function executeSpawn(opts = {}, deps = {}) {
       effort: plan.effort,
       role: plan.role,
     });
-    const entry = ledgerMod.spawn({
+    const spawned = ledgerMod.spawn({
       paneId,
       task: opts.task,
       role: plan.role,
@@ -230,6 +230,7 @@ async function executeSpawn(opts = {}, deps = {}) {
       effort: plan.effort,
       tier: plan.tier,
     });
+    const runId = (spawned && spawned.entry && spawned.entry.runId) || (spawned && spawned.runId) || null;
 
     return {
       success: true,
@@ -240,7 +241,7 @@ async function executeSpawn(opts = {}, deps = {}) {
       tool: plan.tool,
       model: plan.model,
       effort: plan.effort,
-      runId: entry ? entry.runId : null,
+      runId,
       steps: plan.steps,
     };
   }
@@ -277,7 +278,7 @@ async function executeSpawn(opts = {}, deps = {}) {
     role: plan.role,
   });
 
-  const entry = ledgerMod.spawn({
+  const spawned = ledgerMod.spawn({
     paneId,
     task: opts.task,
     role: plan.role,
@@ -287,6 +288,7 @@ async function executeSpawn(opts = {}, deps = {}) {
     effort: plan.effort,
     tier: plan.tier,
   });
+  const runId = (spawned && spawned.entry && spawned.entry.runId) || (spawned && spawned.runId) || null;
 
   if (plan.prompt) {
     await runner(['agent', 'wait', plan.name, '--state', 'idle', '--timeout', '30']);
@@ -317,7 +319,7 @@ async function executeSpawn(opts = {}, deps = {}) {
     tool: plan.tool,
     model: plan.model,
     effort: plan.effort,
-    runId: entry ? entry.runId : null,
+    runId,
     onboard: onboardResult,
     steps: plan.steps,
   };
@@ -326,7 +328,7 @@ async function executeSpawn(opts = {}, deps = {}) {
 async function mainSpawn(argv, deps = {}) {
   const opts = parseSpawnArgs(argv);
   if (!opts.task && !opts.pane) {
-    process.stderr.write('usage: roostr spawn --task "<task>" [--execute] [--reuse <id>] [--role <role>] [--kind <kind>] [--effort low|medium|high] [--model <name>]\n');
+    process.stderr.write('usage: roostr spawn [--pane <id>] --task "<task>" [--execute] [--reuse <id>] [--role <role>] [--kind <kind>] [--effort low|medium|high] [--model <name>] [--json]\n');
     return 2;
   }
   if (opts.execute) {

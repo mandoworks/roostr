@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const state = require('./state');
+const stateDir = require('./state-dir');
 const recover = require('./recover');
 const ledger = require('./ledger');
 const crewfile = require('./crewfile');
@@ -22,11 +23,15 @@ const LIFECYCLE_STATES = ['working', 'blocked', 'done', 'idle', 'unknown'];
 const MAX_WAKES_PER_DAY = 12;
 
 function daemonStateFile() {
-  return process.env.CREW_BOARD_DAEMON_STATE || path.join(os.homedir(), '.crew-board', 'daemon-state.json');
+  return stateDir.resolvePath('daemon-state.json', ['ROOSTR_DAEMON_STATE', 'CREW_BOARD_DAEMON_STATE'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
 }
 
 function escalationsFile() {
-  return process.env.CREW_BOARD_ESCALATIONS || path.join(os.homedir(), '.crew-board', 'escalations.json');
+  return stateDir.resolvePath('escalations.json', ['ROOSTR_ESCALATIONS', 'CREW_BOARD_ESCALATIONS'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
 }
 
 function createInitialState(now = Date.now()) {
