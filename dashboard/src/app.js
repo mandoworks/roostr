@@ -10,6 +10,11 @@ const {
   validatePaneLabel,
   validateAgentName,
   validateAgentKind,
+  validateOptionalModel,
+  validateOptionalEffort,
+  validateOptionalSessionId,
+  validateSplitDirection,
+  validateMuseMessage,
   resolveStaticPath,
 } = require('./validate');
 const {
@@ -22,6 +27,8 @@ const {
 } = require('./session');
 const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
 const { createNamesStore } = require('./names');
+const { getRecoverySnapshot } = require('./sessions-bridge');
+const { getMuseSnapshot, sendPioRelayMessage } = require('./muse');
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -191,7 +198,7 @@ function decodeSubpath(encoded) {
   }
 }
 
-function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
+function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl }) {
   const authPublicDir = path.join(config.publicDir, 'auth');
   const controlPublicDir = path.join(config.publicDir, 'control');
   const namesPublicDir = path.join(config.publicDir, 'names');
@@ -417,6 +424,60 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
       return sendJson(res, 200, { entries: audit.readRecent(20) });
     }
 
+    if (pathname === '/agents/api/sessions' && method === 'GET') {
+      return sendJson(res, 200, getRecoverySnapshot({
+        roostrStateDir: config.roostrStateDir,
+        roostrRepoDir: config.roostrRepoDir,
+      }));
+    }
+
+    if (pathname === '/agents/api/muse' && method === 'GET') {
+      return sendJson(res, 200, getMuseSnapshot({
+        staticDir: config.staticDir,
+        statusPath: config.statusPath,
+        namesStore,
+      }));
+    }
+
+    if (pathname === '/agents/api/muse/message' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const mv = validateMuseMessage(body);
+      if (!mv.ok) {
+        return sendJson(res, 400, { error: mv.error });
+      }
+      const relayRes = await sendPioRelayMessage({
+        piorelayBase: config.piorelayBase,
+        from: session.label || session.sub || 'pio',
+        to: mv.value.to,
+        subject: mv.value.subject,
+        body: mv.value.body,
+        project: mv.value.project,
+        threadId: mv.value.threadId,
+        fetchImpl,
+      });
+      if (!relayRes.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'muse.message',
+          summary: `to=${mv.value.to} err=${relayRes.error}`,
+          ok: false,
+        });
+        return sendJson(res, relayRes.status || 502, { error: relayRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'muse.message',
+        summary: `to=${mv.value.to} subject=${mv.value.subject.slice(0, 40)}`,
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, relay: relayRes.result });
+    }
+
     if (pathname === '/agents/api/names' && method === 'GET') {
       return sendJson(res, 200, namesStore.snapshot());
     }
@@ -627,22 +688,123 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
         if (!kv.ok) {
           return sendJson(res, 400, { error: kv.error });
         }
+        const mv = validateOptionalModel(body.model);
+        if (!mv.ok) {
+          return sendJson(res, 400, { error: mv.error });
+        }
+        const ev = validateOptionalEffort(body.effort);
+        if (!ev.ok) {
+          return sendJson(res, 400, { error: ev.error });
+        }
+        const sv = validateOptionalSessionId(body.session);
+        if (!sv.ok) {
+          return sendJson(res, 400, { error: sv.error });
+        }
+        const startOpts = {
+          model: mv.value,
+          effort: ev.value,
+          session: sv.value,
+        };
         try {
-          await herdr.startAgent(paneId, nv.value, kv.value);
+          await herdr.startAgent(paneId, nv.value, kv.value, startOpts);
           audit.log({
             ip: clientIp,
             action: 'pane.start',
             paneId,
-            summary: `name=${nv.value} kind=${kv.value}`,
+            summary: `name=${nv.value} kind=${kv.value}${mv.value ? ` model=${mv.value}` : ''}${ev.value ? ` effort=${ev.value}` : ''}${sv.value ? ` session=${sv.value}` : ''}`,
             ok: true,
           });
-          return sendJson(res, 200, { ok: true, name: nv.value, kind: kv.value });
+          return sendJson(res, 200, {
+            ok: true,
+            name: nv.value,
+            kind: kv.value,
+            model: mv.value,
+            effort: ev.value,
+            session: sv.value,
+          });
         } catch (err) {
           audit.log({
             ip: clientIp,
             action: 'pane.start',
             paneId,
             summary: `name=${nv.value} kind=${kv.value} err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'split' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const dv = validateSplitDirection(body.direction);
+        if (!dv.ok) {
+          return sendJson(res, 400, { error: dv.error });
+        }
+
+        let cwdVal = null;
+        if (body.cwd !== undefined && body.cwd !== null && body.cwd !== '') {
+          if (typeof body.cwd !== 'string' || /[\x00-\x1f\x7f-\x9f]/.test(body.cwd)) {
+            return sendJson(res, 400, { error: 'invalid cwd' });
+          }
+          const trimmedCwd = body.cwd.trim();
+          if (trimmedCwd.startsWith('-')) {
+            return sendJson(res, 400, { error: 'invalid cwd' });
+          }
+          if (trimmedCwd) {
+            cwdVal = trimmedCwd;
+          }
+        }
+
+        let startCfg = null;
+        if (body.startAgent !== undefined && body.startAgent !== null) {
+          if (typeof body.startAgent !== 'object' || Array.isArray(body.startAgent)) {
+            return sendJson(res, 400, { error: 'startAgent must be an object' });
+          }
+          const sa = body.startAgent;
+          const nv = validateAgentName(sa.name);
+          if (!nv.ok) return sendJson(res, 400, { error: nv.error });
+          const kv = validateAgentKind(sa.kind);
+          if (!kv.ok) return sendJson(res, 400, { error: kv.error });
+          const mv = validateOptionalModel(sa.model);
+          if (!mv.ok) return sendJson(res, 400, { error: mv.error });
+          const ev = validateOptionalEffort(sa.effort);
+          if (!ev.ok) return sendJson(res, 400, { error: ev.error });
+          const sv = validateOptionalSessionId(sa.session);
+          if (!sv.ok) return sendJson(res, 400, { error: sv.error });
+          startCfg = {
+            name: nv.value,
+            kind: kv.value,
+            opts: { model: mv.value, effort: ev.value, session: sv.value },
+          };
+        }
+
+        try {
+          const splitResult = await herdr.splitPane(paneId, dv.value, cwdVal);
+          const newPaneId = typeof splitResult === 'string'
+            ? splitResult
+            : (splitResult && splitResult.paneId) || null;
+          if (startCfg && newPaneId) {
+            await herdr.startAgent(newPaneId, startCfg.name, startCfg.kind, startCfg.opts);
+          }
+          audit.log({
+            ip: clientIp,
+            action: 'pane.split',
+            paneId,
+            summary: `direction=${dv.value}${newPaneId ? ` newPane=${newPaneId}` : ''}${startCfg ? ` start=${startCfg.name}:${startCfg.kind}` : ''}`,
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true, paneId: newPaneId });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.split',
+            paneId,
+            summary: `direction=${dv.value} err=${err.message}`,
             ok: false,
           });
           return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });

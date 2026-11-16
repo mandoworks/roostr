@@ -15,6 +15,9 @@ function loadConfig(env = process.env) {
     || path.join(homeDir, '.config', 'roostr-dashboard');
 
   const staticDir = env.STATIC_DIR || '/home/ubuntu/service-directory/agents';
+  const roostrStateDir = env.ROOSTR_STATE_DIR || path.join(homeDir, '.roostr');
+  const roostrRepoDir = env.ROOSTR_REPO_DIR || path.resolve(__dirname, '..', '..');
+  const piorelayBase = env.PIORELAY_BASE || 'http://100.97.196.10:3016/api/v1';
 
   return {
     host: '127.0.0.1',
@@ -22,6 +25,9 @@ function loadConfig(env = process.env) {
     rpId: env.RP_ID || 'ovh.tail5f1fde.ts.net',
     origin: env.ORIGIN || 'https://ovh.tail5f1fde.ts.net',
     staticDir,
+    roostrStateDir,
+    roostrRepoDir,
+    piorelayBase,
     namesPath: env.NAMES_PATH || path.join(staticDir, 'names.json'),
     statusPath: env.AGENT_STATUS_PATH || '/home/ubuntu/service-directory/agent-status/status.json',
     publicDir: path.join(__dirname, '..', 'public'),

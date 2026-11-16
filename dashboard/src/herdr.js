@@ -9,6 +9,10 @@ const {
   validatePaneLabel,
   validateAgentName,
   validateAgentKind,
+  validateOptionalModel,
+  validateOptionalEffort,
+  validateOptionalSessionId,
+  validateSplitDirection,
 } = require('./validate');
 
 class HerdrError extends Error {
@@ -46,6 +50,7 @@ const ALLOWED_VERBS = new Set([
   'pane:read',
   'pane:send-keys',
   'pane:rename',
+  'pane:split',
   'agent:prompt',
   'agent:start',
   'pane:close',
@@ -172,15 +177,74 @@ function createHerdrClient(opts = {}) {
     invalidateCache();
   }
 
-  async function startAgent(paneId, name, kind) {
+  async function startAgent(paneId, name, kind, opts = {}) {
     const pv = validatePaneId(paneId);
     if (!pv.ok) throw new Error(pv.error);
     const nv = validateAgentName(name);
     if (!nv.ok) throw new Error(nv.error);
     const kv = validateAgentKind(kind);
     if (!kv.ok) throw new Error(kv.error);
-    await runVerb('agent:start', ['agent', 'start', nv.value, '--kind', kv.value, '--pane', pv.value]);
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const sv = validateOptionalSessionId(options.session);
+    if (!sv.ok) throw new Error(sv.error);
+    const mv = validateOptionalModel(options.model);
+    if (!mv.ok) throw new Error(mv.error);
+    const ev = validateOptionalEffort(options.effort);
+    if (!ev.ok) throw new Error(ev.error);
+
+    const nativeArgs = [];
+    const kindVal = kv.value;
+    if (kindVal === 'claude') {
+      if (sv.value) nativeArgs.push('--resume', sv.value);
+      if (mv.value) nativeArgs.push('--model', mv.value);
+      if (ev.value) nativeArgs.push('--effort', ev.value);
+    } else if (kindVal === 'opencode' || kindVal === 'kilo') {
+      if (sv.value) nativeArgs.push('--session', sv.value);
+      if (mv.value) nativeArgs.push('--model', mv.value);
+    } else if (kindVal === 'agy') {
+      if (sv.value) nativeArgs.push('--conversation', sv.value);
+      if (mv.value) nativeArgs.push('--model', mv.value);
+      if (ev.value) nativeArgs.push('--effort', ev.value);
+    }
+
+    const args = ['agent', 'start', nv.value, '--kind', kindVal, '--pane', pv.value];
+    if (nativeArgs.length > 0) {
+      args.push('--', ...nativeArgs);
+    }
+    await runVerb('agent:start', args);
     invalidateCache();
+  }
+
+  async function splitPane(paneId, direction = 'right', cwd = null) {
+    const pv = validatePaneId(paneId);
+    if (!pv.ok) throw new Error(pv.error);
+    const dv = validateSplitDirection(direction);
+    if (!dv.ok) throw new Error(dv.error);
+
+    let cwdVal = null;
+    if (cwd !== undefined && cwd !== null && cwd !== '') {
+      if (typeof cwd !== 'string' || /[\x00-\x1f\x7f-\x9f]/.test(cwd)) {
+        throw new Error('invalid cwd');
+      }
+      const trimmedCwd = cwd.trim();
+      if (trimmedCwd.startsWith('-')) {
+        throw new Error('invalid cwd');
+      }
+      if (trimmedCwd) {
+        cwdVal = trimmedCwd;
+      }
+    }
+
+    const args = ['pane', 'split', '--pane', pv.value, '--direction', dv.value];
+    if (cwdVal) {
+      args.push('--cwd', cwdVal);
+    }
+    args.push('--no-focus');
+
+    const stdout = await runVerb('pane:split', args);
+    invalidateCache();
+    return extractSplitPaneId(stdout);
   }
 
   return {
@@ -192,8 +256,33 @@ function createHerdrClient(opts = {}) {
     promptAgent,
     renamePane,
     startAgent,
+    splitPane,
     closePane,
   };
+}
+
+function extractSplitPaneId(stdout) {
+  const raw = typeof stdout === 'string' ? stdout.trim() : '';
+  if (!raw) return null;
+  if (raw.startsWith('{')) {
+    try {
+      const doc = JSON.parse(raw);
+      const candidate = doc.pane_id
+        || doc.paneId
+        || doc.id
+        || (doc.result && (doc.result.pane_id || doc.result.paneId || doc.result.id));
+      if (typeof candidate === 'string' && validatePaneId(candidate).ok) {
+        return candidate;
+      }
+    } catch {
+      // fall through to regex match
+    }
+  }
+  const match = raw.match(/\b([A-Za-z0-9_][A-Za-z0-9_-]{0,31}:[A-Za-z0-9_-]{1,32})\b/);
+  if (match && validatePaneId(match[1]).ok) {
+    return match[1];
+  }
+  return null;
 }
 
 function resolveAgentTargetFromSnapshot(snapshotDoc, paneId) {
