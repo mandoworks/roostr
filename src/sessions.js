@@ -92,21 +92,42 @@ function rowsFromModel(model) {
   return [];
 }
 
+function slugify(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function handoffPath(cwd, name, kind) {
+  const slug = slugify(name) || slugify(kind);
+  if (!slug || !cwd) return null;
+  const file = path.join(cwd, 'docs', 'orchestration', 'handoffs', `latest-${slug}.md`);
+  try {
+    return fs.statSync(file).isFile() ? file : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isWorktree(cwd) {
+  return typeof cwd === 'string' && cwd.includes('/.worktrees/');
+}
+
 function fromRow(row, model, agent) {
   const reverse = new Map();
   const workspaces = model.workspaces instanceof Map ? model.workspaces : new Map();
   for (const [id, label] of workspaces) if (!reverse.has(label)) reverse.set(label, id);
   const workspace = clean(row.workspace);
   const kind = clean(row.kind);
+  const name = clean(row.name) || clean(row.paneId);
+  const cwd = clean(row.cwd);
   // The report is authoritative for numbers, but a session id from a statusline
   // written for another agent (a UUID on an opencode pane) must not win.
   const reported = clean(row.session, 128);
-  return {
+  const entry = {
     paneId: clean(row.paneId),
     workspace,
     workspaceId: clean(row.workspaceId) || reverse.get(workspace) || null,
-    name: clean(row.name) || clean(row.paneId),
-    cwd: clean(row.cwd),
+    name,
+    cwd,
     agent: kind,
     model: modelValue(row.model),
     modelSrc: row.model && typeof row.model === 'object' ? clean(row.model.src) : null,
@@ -115,6 +136,10 @@ function fromRow(row, model, agent) {
     task: clean(row.task),
     session: validSession(kind, reported) ? reported : agentSession(kind, agent),
   };
+  const handoff = handoffPath(cwd, name, kind);
+  if (handoff) entry.handoff = handoff;
+  if (isWorktree(cwd)) entry.worktree = true;
+  return entry;
 }
 
 // Herdr reports an agent's session as agent_session.value. Older snapshots
@@ -129,26 +154,34 @@ function agentSession(kind, agent) {
 
 function fromAgent(agent, pane, workspace) {
   const parsed = labelParts(pane.label);
-  return {
+  const name = clean(agent.name) || parsed.name || clean(agent.pane_id);
+  const cwd = clean(agent.cwd) || clean(pane.cwd);
+  const kind = clean(agent.agent);
+  const entry = {
     paneId: clean(agent.pane_id),
     workspace: clean(workspace.label) || clean(agent.workspace_id),
     workspaceId: clean(agent.workspace_id) || clean(workspace.workspace_id),
-    name: clean(agent.name) || parsed.name || clean(agent.pane_id),
-    cwd: clean(agent.cwd) || clean(pane.cwd),
-    agent: clean(agent.agent),
+    name,
+    cwd,
+    agent: kind,
     model: null,
     modelSrc: null,
     effort: null,
     status: clean(agent.agent_status),
     task: parsed.task,
-    session: agentSession(clean(agent.agent), agent),
+    session: agentSession(kind, agent),
   };
+  const handoff = handoffPath(cwd, name, kind);
+  if (handoff) entry.handoff = handoff;
+  if (isWorktree(cwd)) entry.worktree = true;
+  return entry;
 }
 
 function signature(session) {
   return JSON.stringify([
     session.paneId, session.workspace, session.workspaceId, session.name, session.cwd,
     session.agent, session.model, session.modelSrc, session.effort, session.status, session.task, session.session,
+    session.handoff || null, Boolean(session.worktree),
   ]);
 }
 
@@ -357,19 +390,36 @@ function parseArgs(argv) {
   return opts;
 }
 
+const RESOLVABLE_KINDS = new Set(['opencode', 'kilo', 'claude', 'agy']);
+
+function normalizeKind(kind) {
+  const k = String(kind || '').toLowerCase();
+  return k === 'antigravity' ? 'agy' : k;
+}
+
 // Before a restore, a saved pane may have no usable session id because it died
 // before the board resolved it. Match the saved pane against the agent's own
-// store by directory and the task or name in the title. A weak match is
-// skipped: a blank session is better than someone else's conversation.
+// store by directory and the task or name in the title. For opencode, a weak
+// match is skipped; for agy, claude, and kilo, the most recently updated
+// unclaimed session in that cwd is used as fallback.
 async function resolveSavedSessions(entries, options = {}) {
   const list = Array.isArray(entries) ? entries.filter((s) => s && s.agent && s.cwd) : [];
-  const need = list.filter((s) => String(s.agent).toLowerCase() === 'opencode' && !validSession(s.agent, s.session));
+  const need = list.filter((s) => {
+    const k = normalizeKind(s.agent);
+    return RESOLVABLE_KINDS.has(k) && !validSession(s.agent, s.session);
+  });
   if (!need.length) return [];
-  let store;
-  try { store = await opencodeSessionList(options); } catch (e) { return []; }
+  const stores = new Map();
+  for (const s of need) {
+    const k = normalizeKind(s.agent);
+    if (stores.has(k)) continue;
+    try { stores.set(k, await sessionList(k, options)); } catch (e) { stores.set(k, []); }
+  }
   const claimed = new Set(list.filter((s) => validSession(s.agent, s.session)).map((s) => s.session));
   const out = [];
   for (const s of need) {
+    const k = normalizeKind(s.agent);
+    const store = stores.get(k) || [];
     const task = String(s.task || '').trim().toLowerCase();
     const name = String(s.name || '').trim().toLowerCase();
     const candidates = store.filter((x) => x && typeof x.id === 'string' && x.directory === s.cwd && !claimed.has(x.id));
@@ -386,7 +436,10 @@ async function resolveSavedSessions(entries, options = {}) {
         bestScore = score;
       }
     }
-    if (!best || !bestScore) continue;
+    if (!best && k !== 'opencode' && candidates.length) {
+      best = candidates.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
+    }
+    if (!best || (k === 'opencode' && !bestScore)) continue;
     claimed.add(best.id);
     s.session = best.id;
     out.push({ paneId: s.paneId, session: best.id, saved: s.saved || null });
@@ -411,6 +464,7 @@ function agentArgs(s) {
     if (exactModel) args.push('--model', exactModel);
   } else if (s.agent === 'agy' || s.agent === 'antigravity') {
     if (session) args.push('--conversation', session);
+    if (exactModel) args.push('--model', exactModel);
     if (s.effort) args.push('--effort', s.effort);
   }
   return args;
@@ -419,7 +473,150 @@ function agentArgs(s) {
 // The agent's own session store, cached briefly: a board tick is every 2 s and
 // spawning the CLI on each one would cost more than the feature is worth.
 const SESSION_LIST_TTL_MS = 10000;
-const sessionListCache = new Map(); // kind:bin -> { at, list }
+const sessionListCache = new Map(); // kind:store -> { at, list }
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+const HEAD_BYTES = 16384;
+
+function readHead(filePath, maxBytes = HEAD_BYTES) {
+  let fd;
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.allocUnsafe(maxBytes);
+    const n = fs.readSync(fd, buf, 0, maxBytes, 0);
+    return buf.toString('utf8', 0, n);
+  } catch (e) {
+    return '';
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch (e) {}
+    }
+  }
+}
+
+function agyBrainDir(options = {}) {
+  return options.agyBrainDir || process.env.ROOSTR_AGY_BRAIN_DIR
+    || path.join(os.homedir(), '.gemini', 'antigravity-cli', 'brain');
+}
+
+function claudeProjectsDir(options = {}) {
+  return options.claudeProjectsDir || process.env.ROOSTR_CLAUDE_PROJECTS_DIR
+    || path.join(os.homedir(), '.claude', 'projects');
+}
+
+function extractAgyDirectory(text) {
+  if (typeof text !== 'string' || !text) return null;
+  const cmdMatch = /Command Working Directory:\s*([^\r\n]+)/.exec(text);
+  if (cmdMatch && cmdMatch[1].trim()) return cmdMatch[1].trim();
+  const wsMatch = /Active Workspaces:\s*(?:\r?\n\s*-\s*([^\r\n]+))/.exec(text);
+  if (wsMatch && wsMatch[1].trim()) return wsMatch[1].trim();
+  return null;
+}
+
+function extractAgyTitle(content) {
+  if (typeof content !== 'string' || !content) return null;
+  const reqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/.exec(content);
+  return clean(reqMatch ? reqMatch[1] : content, 120);
+}
+
+function agySessionList(options = {}) {
+  const dir = agyBrainDir(options);
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return []; }
+  const items = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !UUID_RE.test(entry.name)) continue;
+    const id = entry.name;
+    const convDir = path.join(dir, id);
+    const transcriptPath = path.join(convDir, '.system_generated', 'logs', 'transcript.jsonl');
+    let updated = 0;
+    try { updated = fs.statSync(transcriptPath).mtimeMs; } catch (e) {
+      try { updated = fs.statSync(convDir).mtimeMs; } catch (e2) { updated = 0; }
+    }
+    let directory = null;
+    let title = null;
+    const head = readHead(transcriptPath);
+    if (head) {
+      for (const line of head.split('\n')) {
+        if (!line.trim()) continue;
+        let obj;
+        try { obj = JSON.parse(line); } catch (e) { continue; }
+        if (!directory && typeof obj.content === 'string') {
+          directory = extractAgyDirectory(obj.content);
+        }
+        if (!title && obj.type === 'USER_INPUT' && typeof obj.content === 'string') {
+          title = extractAgyTitle(obj.content);
+        }
+        if (directory && title) break;
+      }
+    }
+    items.push({ id, kind: 'agy', directory, title, updated });
+  }
+  items.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  return items.slice(0, options.limit || 200);
+}
+
+function extractClaudeText(msg) {
+  const content = msg && msg.message ? msg.message.content : (msg && msg.content);
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    if (!trimmed || /^<(local-command-caveat|command-name)>/i.test(trimmed)) return null;
+    return clean(trimmed, 120);
+  }
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (part && part.type === 'text' && typeof part.text === 'string') {
+        const t = clean(part.text, 120);
+        if (t) return t;
+      }
+    }
+  }
+  return null;
+}
+
+function claudeSessionList(options = {}) {
+  const dir = claudeProjectsDir(options);
+  let projects;
+  try { projects = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return []; }
+  const items = [];
+  for (const proj of projects) {
+    if (!proj.isDirectory()) continue;
+    const projPath = path.join(dir, proj.name);
+    let files;
+    try { files = fs.readdirSync(projPath, { withFileTypes: true }); } catch (e) { continue; }
+    for (const f of files) {
+      if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
+      const id = f.name.slice(0, -6);
+      if (!UUID_RE.test(id)) continue;
+      const filePath = path.join(projPath, f.name);
+      let updated = 0;
+      try { updated = fs.statSync(filePath).mtimeMs; } catch (e) { continue; }
+      let directory = null;
+      let title = null;
+      const head = readHead(filePath);
+      if (head) {
+        for (const line of head.split('\n')) {
+          if (!line.trim()) continue;
+          let obj;
+          try { obj = JSON.parse(line); } catch (e) { continue; }
+          if (!directory && typeof obj.cwd === 'string' && obj.cwd) {
+            directory = obj.cwd;
+          }
+          if (!title) {
+            if (obj.type === 'summary' && typeof obj.summary === 'string') {
+              title = clean(obj.summary, 120);
+            } else if (obj.type === 'user' || (obj.message && obj.message.role === 'user')) {
+              title = extractClaudeText(obj);
+            }
+          }
+          if (directory && title) break;
+        }
+      }
+      items.push({ id, kind: 'claude', directory, title, updated });
+    }
+  }
+  items.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  return items.slice(0, options.limit || 200);
+}
 
 function execJson(bin, args, timeout) {
   return new Promise((resolve, reject) => {
@@ -441,7 +638,25 @@ function sessionBin(kind, options = {}) {
 
 async function sessionList(kind, options = {}) {
   const now = options.now || Date.now();
-  const k = String(kind || 'opencode').toLowerCase();
+  const k = normalizeKind(kind || 'opencode');
+  if (k === 'agy') {
+    const dir = agyBrainDir(options);
+    const key = `agy:${dir}`;
+    const hit = sessionListCache.get(key);
+    if (!options.noCache && hit && now - hit.at < SESSION_LIST_TTL_MS) return hit.list;
+    const items = agySessionList(options);
+    sessionListCache.set(key, { at: now, list: items });
+    return items;
+  }
+  if (k === 'claude') {
+    const dir = claudeProjectsDir(options);
+    const key = `claude:${dir}`;
+    const hit = sessionListCache.get(key);
+    if (!options.noCache && hit && now - hit.at < SESSION_LIST_TTL_MS) return hit.list;
+    const items = claudeSessionList(options);
+    sessionListCache.set(key, { at: now, list: items });
+    return items;
+  }
   const bin = sessionBin(k, options);
   const key = `${k}:${bin}`;
   const hit = sessionListCache.get(key);
@@ -463,11 +678,18 @@ function opencodeTitle(agent) {
   return m ? m[1].trim() : null;
 }
 
+function paneTitle(agent) {
+  const raw = typeof agent.terminal_title_stripped === 'string' ? agent.terminal_title_stripped : agent.terminal_title;
+  if (typeof raw !== 'string') return null;
+  const stripped = raw.replace(/^[A-Za-z]{2,12}\s*\|\s*/, '').trim();
+  return stripped || null;
+}
+
 // Fill a Herdr snapshot's agent.session_id from the agent's own session store.
-// Herdr only knows a session id when something reported one and opencode does
-// not, so backups would otherwise save null or a foreign id. Matching is
-// conservative: same directory and the exact title opencode shows. No match
-// stays unknown; a restore then starts fresh instead of resuming the wrong chat.
+// Herdr only knows a session id when something reported one. For opencode,
+// matching is conservative (same directory and exact terminal title). For agy,
+// claude, and kilo, match directory === cwd (title match when available,
+// otherwise most recently updated unclaimed session).
 async function resolveAgentSessions(snap, options = {}) {
   const agents = snap && Array.isArray(snap.agents) ? snap.agents : [];
   // Herdr may already know the session id even when no report did. Promote it
@@ -477,24 +699,50 @@ async function resolveAgentSessions(snap, options = {}) {
     const known = clean(a.agent_session && a.agent_session.value, 128);
     if (validSession(a.agent, known)) a.session_id = known;
   }
-  const unresolved = agents.filter((a) => a && a.pane_id && a.agent && !validSession(a.agent, a.session_id));
-  if (!unresolved.some((a) => String(a.agent).toLowerCase() === 'opencode')) return [];
-  let list;
-  try { list = await opencodeSessionList(options); } catch (e) { return []; }
+  const unresolved = agents.filter((a) => {
+    if (!a || !a.pane_id || !a.agent || validSession(a.agent, a.session_id)) return false;
+    return RESOLVABLE_KINDS.has(normalizeKind(a.agent));
+  });
+  if (!unresolved.length) return [];
+  const stores = new Map();
+  for (const a of unresolved) {
+    const k = normalizeKind(a.agent);
+    if (stores.has(k)) continue;
+    try { stores.set(k, await sessionList(k, options)); } catch (e) { stores.set(k, []); }
+  }
   const taken = new Set(agents.filter((a) => a && validSession(a.agent, a.session_id)).map((a) => a.session_id));
   const resolved = [];
   for (const a of unresolved) {
-    if (String(a.agent).toLowerCase() !== 'opencode') continue;
-    const title = opencodeTitle(a);
-    if (!title) continue;
-    const hit = list.find((s) => s && typeof s.id === 'string' && !taken.has(s.id)
-      && s.directory === a.cwd && String(s.title || '').trim() === title);
+    const k = normalizeKind(a.agent);
+    const list = stores.get(k) || [];
+    let hit = null;
+    if (k === 'opencode') {
+      const title = opencodeTitle(a);
+      if (!title) continue;
+      hit = list.find((s) => s && typeof s.id === 'string' && !taken.has(s.id)
+        && s.directory === a.cwd && String(s.title || '').trim() === title);
+    } else {
+      if (!a.cwd) continue;
+      const candidates = list.filter((s) => s && typeof s.id === 'string' && !taken.has(s.id) && s.directory === a.cwd);
+      if (!candidates.length) continue;
+      const title = paneTitle(a);
+      if (title) {
+        const lower = title.toLowerCase();
+        hit = candidates.find((s) => {
+          const st = String(s.title || '').trim().toLowerCase();
+          return st && (st === lower || st.includes(lower) || lower.includes(st));
+        }) || null;
+      }
+      if (!hit) {
+        hit = candidates.slice().sort((x, y) => (y.updated || 0) - (x.updated || 0))[0];
+      }
+    }
     if (!hit) continue;
     taken.add(hit.id);
     a.session_id = hit.id;
-    resolved.push({ paneId: a.pane_id, kind: 'opencode', session: hit.id });
+    resolved.push({ paneId: a.pane_id, kind: k, session: hit.id });
     if (options.writeBack && options.herdr && typeof options.herdr.reportAgentSession === 'function') {
-      try { await options.herdr.reportAgentSession(a.pane_id, 'opencode', hit.id); } catch (e) { /* metadata is best effort */ }
+      try { await options.herdr.reportAgentSession(a.pane_id, k, hit.id); } catch (e) { /* metadata is best effort */ }
     }
   }
   return resolved;

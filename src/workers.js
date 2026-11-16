@@ -282,6 +282,16 @@ async function main(argv, deps = {}) {
     }
   }
 
+  if (!deps.snapshot || deps.saveSessions) {
+    try {
+      await sessions.resolveAgentSessions(snap, { now: nowMs });
+      const save = deps.saveSessions || sessions.saveSessions;
+      save({ snapshot: snap, reports });
+    } catch (_) {
+      // Best-effort session persistence must not block worker snapshot publishing.
+    }
+  }
+
   const doc = buildSnapshot({ snapshot: snap, reports }, { host, now: nowMs });
   if (parsed.json) {
     stdout.write(JSON.stringify(doc, null, 2) + '\n');

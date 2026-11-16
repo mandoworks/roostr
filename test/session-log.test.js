@@ -8,7 +8,17 @@ const path = require('path');
 const log = require('../src/session-log');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-log-'));
-test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+const prevAgyDir = process.env.ROOSTR_AGY_BRAIN_DIR;
+const prevClaudeDir = process.env.ROOSTR_CLAUDE_PROJECTS_DIR;
+process.env.ROOSTR_AGY_BRAIN_DIR = path.join(dir, 'empty-agy');
+process.env.ROOSTR_CLAUDE_PROJECTS_DIR = path.join(dir, 'empty-claude');
+test.after(() => {
+  if (prevAgyDir === undefined) delete process.env.ROOSTR_AGY_BRAIN_DIR;
+  else process.env.ROOSTR_AGY_BRAIN_DIR = prevAgyDir;
+  if (prevClaudeDir === undefined) delete process.env.ROOSTR_CLAUDE_PROJECTS_DIR;
+  else process.env.ROOSTR_CLAUDE_PROJECTS_DIR = prevClaudeDir;
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function store(name, items) {
   const file = path.join(dir, name);
@@ -78,4 +88,67 @@ test('log: resume splits from the focused pane and passes the session id', async
 test('log: resume rejects an invalid id without touching herdr', async () => {
   const r = await log.resume({ id: 'nope', kind: 'opencode' }, {}, { herdr: { snapshot: async () => { throw new Error('should not run'); } } });
   assert.match(r.error, /no valid session id/);
+});
+
+test('log: --kind all includes agy and claude alongside opencode and kilo', async () => {
+  assert.deepEqual(log.KINDS, ['opencode', 'kilo', 'claude', 'agy']);
+  assert.match(log.USAGE, /opencode\|kilo\|claude\|agy\|all/);
+
+  const agyDir = fs.mkdtempSync(path.join(dir, 'agy-'));
+  const agyId = '11111111-1111-1111-1111-111111111111';
+  const agyLogs = path.join(agyDir, agyId, '.system_generated', 'logs');
+  fs.mkdirSync(agyLogs, { recursive: true });
+  fs.writeFileSync(path.join(agyLogs, 'transcript.jsonl'), JSON.stringify({
+    type: 'USER_INPUT',
+    content: 'Command Working Directory: /tmp/a\nFix agy log',
+  }) + '\n');
+
+  const claudeDir = fs.mkdtempSync(path.join(dir, 'claude-'));
+  const claudeProj = path.join(claudeDir, '-tmp-a');
+  fs.mkdirSync(claudeProj, { recursive: true });
+  const claudeId = '22222222-2222-2222-2222-222222222222';
+  fs.writeFileSync(path.join(claudeProj, `${claudeId}.jsonl`), JSON.stringify({
+    type: 'user',
+    cwd: '/tmp/a',
+    message: { role: 'user', content: 'Fix claude log' },
+  }) + '\n');
+
+  const list = await log.list({
+    kind: 'all',
+    noCache: true,
+    agyBrainDir: agyDir,
+    claudeProjectsDir: claudeDir,
+    bins: {
+      opencode: store('oc-all', [{ id: 'ses_oc', title: 'OC work', directory: '/tmp/a', updated: 10 }]),
+      kilo: store('kilo-all', [{ id: 'ses_kl', title: 'Kilo work', directory: '/tmp/a', updated: 20 }]),
+    },
+  });
+  const kinds = new Set(list.map((s) => s.kind));
+  assert.deepEqual([...kinds].sort(), ['agy', 'claude', 'kilo', 'opencode']);
+});
+
+test('log: resume works for agy and claude', async () => {
+  const calls = [];
+  const herdr = {
+    snapshot: async () => ({
+      workspaces: [{ workspace_id: 'w1', label: 'app' }],
+      panes: [{ pane_id: 'w1:p1', workspace_id: 'w1', focused: true, cwd: '/tmp/a' }],
+      agents: [],
+    }),
+    splitPane: async () => 'w1:p2',
+    startAgent: async (name, kind, pane, args) => { calls.push([name, kind, pane, args]); },
+    renamePane: async () => {},
+  };
+
+  const agyId = '11111111-1111-1111-1111-111111111111';
+  const rAgy = await log.resume({ id: agyId, kind: 'agy', title: 'Agy chat', directory: '/tmp/a' }, { workspace: 'w1' }, { herdr });
+  assert.equal(rAgy.kind, 'agy');
+  assert.equal(rAgy.session, agyId);
+  assert.deepEqual(calls[0][3], ['--conversation', agyId]);
+
+  const claudeId = '22222222-2222-2222-2222-222222222222';
+  const rClaude = await log.resume({ id: claudeId, kind: 'claude', title: 'Claude chat', directory: '/tmp/a' }, { workspace: 'w1' }, { herdr });
+  assert.equal(rClaude.kind, 'claude');
+  assert.equal(rClaude.session, claudeId);
+  assert.deepEqual(calls[1][3], ['--resume', claudeId]);
 });

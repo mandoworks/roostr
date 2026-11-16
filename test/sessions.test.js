@@ -524,3 +524,158 @@ test('resolveSavedSessions: a live claimed session is never handed to another pa
   assert.deepEqual(await sessions.resolveSavedSessions(entries, { opencodeBin: fake, noCache: true }), []);
   assert.equal(entries[1].session, null);
 });
+
+test('agentArgs: agy passes --model only when modelSrc is exact', () => {
+  assert.deepEqual(sessions.agentArgs({
+    agent: 'agy',
+    session: '11111111-1111-1111-1111-111111111111',
+    model: 'gemini-4-hydrogen-medium',
+    modelSrc: 'exact',
+    effort: 'medium',
+  }), ['--conversation', '11111111-1111-1111-1111-111111111111', '--model', 'gemini-4-hydrogen-medium', '--effort', 'medium']);
+
+  assert.deepEqual(sessions.agentArgs({
+    agent: 'antigravity',
+    session: '11111111-1111-1111-1111-111111111111',
+    model: 'Gemini 4 Hydrogen',
+    modelSrc: 'screen',
+    effort: 'high',
+  }), ['--conversation', '11111111-1111-1111-1111-111111111111', '--effort', 'high']);
+});
+
+test('sessionList: discovers agy sessions from ROOSTR_AGY_BRAIN_DIR', async () => {
+  const brainDir = fs.mkdtempSync(path.join(dir, 'agy-brain-'));
+  const prevEnv = process.env.ROOSTR_AGY_BRAIN_DIR;
+  process.env.ROOSTR_AGY_BRAIN_DIR = brainDir;
+  try {
+    const id1 = '11111111-2222-3333-4444-555555555555';
+    const logs1 = path.join(brainDir, id1, '.system_generated', 'logs');
+    fs.mkdirSync(logs1, { recursive: true });
+    fs.writeFileSync(path.join(logs1, 'transcript.jsonl'), [
+      JSON.stringify({
+        step_index: 0,
+        type: 'USER_INPUT',
+        content: '<USER_REQUEST>\nFix session recovery\n</USER_REQUEST>\nCommand Working Directory: /tmp/repo-one\n',
+      }),
+    ].join('\n') + '\n');
+
+    const id2 = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    fs.mkdirSync(path.join(brainDir, id2), { recursive: true });
+    fs.mkdirSync(path.join(brainDir, 'not-a-uuid'), { recursive: true });
+
+    const list = await sessions.sessionList('agy', { noCache: true });
+    assert.equal(list.length, 2);
+    const first = list.find((s) => s.id === id1);
+    assert.equal(first.kind, 'agy');
+    assert.equal(first.directory, '/tmp/repo-one');
+    assert.equal(first.title, 'Fix session recovery');
+    assert.equal(typeof first.updated, 'number');
+
+    const fallback = list.find((s) => s.id === id2);
+    assert.equal(fallback.kind, 'agy');
+    assert.equal(fallback.directory, null);
+    assert.equal(fallback.title, null);
+    assert.ok(fallback.updated > 0);
+  } finally {
+    if (prevEnv === undefined) delete process.env.ROOSTR_AGY_BRAIN_DIR;
+    else process.env.ROOSTR_AGY_BRAIN_DIR = prevEnv;
+  }
+});
+
+test('sessionList: discovers claude sessions from ROOSTR_CLAUDE_PROJECTS_DIR', async () => {
+  const projRoot = fs.mkdtempSync(path.join(dir, 'claude-proj-'));
+  const prevEnv = process.env.ROOSTR_CLAUDE_PROJECTS_DIR;
+  process.env.ROOSTR_CLAUDE_PROJECTS_DIR = projRoot;
+  try {
+    const proj = path.join(projRoot, '-tmp-repo-two');
+    fs.mkdirSync(proj, { recursive: true });
+    const id = '99999999-8888-7777-6666-555555555555';
+    fs.writeFileSync(path.join(proj, `${id}.jsonl`), [
+      JSON.stringify({ type: 'mode', mode: 'normal', sessionId: id }),
+      JSON.stringify({ type: 'user', cwd: '/tmp/repo-two', message: { role: 'user', content: 'Audit worker snapshots' } }),
+    ].join('\n') + '\n');
+    fs.writeFileSync(path.join(proj, 'ignore-me.jsonl'), '{}');
+
+    const list = await sessions.sessionList('claude', { noCache: true });
+    assert.equal(list.length, 1);
+    assert.equal(list[0].id, id);
+    assert.equal(list[0].kind, 'claude');
+    assert.equal(list[0].directory, '/tmp/repo-two');
+    assert.equal(list[0].title, 'Audit worker snapshots');
+    assert.ok(list[0].updated > 0);
+  } finally {
+    if (prevEnv === undefined) delete process.env.ROOSTR_CLAUDE_PROJECTS_DIR;
+    else process.env.ROOSTR_CLAUDE_PROJECTS_DIR = prevEnv;
+  }
+});
+
+test('resolveAgentSessions & resolveSavedSessions: resolve agy and claude by cwd', async () => {
+  const agyDir = fs.mkdtempSync(path.join(dir, 'agy-res-'));
+  const claudeDir = fs.mkdtempSync(path.join(dir, 'claude-res-'));
+  const agyId = '12121212-1212-1212-1212-121212121212';
+  const claudeId = '34343434-3434-3434-3434-343434343434';
+
+  const agyLogs = path.join(agyDir, agyId, '.system_generated', 'logs');
+  fs.mkdirSync(agyLogs, { recursive: true });
+  fs.writeFileSync(path.join(agyLogs, 'transcript.jsonl'), JSON.stringify({
+    type: 'USER_INPUT',
+    content: 'Active Workspaces:\n- /tmp/work-agy\nBuild parser',
+  }) + '\n');
+
+  const claudeProj = path.join(claudeDir, '-tmp-work-claude');
+  fs.mkdirSync(claudeProj, { recursive: true });
+  fs.writeFileSync(path.join(claudeProj, `${claudeId}.jsonl`), JSON.stringify({
+    type: 'user',
+    cwd: '/tmp/work-claude',
+    message: { role: 'user', content: 'Ship feature' },
+  }) + '\n');
+
+  const snap = {
+    agents: [
+      { pane_id: 'w1:p1', agent: 'agy', cwd: '/tmp/work-agy' },
+      { pane_id: 'w1:p2', agent: 'claude', cwd: '/tmp/work-claude' },
+    ],
+  };
+  const resolved = await sessions.resolveAgentSessions(snap, {
+    agyBrainDir: agyDir,
+    claudeProjectsDir: claudeDir,
+    noCache: true,
+  });
+  assert.equal(resolved.length, 2);
+  assert.equal(snap.agents[0].session_id, agyId);
+  assert.equal(snap.agents[1].session_id, claudeId);
+
+  const saved = [
+    { paneId: 'w1:p1', agent: 'agy', cwd: '/tmp/work-agy', session: null },
+    { paneId: 'w1:p2', agent: 'claude', cwd: '/tmp/work-claude', session: null },
+  ];
+  const savedFound = await sessions.resolveSavedSessions(saved, {
+    agyBrainDir: agyDir,
+    claudeProjectsDir: claudeDir,
+    noCache: true,
+  });
+  assert.equal(savedFound.length, 2);
+  assert.equal(saved[0].session, agyId);
+  assert.equal(saved[1].session, claudeId);
+});
+
+test('extractSessions: preserves handoff path and worktree flag when present', () => {
+  const wtCwd = path.join(dir, 'repo', '.worktrees', 'martin');
+  const handoffDir = path.join(wtCwd, 'docs', 'orchestration', 'handoffs');
+  fs.mkdirSync(handoffDir, { recursive: true });
+  const handoffFile = path.join(handoffDir, 'latest-martin.md');
+  fs.writeFileSync(handoffFile, '# handoff\n');
+
+  const model = {
+    workspaces: new Map([['w1', 'roostr']]),
+    rows: [
+      {
+        paneId: 'w1:p1', workspace: 'roostr', name: 'martin', cwd: wtCwd,
+        kind: 'agy', model: { v: null, src: 'unknown' }, effort: null, status: 'working', task: 'task', session: null,
+      },
+    ],
+  };
+  const extracted = sessions.extractSessions(model);
+  assert.equal(extracted[0].worktree, true);
+  assert.equal(extracted[0].handoff, handoffFile);
+});

@@ -93,5 +93,16 @@ if (argv[0] === 'report') {
   }
 } else {
   const args = argv[0] === 'board' ? argv.slice(1) : argv;
-  require(path.join(src, 'board.js')).main(args).then((code) => { process.exitCode = code; });
+  require(path.join(src, 'board.js')).main(args).then(async (code) => {
+    if (code === 0 && (args.includes('--json') || args.includes('--json-rows'))) {
+      try {
+        const herdr = require(path.join(src, 'herdr.js'));
+        const sessions = require(path.join(src, 'sessions.js'));
+        const snap = await herdr.snapshot();
+        await sessions.resolveAgentSessions(snap, { herdr, writeBack: false }).catch(() => {});
+        sessions.saveSessions(snap);
+      } catch (_) {}
+    }
+    process.exitCode = code;
+  });
 }
