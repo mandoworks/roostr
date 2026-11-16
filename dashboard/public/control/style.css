@@ -574,3 +574,293 @@ dialog input[type="text"] {
   justify-content: flex-end;
   gap: 8px;
 }
+
+
+/* Sidebar controls, view tabs, and collapsible groups */
+.layout.sidebar-collapsed {
+  grid-template-columns: 1fr;
+}
+
+.layout.sidebar-collapsed .sidebar-card {
+  display: none;
+}
+
+.sidebar-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab-pill {
+  flex: 1 1 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.tab-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-row input[type="text"],
+.filter-row select {
+  min-height: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.filter-row input[type="text"] {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.sidebar-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sidebar-actions-row button.small {
+  flex: 1 1 auto;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
+
+.collapse-toggle {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.collapse-toggle:hover {
+  background: var(--panel-alt);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.collapse-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.collapse-chevron {
+  display: inline-block;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.collapse-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapse-counts {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ws-group.collapsed .ws-children,
+.tab-group.collapsed .tab-children {
+  display: none;
+}
+
+/* Collapsible detail sections & quick chips */
+.detail-section {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.detail-section > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+.detail-section[open] > summary {
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.split-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Muse Agent Detail & Orchestration Drawer */
+.muse-header-card,
+.muse-summary-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  margin-bottom: 12px;
+}
+
+.muse-header-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.muse-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.muse-tasks-list,
+.muse-docs-container,
+.orchestration-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.muse-task-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+
+.muse-doc-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--bg);
+}
+
+.muse-doc-item > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.84rem;
+}
+
+.muse-doc-pre {
+  margin: 8px 0 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  max-height: 300px;
+  overflow-y: auto;
+  color: var(--text);
+}
+
+.orch-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px 0;
+}
+
+.orch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.orch-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.btn-link:hover {
+  border-color: var(--accent);
+}

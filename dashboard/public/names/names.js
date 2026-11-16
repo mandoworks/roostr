@@ -169,9 +169,15 @@
         }
       });
 
+      const manageLink = document.createElement('a');
+      manageLink.className = 'btn-link';
+      manageLink.href = `/agents/control/?select=${encodeURIComponent('muse:' + item.slug)}`;
+      manageLink.textContent = 'Manage in Control ->';
+
       form.appendChild(input);
       form.appendChild(saveBtn);
       form.appendChild(orchBtn);
+      form.appendChild(manageLink);
       card.appendChild(form);
       list.appendChild(card);
     }
@@ -196,9 +202,18 @@
 
       for (const w of h.workers) {
         const row = document.createElement('div');
-        row.className = 'audit-row';
+        row.className = 'orch-row';
         const label = w.name || w.agent || w.pane_id;
-        row.textContent = `${w.pane_id} | ${label} | ${w.state || 'unknown'} | ${w.task || ''}`;
+        const info = document.createElement('span');
+        info.textContent = `${w.pane_id} | ${label} | ${w.state || 'unknown'} | ${w.task || ''}`;
+        row.appendChild(info);
+        if (w.pane_id) {
+          const link = document.createElement('a');
+          link.className = 'btn-link';
+          link.href = `/agents/control/?select=${encodeURIComponent(w.pane_id)}`;
+          link.textContent = 'Manage in Control ->';
+          row.appendChild(link);
+        }
         box.appendChild(row);
       }
       hostsEl.appendChild(box);
