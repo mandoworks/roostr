@@ -215,7 +215,7 @@ function getMuseSnapshot({ staticDir, statusPath, namesStore } = {}) {
 }
 
 async function sendPioRelayMessage({
-  piorelayBase = 'http://100.97.196.10:3016/api/v1',
+  piorelayBase = 'http://100.123.63.122:3016/api/v1',
   from = 'pio',
   to,
   subject,
@@ -297,7 +297,7 @@ function normalizeRelayMessage(m) {
 }
 
 async function fetchPioRelayMessages({
-  piorelayBase = 'http://100.97.196.10:3016/api/v1',
+  piorelayBase = 'http://100.123.63.122:3016/api/v1',
   agent = null,
   project = null,
   limit = 20,

@@ -17,7 +17,7 @@ function loadConfig(env = process.env) {
   const staticDir = env.STATIC_DIR || '/home/ubuntu/service-directory/agents';
   const roostrStateDir = env.ROOSTR_STATE_DIR || path.join(homeDir, '.roostr');
   const roostrRepoDir = env.ROOSTR_REPO_DIR || path.resolve(__dirname, '..', '..');
-  const piorelayBase = env.PIORELAY_BASE || 'http://100.97.196.10:3016/api/v1';
+  const piorelayBase = env.PIORELAY_BASE || 'http://100.123.63.122:3016/api/v1';
 
   return {
     host: '127.0.0.1',
