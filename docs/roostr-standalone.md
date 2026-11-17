@@ -96,6 +96,24 @@ in a worktree).
 - Roostr must boot, register agents, run headless work, and serve
   approvals with **herdr entirely stopped**. That is the standalone test.
 
+### 6. The board is the monitor (replaces watching panes)
+
+Headless workers have no pane to glance at, so the Roostr board becomes
+the monitoring surface — this is a requirement, not a byproduct:
+
+- One row per worker: owner/orchestrator, task, host, state, heartbeat
+  age, session id (resume handle), and **RAM use (RSS)**, sortable by RAM.
+- RAM truth comes from a per-host process census: on the Mac, the Swapy
+  census (already publishing PhysMem + swap + per-process RAM every
+  2 min); on OVH, the runner reports RSS for each agent process it owns.
+  The board joins worker ↔ PID ↔ RSS; host headers show PhysMem free and
+  swap used, so pressure is visible before the machine starts lagging.
+- Actions on a row: view log tail, open in herdr (viewer adapter),
+  resume session, reap/kill (with the Swapy rule: PID + command must
+  match what the board shows at click time).
+- Every kill/reap lands in the closed-session log: time, PID, command,
+  model, RAM held, resume handle.
+
 ## Phases
 
 1. **P1 — execution decoupling (the swap fix).** Registry + headless runner
