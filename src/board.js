@@ -232,14 +232,74 @@ function isBoardAgent(a, myPaneId) {
 }
 
 function selectAgents(snap, workspace, opts = {}) {
-  const wsLabel = new Map(snap.workspaces.map((w) => [w.workspace_id, w.label]));
+  const workspaces = Array.isArray(snap && snap.workspaces) ? snap.workspaces : [];
+  const rawAgents = Array.isArray(snap && snap.agents) ? snap.agents : [];
+  const panes = Array.isArray(snap && snap.panes) ? snap.panes : [];
+  const tabs = Array.isArray(snap && snap.tabs) ? snap.tabs : [];
+
+  const wsLabel = new Map(workspaces.map((w) => [w.workspace_id, w.label]));
+  const paneById = new Map(panes.filter((p) => p && p.pane_id).map((p) => [p.pane_id, p]));
   const myPaneId = (opts && opts.myPaneId) || null;
-  let agents = snap.agents.filter((a) => a && a.pane_id && !isBoardAgent(a, myPaneId));
+  const reports = (opts && opts.reports) || null;
+  const savedByPane = (opts && opts.savedByPane) || null;
+  const detectedByPane = (opts && opts.detectedByPane) || null;
+
+  const agentByPane = new Map();
+  for (const a of rawAgents) if (a && a.pane_id) agentByPane.set(a.pane_id, a);
+
+  let agents = rawAgents.filter((a) => a && a.pane_id && !isBoardAgent(a, myPaneId));
+
+  for (const p of panes) {
+    if (!p || !p.pane_id || agentByPane.has(p.pane_id) || isBoardAgent(p, myPaneId)) continue;
+    const hasAgentField = (typeof p.agent === 'string' && p.agent.trim() !== '') || Boolean(p.agent_session && p.agent_session.agent);
+    const hasRestoreError = Boolean(p.restore_error);
+    const hasSavedOrReport = Boolean((reports && reports[p.pane_id]) || (savedByPane && savedByPane.has(p.pane_id)));
+    const hasCrewTag = typeof p.label === 'string' && TAG_RE.test(p.label);
+    const hasDetected = Boolean(detectedByPane && detectedByPane.has(p.pane_id));
+    if (!hasAgentField && !hasRestoreError && !hasSavedOrReport && !hasCrewTag && !hasDetected) continue;
+
+    const rep = reports && reports[p.pane_id];
+    const saved = savedByPane && typeof savedByPane.get === 'function' ? savedByPane.get(p.pane_id) : null;
+    const detected = detectedByPane && typeof detectedByPane.get === 'function' ? detectedByPane.get(p.pane_id) : null;
+    const inferredKind = (typeof p.agent === 'string' && p.agent.trim())
+      || (p.agent_session && typeof p.agent_session.agent === 'string' && p.agent_session.agent.trim())
+      || (typeof detected === 'string' && detected.trim())
+      || (saved && typeof saved.agent === 'string' && saved.agent.trim())
+      || (rep && typeof rep.agent === 'string' && rep.agent.trim())
+      || null;
+
+    agents.push({
+      ...p,
+      pane_id: p.pane_id,
+      workspace_id: p.workspace_id,
+      tab_id: p.tab_id,
+      agent: inferredKind,
+      name: p.name || null,
+      agent_status: p.restore_error ? 'blocked' : (p.agent_status || 'unknown'),
+    });
+  }
+
   if (workspace) agents = agents.filter((a) => a.workspace_id === workspace || wsLabel.get(a.workspace_id) === workspace);
-  const order = new Map(snap.workspaces.map((w, i) => [w.workspace_id, i]));
+
+  const wsOrder = new Map(workspaces.map((w, i) => [w.workspace_id, i]));
+  const tabOrder = new Map();
+  tabs.forEach((t, i) => {
+    if (t && t.tab_id) tabOrder.set(t.tab_id, typeof t.number === 'number' ? t.number : i);
+  });
+  const paneOrder = new Map(panes.map((p, i) => [p.pane_id, i]));
+
   return agents
-    .map((a, i) => ({ a, i }))
-    .sort((x, y) => (order.get(x.a.workspace_id) ?? 1e9) - (order.get(y.a.workspace_id) ?? 1e9) || x.i - y.i)
+    .map((a, i) => {
+      const pane = paneById.get(a.pane_id);
+      const tabId = a.tab_id || (pane && pane.tab_id) || null;
+      const tOrd = tabId != null && tabOrder.has(tabId) ? tabOrder.get(tabId) : 1e9;
+      const pOrd = paneOrder.has(a.pane_id) ? paneOrder.get(a.pane_id) : 1e9;
+      return { a, i, tOrd, pOrd };
+    })
+    .sort((x, y) => (wsOrder.get(x.a.workspace_id) ?? 1e9) - (wsOrder.get(y.a.workspace_id) ?? 1e9)
+      || x.tOrd - y.tOrd
+      || x.pOrd - y.pOrd
+      || x.i - y.i)
     .map((x) => x.a);
 }
 
@@ -270,6 +330,13 @@ function buildModel({
   snap, agents, screens = {}, reports = {}, events = {}, rss = {}, crewFor = () => null, mem, now, budget = null, trust = {}, tagScope = null,
 }) {
   const paneById = new Map(snap.panes.map((p) => [p.pane_id, p]));
+  const tabById = new Map((snap.tabs || []).map((t) => [t.tab_id, t]));
+  const wsTabIds = new Map();
+  for (const t of snap.tabs || []) {
+    if (!t || !t.workspace_id || !t.tab_id) continue;
+    if (!wsTabIds.has(t.workspace_id)) wsTabIds.set(t.workspace_id, new Set());
+    wsTabIds.get(t.workspace_id).add(t.tab_id);
+  }
   const wsLabel = new Map(snap.workspaces.map((w) => [w.workspace_id, ui.clean(w.label) || w.workspace_id]));
   const live = new Set([...snap.panes.map((p) => p.pane_id), ...snap.agents.map((a) => a.pane_id)]);
   assignTags(mem, agents.map((a) => a.pane_id), live);
@@ -333,11 +400,20 @@ function buildModel({
     const costField = pick([rep.cost, 'exact'], [scr.cost, 'screen'], [apiEstimate && apiEstimate.cost, 'estimate']);
     const rec = recommend(task.v, effortVal, modelField.v, ok ? crew : null);
     const isSurging = inSurge && surge.isDeepSeekModel(modelField.v);
+    const tabId = a.tab_id || pane.tab_id || null;
+    const tab = tabId ? tabById.get(tabId) : null;
+    if (tabId && a.workspace_id) {
+      if (!wsTabIds.has(a.workspace_id)) wsTabIds.set(a.workspace_id, new Set());
+      wsTabIds.get(a.workspace_id).add(tabId);
+    }
 
     return {
       paneId: a.pane_id,
       workspaceId: a.workspace_id || null,
       workspace: wsLabel.get(a.workspace_id) || a.workspace_id || '?',
+      tabId,
+      tabNumber: (tab && tab.number) || 1,
+      tab: (tab && tab.label) || null,
       tag: mem.tags[a.pane_id],
       displayAgent: a.display_agent || pane.display_agent || null,
       label,
@@ -376,6 +452,10 @@ function buildModel({
       surgeMarker: isSurging ? '2×' : null,
     };
   });
+
+  for (const r of rows) {
+    r.workspaceTabCount = (r.workspaceId && wsTabIds.has(r.workspaceId)) ? wsTabIds.get(r.workspaceId).size : 1;
+  }
 
   // Blocked panes first within their workspace; otherwise Herdr's order.
   const wsOrder = new Map();
@@ -526,11 +606,19 @@ function effortCell(r) {
 
 // Plain text and a painter for every cell of a row. Exact values in normal
 // text, screen values tinted, "?" dim (red is kept for blocked panes).
+function tabBadge(r) {
+  if (!r) return null;
+  const hasNamedTab = Boolean(r.tab && !/^\d+$/.test(r.tab));
+  if (!(r.tabNumber > 1 || hasNamedTab)) return null;
+  return `[t${r.tabNumber || 1}${hasNamedTab ? `:${r.tab}` : ''}]`;
+}
+
 function rowCells(r, shortState) {
   const paintStatus = STATUS_PAINT[r.status] || C.dim;
   const time = r.statusExact ? fmtDuration(r.statusFor) : `≥${fmtDuration(r.statusFor)}`;
   const glyph = STATUS_GLYPH[r.status] || '?';
   const label = shortState ? glyph : `${glyph} ${r.status}`;
+  const tb = tabBadge(r);
   const val = (f, fmt) => (f.v === null
     ? { text: '?', paint: C.dim }
     : { text: fmt(f.v), paint: f.src === 'screen' ? C.screen : C.text });
@@ -547,7 +635,7 @@ function rowCells(r, shortState) {
         return bold(base(head)) + (tail ? C.dim(tail) : '');
       },
     },
-    id: { text: r.paneId, paint: C.dim },
+    id: { text: tb ? `${r.paneId} ${tb}` : r.paneId, paint: C.dim },
     agent: agentCell(r),
     effort: effortCell(r),
     state: { text: `${label} ${time}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
@@ -2845,7 +2933,8 @@ function render(model, {
       const effStr = r.effort ? ` (${r.effort})` : '';
       const modelStr = r.model.v ? `${shortModel(r.model.v)}${effStr}` : '?';
       const surgeBadge = (r.surge || r.surgeMarker) ? ` ${bold(C.amber('▲ 2× SURGE'))}` : '';
-      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)} · ${C.text(modelStr)}${surgeBadge}`;
+      const tb = tabBadge(r);
+      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)}${tb ? ` ${C.dim(tb)}` : ''} · ${C.text(modelStr)}${surgeBadge}`;
       const headRight = c.state.paint(c.state.text);
       const gap1 = Math.max(2, width - 4 - ui.strWidth(headLeft) - ui.strWidth(headRight));
       const line1 = `  ${headLeft}${' '.repeat(gap1)}${headRight}`;

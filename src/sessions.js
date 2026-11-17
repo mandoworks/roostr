@@ -73,9 +73,12 @@ function rowsFromModel(model) {
     if (snap) {
       const panes = new Map((snap.panes || []).map((p) => [p.pane_id, p]));
       const workspaces = new Map((snap.workspaces || []).map((w) => [w.workspace_id, w]));
+      const tabs = new Map((snap.tabs || []).map((t) => [t.tab_id, t]));
       for (const a of snap.agents) {
         if (!a || !a.pane_id || rowById.has(a.pane_id)) continue;
-        byId.set(a.pane_id, fromAgent(a, panes.get(a.pane_id) || {}, workspaces.get(a.workspace_id) || {}));
+        const p = panes.get(a.pane_id) || {};
+        const t = tabs.get(a.tab_id || p.tab_id) || {};
+        byId.set(a.pane_id, fromAgent(a, p, workspaces.get(a.workspace_id) || {}, t));
       }
     }
     return [...byId.values()];
@@ -86,8 +89,13 @@ function rowsFromModel(model) {
   if (Array.isArray(agents)) {
     const panes = new Map(((Array.isArray(model.panes) ? model.panes : (snap && snap.panes) || [])).map((p) => [p.pane_id, p]));
     const workspaces = new Map(((Array.isArray(model.workspaces) ? model.workspaces : (snap && snap.workspaces) || [])).map((w) => [w.workspace_id, w]));
+    const tabs = new Map(((Array.isArray(model.tabs) ? model.tabs : (snap && snap.tabs) || [])).map((t) => [t.tab_id, t]));
     return agents.filter((a) => a && a.pane_id)
-      .map((a) => fromAgent(a, panes.get(a.pane_id) || {}, workspaces.get(a.workspace_id) || {}));
+      .map((a) => {
+        const p = panes.get(a.pane_id) || {};
+        const t = tabs.get(a.tab_id || p.tab_id) || {};
+        return fromAgent(a, p, workspaces.get(a.workspace_id) || {}, t);
+      });
   }
   return [];
 }
@@ -122,6 +130,10 @@ function fromRow(row, model, agent) {
   // The report is authoritative for numbers, but a session id from a statusline
   // written for another agent (a UUID on an opencode pane) must not win.
   const reported = clean(row.session, 128);
+  const snap = model && model.snapshot && typeof model.snapshot === 'object' ? model.snapshot : null;
+  const pane = snap && Array.isArray(snap.panes) ? snap.panes.find((p) => p && p.pane_id === row.paneId) : null;
+  const tabId = clean(row.tabId || (agent && agent.tab_id) || (pane && pane.tab_id));
+  const tab = clean(row.tab);
   const entry = {
     paneId: clean(row.paneId),
     workspace,
@@ -136,6 +148,8 @@ function fromRow(row, model, agent) {
     task: clean(row.task),
     session: validSession(kind, reported) ? reported : agentSession(kind, agent),
   };
+  if (tabId) entry.tabId = tabId;
+  if (tab) entry.tab = tab;
   const handoff = handoffPath(cwd, name, kind);
   if (handoff) entry.handoff = handoff;
   if (isWorktree(cwd)) entry.worktree = true;
@@ -152,15 +166,17 @@ function agentSession(kind, agent) {
   return validSession(kind, reported) ? reported : null;
 }
 
-function fromAgent(agent, pane, workspace) {
-  const parsed = labelParts(pane.label);
+function fromAgent(agent, pane, workspace, tab) {
+  const parsed = labelParts(pane && pane.label);
   const name = clean(agent.name) || parsed.name || clean(agent.pane_id);
-  const cwd = clean(agent.cwd) || clean(pane.cwd);
+  const cwd = clean(agent.cwd) || clean(pane && pane.cwd);
   const kind = clean(agent.agent);
+  const tabId = clean(agent.tab_id || (pane && pane.tab_id));
+  const tabLabel = clean((tab && tab.label) || (pane && pane.tab) || agent.tab);
   const entry = {
     paneId: clean(agent.pane_id),
-    workspace: clean(workspace.label) || clean(agent.workspace_id),
-    workspaceId: clean(agent.workspace_id) || clean(workspace.workspace_id),
+    workspace: clean(workspace && workspace.label) || clean(agent.workspace_id),
+    workspaceId: clean(agent.workspace_id) || clean(workspace && workspace.workspace_id),
     name,
     cwd,
     agent: kind,
@@ -171,6 +187,8 @@ function fromAgent(agent, pane, workspace) {
     task: parsed.task,
     session: agentSession(kind, agent),
   };
+  if (tabId) entry.tabId = tabId;
+  if (tabLabel) entry.tab = tabLabel;
   const handoff = handoffPath(cwd, name, kind);
   if (handoff) entry.handoff = handoff;
   if (isWorktree(cwd)) entry.worktree = true;
@@ -181,6 +199,7 @@ function signature(session) {
   return JSON.stringify([
     session.paneId, session.workspace, session.workspaceId, session.name, session.cwd,
     session.agent, session.model, session.modelSrc, session.effort, session.status, session.task, session.session,
+    session.tabId || null, session.tab || null,
     session.handoff || null, Boolean(session.worktree),
   ]);
 }
@@ -636,6 +655,33 @@ function sessionBin(kind, options = {}) {
   return options.opencodeBin || process.env.ROOSTR_OPENCODE_BIN || process.env.CREW_BOARD_OPENCODE_BIN || 'opencode';
 }
 
+function opencodeDbPath(options = {}) {
+  return options.opencodeDb || process.env.ROOSTR_OPENCODE_DB || path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+}
+
+async function opencodeDbSessionList(options = {}) {
+  const dbPath = opencodeDbPath(options);
+  if (!dbPath || !fs.existsSync(dbPath)) return [];
+  const timeout = options.timeout || 4000;
+  const limit = Number(options.limit) || 200;
+  const queries = [
+    `SELECT id, title, directory, time_updated AS updated FROM session_v2 UNION ALL SELECT id, title, directory, time_updated AS updated FROM session ORDER BY updated DESC LIMIT ${limit}`,
+    `SELECT id, title, directory, time_updated AS updated FROM session_v2 ORDER BY updated DESC LIMIT ${limit}`,
+    `SELECT id, title, directory, time_updated AS updated FROM session ORDER BY updated DESC LIMIT ${limit}`,
+  ];
+  for (const sql of queries) {
+    try {
+      const rows = await execJson('sqlite3', ['-json', dbPath, sql], timeout);
+      if (Array.isArray(rows)) {
+        return rows.filter((s) => s && typeof s.id === 'string');
+      }
+    } catch (e) {
+      // Best effort: fall back if one of the tables is absent.
+    }
+  }
+  return [];
+}
+
 async function sessionList(kind, options = {}) {
   const now = options.now || Date.now();
   const k = normalizeKind(kind || 'opencode');
@@ -658,11 +704,29 @@ async function sessionList(kind, options = {}) {
     return items;
   }
   const bin = sessionBin(k, options);
-  const key = `${k}:${bin}`;
+  const dbPath = k === 'opencode' ? opencodeDbPath(options) : '';
+  const key = dbPath ? `${k}:${bin}:${dbPath}` : `${k}:${bin}`;
   const hit = sessionListCache.get(key);
   if (!options.noCache && hit && now - hit.at < SESSION_LIST_TTL_MS) return hit.list;
-  const list = await execJson(bin, ['session', 'list', '--format', 'json', '-n', String(options.limit || 200)], options.timeout || 4000);
-  const items = Array.isArray(list) ? list.filter((s) => s && typeof s.id === 'string') : [];
+  let cliItems = [];
+  let cliErr = null;
+  try {
+    const list = await execJson(bin, ['session', 'list', '--format', 'json', '-n', String(options.limit || 200)], options.timeout || 4000);
+    cliItems = Array.isArray(list) ? list.filter((s) => s && typeof s.id === 'string') : [];
+  } catch (e) {
+    cliErr = e;
+  }
+  const dbItems = k === 'opencode' ? await opencodeDbSessionList(options) : [];
+  if (cliErr && dbItems.length === 0 && (!dbPath || !fs.existsSync(dbPath))) {
+    throw cliErr;
+  }
+  const items = [];
+  const seen = new Set();
+  for (const s of [...cliItems, ...dbItems]) {
+    if (!s || typeof s.id !== 'string' || seen.has(s.id)) continue;
+    seen.add(s.id);
+    items.push(s);
+  }
   sessionListCache.set(key, { at: now, list: items });
   return items;
 }
@@ -836,6 +900,11 @@ async function restoreSessions(sessions, options = {}) {
       }
     }
 
+    const tabKeys = items.map((s) => s.tabId || s.tab || '__default__');
+    const multiTab = new Set(tabKeys).size > 1 && typeof herdr.createTab === 'function';
+    const primaryTabKey = tabKeys[0];
+    const tabStates = new Map([[primaryTabKey, { availableRootPane, lastPaneId }]]);
+
     for (const s of items) {
       const agentName = s.name || s.agent || 'agent';
       const key = `${targetWsId}:${s.cwd}:${s.agent}`;
@@ -844,6 +913,8 @@ async function restoreSessions(sessions, options = {}) {
         continue;
       }
 
+      const tabKey = multiTab ? (s.tabId || s.tab || '__default__') : primaryTabKey;
+      let tabState = tabStates.get(tabKey);
       let paneId = null;
       let parentPaneId = null;
       let started = false;
@@ -856,13 +927,19 @@ async function restoreSessions(sessions, options = {}) {
           && (!old.cwd || old.cwd === s.cwd)) {
           paneId = old.pane_id;
           agentPanes.add(paneId);
-        } else if (availableRootPane) {
-          paneId = availableRootPane;
-          availableRootPane = null;
-        } else if (lastPaneId) {
-          parentPaneId = lastPaneId;
-          paneId = await herdr.splitPane(lastPaneId, 'right', s.cwd, true);
-          lastPaneId = paneId;
+        } else if (multiTab && !tabState) {
+          const namedTabLabel = s.tab && !/^\d+$/.test(s.tab) ? s.tab : null;
+          const createdTab = await herdr.createTab(targetWsId, s.cwd, namedTabLabel);
+          paneId = createdTab && createdTab.rootPaneId;
+          tabState = { availableRootPane: null, lastPaneId: paneId };
+          tabStates.set(tabKey, tabState);
+        } else if (tabState && tabState.availableRootPane) {
+          paneId = tabState.availableRootPane;
+          tabState.availableRootPane = null;
+        } else if (tabState && tabState.lastPaneId) {
+          parentPaneId = tabState.lastPaneId;
+          paneId = await herdr.splitPane(tabState.lastPaneId, 'right', s.cwd, true);
+          tabState.lastPaneId = paneId;
         }
 
         if (!paneId) {
@@ -887,7 +964,7 @@ async function restoreSessions(sessions, options = {}) {
           try {
             await herdr.closePane(paneId);
           } catch (_) {}
-          if (lastPaneId === paneId) lastPaneId = parentPaneId;
+          if (tabState && tabState.lastPaneId === paneId) tabState.lastPaneId = parentPaneId;
         }
         errors.push(`failed to restore ${s.name || s.agent}: ${e.message}`);
       }

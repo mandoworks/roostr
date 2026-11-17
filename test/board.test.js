@@ -2534,3 +2534,78 @@ test('orchestrate TUI: pressing c copies spawn command and sets notice', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('selectAgents: multi-tab ordering and synthesis of non-active/exited panes', () => {
+  const snap = {
+    workspaces: [{ workspace_id: 'w1', label: 'app' }],
+    tabs: [
+      { tab_id: 't1', workspace_id: 'w1', number: 1, label: '1' },
+      { tab_id: 't2', workspace_id: 'w1', number: 2, label: '2' },
+      { tab_id: 't3', workspace_id: 'w1', number: 3, label: 'migration' },
+    ],
+    panes: [
+      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 't1', label: 'lead · plan', cwd: proj },
+      { pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 't2', agent: 'opencode', name: 'api', cwd: proj },
+      { pane_id: 'w1:p3', workspace_id: 'w1', tab_id: 't3', restore_error: 'command failed', cwd: proj },
+      { pane_id: 'w1:p4', workspace_id: 'w1', tab_id: 't2', label: 'docs', cwd: proj },
+      { pane_id: 'w1:p5', workspace_id: 'w1', tab_id: 't3', label: '🟦 worker · test', cwd: proj },
+      { pane_id: 'w1:p6', workspace_id: 'w1', tab_id: 't3', label: 'detected-pane', cwd: proj },
+      { pane_id: 'w1:p7', workspace_id: 'w1', tab_id: 't1', label: 'plain shell', cwd: proj },
+      { pane_id: 'w1:p8', workspace_id: 'w1', tab_id: 't2', label: '🐓ROOSTR🐓', terminal_title_stripped: '🐓ROOSTR🐓', agent: 'claude' },
+    ],
+    agents: [
+      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 't1', agent: 'claude', agent_status: 'working', cwd: proj },
+    ],
+  };
+
+  const agents = board.selectAgents(snap, null, {
+    reports: { 'w1:p4': { agent: 'claude', ctx: 10 } },
+    detectedByPane: new Map([['w1:p6', 'kilo']]),
+  });
+
+  // Ordered by tab (t1 -> t2 -> t3), then pane order within tab. Excludes plain shell (p7) and board (p8).
+  assert.deepEqual(agents.map((a) => a.pane_id), ['w1:p1', 'w1:p2', 'w1:p4', 'w1:p3', 'w1:p5', 'w1:p6']);
+  assert.equal(agents.find((a) => a.pane_id === 'w1:p2').agent, 'opencode');
+  assert.equal(agents.find((a) => a.pane_id === 'w1:p2').agent_status, 'unknown');
+  assert.equal(agents.find((a) => a.pane_id === 'w1:p3').agent_status, 'blocked');
+  assert.equal(agents.find((a) => a.pane_id === 'w1:p4').agent, 'claude');
+  assert.equal(agents.find((a) => a.pane_id === 'w1:p6').agent, 'kilo');
+});
+
+test('buildModel & render: attaches tab metadata and shows tab badges in table and cards view', () => {
+  const snap = {
+    workspaces: [{ workspace_id: 'w1', label: 'app' }],
+    tabs: [
+      { tab_id: 't1', workspace_id: 'w1', number: 1, label: '1' },
+      { tab_id: 't2', workspace_id: 'w1', number: 2, label: '2' },
+      { tab_id: 't3', workspace_id: 'w1', number: 3, label: 'migration' },
+    ],
+    panes: [
+      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 't1', label: 'lead', cwd: proj },
+      { pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 't2', label: 'api', cwd: proj },
+      { pane_id: 'w1:p3', workspace_id: 'w1', tab_id: 't3', label: 'db', cwd: proj },
+    ],
+    agents: [
+      { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 't1', agent: 'claude', agent_status: 'working', cwd: proj },
+      { pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 't2', agent: 'opencode', agent_status: 'idle', cwd: proj },
+      { pane_id: 'w1:p3', workspace_id: 'w1', tab_id: 't3', agent: 'agy', agent_status: 'working', cwd: proj },
+    ],
+  };
+  const agents = board.selectAgents(snap, null);
+  const m = board.buildModel({ snap, agents, mem: { tags: {}, status: {} }, now: NOW });
+  assert.equal(m.rows[0].tabId, 't1');
+  assert.equal(m.rows[0].tabNumber, 1);
+  assert.equal(m.rows[0].workspaceTabCount, 3);
+  assert.equal(m.rows[1].tabNumber, 2);
+  assert.equal(m.rows[2].tabNumber, 3);
+  assert.equal(m.rows[2].tab, 'migration');
+
+  ui.setColor(false);
+  const tableOut = board.render(m, { width: 120, view: 'line' });
+  assert.match(tableOut, /w1:p2 \[t2\]/);
+  assert.match(tableOut, /w1:p3 \[t3:migration\]/);
+
+  const cardsOut = board.render(m, { width: 120, view: 'cards' });
+  assert.match(cardsOut, /w1:p2 \[t2\]/);
+  assert.match(cardsOut, /w1:p3 \[t3:migration\]/);
+});
