@@ -21,6 +21,9 @@
 //   roostr log [...]         recent agent sessions, reopen one after a closed tab
 //   roostr restore [...]     print the restore plan
 //   roostr respawn [...]     rebuild a workspace and resume its sessions
+//   roostr registry [...]    the standalone worker registry and tokens
+//   roostr governor [...]    placement policy, pane budget and idle reaper
+//   roostr run [...]         launch and track a detached headless worker
 
 const path = require('path');
 
@@ -88,6 +91,27 @@ if (argv[0] === 'report') {
   if (p && typeof p.then === 'function') {
     // process.exit here can truncate a piped plan; exitCode lets stdout drain.
     p.then((code) => { process.exitCode = code || 0; }).catch(() => { process.exitCode = 1; });
+  } else {
+    process.exitCode = p || 0;
+  }
+} else if (argv[0] === 'registry') {
+  process.exitCode = require(path.join(src, 'registry.js')).main(argv.slice(1));
+} else if (argv[0] === 'governor') {
+  require(path.join(src, 'governor.js')).main(argv.slice(1))
+    .then((code) => { process.exitCode = code || 0; }, (e) => { process.stderr.write(`roostr governor: ${e.message}\n`); process.exitCode = 1; });
+} else if (argv[0] === 'run') {
+  // Lazy require so the headless runner can be developed in parallel; a repo
+  // without src/runner.js still boots and reports a clean error.
+  let runner;
+  try {
+    runner = require(path.join(src, 'runner.js'));
+  } catch (e) {
+    process.stderr.write('roostr run: headless runner not available (src/runner.js missing)\n');
+    process.exit(1);
+  }
+  const p = runner.main(argv.slice(1));
+  if (p && typeof p.then === 'function') {
+    p.then((code) => { process.exitCode = code || 0; }).catch((e) => { process.stderr.write(`roostr run: ${e.message}\n`); process.exitCode = 1; });
   } else {
     process.exitCode = p || 0;
   }
