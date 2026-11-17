@@ -48,6 +48,8 @@
     snapshot: null,
     sessionsData: null,
     museData: null,
+    registryData: null,
+    sortByRam: false,
     snapshotTimer: null,
     paneTimer: null,
     lastUpdatedAt: 0,
@@ -1462,6 +1464,171 @@
     renderOrchestrationDrawer();
   }
 
+  function formatAge(iso) {
+    if (!iso) return 'n/a';
+    const ts = Date.parse(iso);
+    if (!Number.isFinite(ts)) return 'n/a';
+    const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (diffSec < 60) return `${diffSec}s`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
+    return `${Math.floor(diffSec / 86400)}d`;
+  }
+
+  function formatRamMb(rssKb) {
+    if (!Number.isFinite(rssKb) || rssKb < 0) return '-';
+    return (rssKb / 1024).toFixed(1);
+  }
+
+  function formatMemKb(kb) {
+    if (!Number.isFinite(kb)) return '-';
+    const mb = kb / 1024;
+    if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+    return `${Math.round(mb)} MB`;
+  }
+
+  function renderHostMemSummary(hostMem) {
+    const el = document.getElementById('host-mem-summary');
+    if (!el) return;
+    if (!hostMem) {
+      el.textContent = 'Host RAM unavailable';
+      return;
+    }
+    const host = hostMem.host ? `${hostMem.host}: ` : '';
+    el.textContent = `${host}PhysMem free ${formatMemKb(hostMem.physFreeKb)} | Swap used ${formatMemKb(hostMem.swapUsedKb)} / ${formatMemKb(hostMem.swapTotalKb)}`;
+  }
+
+  function buildWorkerAction(label, cls, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `small ${cls || ''}`.trim();
+    btn.textContent = label;
+    btn.addEventListener('click', onClick);
+    return btn;
+  }
+
+  async function showWorkerLog(id) {
+    const preview = document.getElementById('worker-log-preview');
+    if (preview) preview.textContent = `Loading log for ${id}...`;
+    try {
+      const data = await apiFetch(`/agents/api/registry/${encodeURIComponent(id)}/log?lines=40`);
+      if (preview) preview.textContent = (data && data.text) ? data.text : `(no log output for ${id})`;
+    } catch {
+      if (preview) preview.textContent = `Failed to load log for ${id}.`;
+    }
+  }
+
+  async function reapWorkerRow(worker) {
+    if (!worker || !Number.isFinite(worker.pid) || !worker.command) {
+      showError('This worker has no PID/command to reap.', 'warn');
+      return;
+    }
+    if (!window.confirm(`Reap ${worker.id} (pid ${worker.pid})?`)) return;
+    try {
+      await apiFetch(`/agents/api/registry/${encodeURIComponent(worker.id)}/reap`, {
+        method: 'POST',
+        body: JSON.stringify({ pid: worker.pid, command: worker.command }),
+      });
+      await refreshRegistry();
+      refreshAuditIfOpen();
+    } catch {
+      // Error banner handled by apiFetch.
+    }
+  }
+
+  function renderRegistry() {
+    const content = document.getElementById('registry-content');
+    const statusEl = document.getElementById('registry-status');
+    if (!content) return;
+    content.textContent = '';
+
+    const data = state.registryData;
+    if (!data) {
+      renderHostMemSummary(null);
+      if (statusEl) statusEl.textContent = 'Registry unavailable (herdr stopped is fine, Roostr state is not).';
+      const msg = document.createElement('span');
+      msg.className = 'muted';
+      msg.textContent = 'Standalone registry endpoint unavailable.';
+      content.appendChild(msg);
+      return;
+    }
+
+    renderHostMemSummary(data.hostMem);
+
+    const workers = Array.isArray(data.workers) ? data.workers.slice() : [];
+    if (state.sortByRam) {
+      workers.sort((a, b) => {
+        const av = Number.isFinite(a && a.rssKb) ? a.rssKb : -1;
+        const bv = Number.isFinite(b && b.rssKb) ? b.rssKb : -1;
+        return bv - av;
+      });
+    }
+
+    if (statusEl) {
+      statusEl.textContent = `${workers.length} worker${workers.length === 1 ? '' : 's'} at ${new Date().toLocaleTimeString()}`;
+    }
+
+    if (workers.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'muted';
+      empty.textContent = 'No standalone workers registered.';
+      content.appendChild(empty);
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'monitor-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'monitor-table';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const heading of ['ID', 'Owner', 'Host', 'Mode', 'State', 'Heartbeat', 'Session', 'RAM (MB)', 'Actions']) {
+      const th = document.createElement('th');
+      th.textContent = heading;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const w of workers) {
+      const row = document.createElement('tr');
+      const values = [
+        w.id || '',
+        w.owner || '-',
+        w.host || '-',
+        w.mode || '-',
+        w.state || '-',
+        formatAge(w.lastHeartbeat || w.updatedAt),
+        w.session ? String(w.session).slice(0, 18) : '-',
+        formatRamMb(w.rssKb),
+      ];
+      for (const value of values) {
+        const td = document.createElement('td');
+        td.textContent = value;
+        row.appendChild(td);
+      }
+      const actionsTd = document.createElement('td');
+      const actions = document.createElement('div');
+      actions.className = 'monitor-actions';
+      actions.appendChild(buildWorkerAction('Log Tail', '', () => { showWorkerLog(w.id); }));
+      actions.appendChild(buildWorkerAction('Reap', 'danger', () => { reapWorkerRow(w); }));
+      actionsTd.appendChild(actions);
+      row.appendChild(actionsTd);
+      tbody.appendChild(row);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    content.appendChild(wrap);
+  }
+
+  async function refreshRegistry() {
+    const data = await optionalGet('/agents/api/registry');
+    state.registryData = data || null;
+    renderRegistry();
+  }
+
   async function refreshMuse() {
     const data = await optionalGet('/agents/api/muse');
     if (!data) return;
@@ -2117,14 +2284,38 @@
       });
     }
 
+    const registryDetails = document.getElementById('registry-details');
+    if (registryDetails) {
+      registryDetails.addEventListener('toggle', () => {
+        if (registryDetails.open) refreshRegistry();
+      });
+    }
+
+    const registryRefreshBtn = document.getElementById('registry-refresh-btn');
+    if (registryRefreshBtn) {
+      registryRefreshBtn.addEventListener('click', refreshRegistry);
+    }
+
+    const sortRamBtn = document.getElementById('sort-ram-btn');
+    if (sortRamBtn) {
+      sortRamBtn.addEventListener('click', () => {
+        state.sortByRam = !state.sortByRam;
+        sortRamBtn.textContent = state.sortByRam ? 'Sort by RAM: On' : 'Sort by RAM: Off';
+        sortRamBtn.setAttribute('aria-pressed', state.sortByRam ? 'true' : 'false');
+        renderRegistry();
+      });
+    }
+
     loadUser();
     refreshState();
     refreshSessions();
     refreshMuse();
+    refreshRegistry();
     state.snapshotTimer = setInterval(() => {
       refreshState();
       refreshSessions();
       refreshMuse();
+      refreshRegistry();
     }, STATE_POLL_MS);
   });
 })();

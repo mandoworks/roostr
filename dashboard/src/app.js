@@ -29,6 +29,14 @@ const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
 const { createNamesStore } = require('./names');
 const { getRecoverySnapshot, captureBackups, restoreWorkspace } = require('./sessions-bridge');
 const { getMuseSnapshot, sendPioRelayMessage, fetchPioRelayMessages } = require('./muse');
+const {
+  authenticateToken,
+  registerWorker,
+  updateWorkerStatus,
+  getRegistrySnapshot,
+  tailWorkerLog,
+  reapWorkerProcess,
+} = require('./registry-bridge');
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -198,7 +206,7 @@ function decodeSubpath(encoded) {
   }
 }
 
-function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl, execFile: execFileImpl }) {
+function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl, execFile: execFileImpl, registryDeps }) {
   const authPublicDir = path.join(config.publicDir, 'auth');
   const controlPublicDir = path.join(config.publicDir, 'control');
   const namesPublicDir = path.join(config.publicDir, 'names');
@@ -261,6 +269,60 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetc
           { 'Retry-After': String(rl.retryAfterSec) }
         );
       }
+    }
+
+    // Agent reporting bridge. Authenticates with X-Roostr-Token OR a passkey
+    // session cookie, and deliberately does not require the CSRF header so a
+    // standalone (headless) agent can register and report status.
+    if (method === 'POST' && (pathname === '/agents/api/register' || pathname === '/agents/api/status')) {
+      const tokenOk = authenticateToken(req, config.roostrStateDir);
+      if (!tokenOk && !getSession(req)) {
+        audit.log({ ip: clientIp, action: 'registry.auth_denied', summary: pathname, ok: false });
+        return sendJson(res, 401, { error: 'unauthorized' });
+      }
+      let bridgeBody;
+      try {
+        bridgeBody = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const via = tokenOk ? 'token' : 'passkey';
+      if (pathname === '/agents/api/register') {
+        const result = registerWorker(config.roostrStateDir, bridgeBody);
+        if (!result.ok) {
+          audit.log({
+            ip: clientIp,
+            action: 'registry.register',
+            summary: `via=${via} err=${result.error}`,
+            ok: false,
+          });
+          return sendJson(res, result.status || 400, { error: result.error });
+        }
+        audit.log({
+          ip: clientIp,
+          action: 'registry.register',
+          summary: `id=${result.worker.id} via=${via}`,
+          ok: true,
+        });
+        return sendJson(res, 200, { ok: true, worker: result.worker });
+      }
+      const result = updateWorkerStatus(config.roostrStateDir, bridgeBody);
+      if (!result.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'registry.status',
+          summary: `via=${via} err=${result.error}`,
+          ok: false,
+        });
+        return sendJson(res, result.status || 400, { error: result.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'registry.status',
+        summary: `id=${result.worker.id} state=${result.worker.state} via=${via}`,
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, worker: result.worker });
     }
 
     if (method === 'POST') {
@@ -429,6 +491,73 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetc
         roostrStateDir: config.roostrStateDir,
         roostrRepoDir: config.roostrRepoDir,
       }));
+    }
+
+    if (pathname === '/agents/api/registry' && method === 'GET') {
+      return sendJson(res, 200, getRegistrySnapshot(config.roostrStateDir));
+    }
+
+    if (pathname.startsWith('/agents/api/registry/')) {
+      const rest = pathname.slice('/agents/api/registry/'.length);
+      const slash = rest.lastIndexOf('/');
+      if (slash === -1) {
+        return sendJson(res, 404, { error: 'not found' });
+      }
+      const rawId = decodeSubpath(rest.slice(0, slash));
+      const action = rest.slice(slash + 1);
+      if (rawId === null) {
+        return sendJson(res, 400, { error: 'invalid worker id' });
+      }
+
+      if (action === 'log' && method === 'GET') {
+        const lv = validateLines(url.searchParams.get('lines'));
+        if (!lv.ok) {
+          return sendJson(res, 400, { error: lv.error });
+        }
+        const logRes = tailWorkerLog(config.roostrStateDir, rawId, lv.value);
+        if (!logRes.ok) {
+          return sendJson(res, logRes.status || 400, { error: logRes.error });
+        }
+        return sendJson(res, 200, { id: logRes.id, text: logRes.text });
+      }
+
+      if (action === 'reap' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const reapRes = reapWorkerProcess(
+          config.roostrStateDir,
+          rawId,
+          { pid: body.pid, command: body.command },
+          registryDeps
+        );
+        if (!reapRes.ok) {
+          audit.log({
+            ip: clientIp,
+            action: 'registry.reap',
+            summary: `id=${rawId} err=${reapRes.error}`,
+            ok: false,
+          });
+          return sendJson(res, reapRes.status || 400, { error: reapRes.error });
+        }
+        audit.log({
+          ip: clientIp,
+          action: 'registry.reap',
+          summary: `id=${reapRes.id} pid=${reapRes.pid}`,
+          ok: true,
+        });
+        return sendJson(res, 200, {
+          ok: true,
+          id: reapRes.id,
+          pid: reapRes.pid,
+          command: reapRes.command,
+        });
+      }
+
+      return sendJson(res, 404, { error: 'not found' });
     }
 
     if (pathname === '/agents/api/backups/capture' && method === 'POST') {
