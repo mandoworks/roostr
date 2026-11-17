@@ -32,6 +32,7 @@ const orchestrator = require('./orchestrator');
 const { VERSION, COMMIT, label: buildLabel } = require('./version');
 const pricing = require('./pricing');
 const state = require('./state');
+const stateDirResolver = require('./state-dir');
 const sessions = require('./sessions');
 const backup = require('./backup');
 const sessionLog = require('./session-log');
@@ -109,6 +110,153 @@ function memFile() {
 
 function plainObject(v) {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+}
+
+// ------------------------------------------------------------------ registry
+
+// The standalone workers registry (~/.roostr/registry.json), respecting
+// ROOSTR_STATE_DIR / ROOSTR_REGISTRY. A missing or malformed file reads as [].
+function registryFile() {
+  return stateDirResolver.resolvePath('registry.json', ['ROOSTR_REGISTRY'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
+}
+
+function readRegistry() {
+  const data = state.readJson(registryFile());
+  const workers = Array.isArray(data) ? data
+    : (plainObject(data) && Array.isArray(data.workers) ? data.workers : []);
+  return workers.filter(plainObject);
+}
+
+// The Mac Swapy census (~/.roostr/swapy-census.json), when a Mac has run one.
+function censusFile() {
+  return stateDirResolver.resolvePath('swapy-census.json', ['ROOSTR_SWAPY_CENSUS'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
+}
+
+// /proc/meminfo, in KiB, exactly as the kernel reports it.
+function parseMeminfo(text) {
+  const read = (key) => {
+    const m = new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec(String(text));
+    return m ? Number(m[1]) : null;
+  };
+  const physFreeKb = read('MemAvailable');
+  const swapTotalKb = read('SwapTotal');
+  const swapFreeKb = read('SwapFree');
+  if (physFreeKb === null && swapTotalKb === null) return null;
+  return {
+    physFreeKb,
+    swapTotalKb,
+    swapUsedKb: (swapTotalKb !== null && swapFreeKb !== null) ? swapTotalKb - swapFreeKb : null,
+  };
+}
+
+// Host memory truth: the Swapy census first (Mac), then /proc/meminfo (Linux).
+// The census also carries the process table used to give a headless worker a
+// live RSS figure. Null when neither source has anything to say.
+function readHostMem() {
+  let mem = null;
+  let processes = null;
+  const census = state.readJson(censusFile());
+  if (plainObject(census)) {
+    processes = Array.isArray(census.processes) ? census.processes.filter(plainObject) : null;
+    mem = {
+      physFreeKb: Number.isFinite(census.physFreeKb) ? census.physFreeKb : null,
+      swapUsedKb: Number.isFinite(census.swapUsedKb) ? census.swapUsedKb : null,
+      swapTotalKb: Number.isFinite(census.swapTotalKb) ? census.swapTotalKb : null,
+    };
+  }
+  try {
+    const linux = parseMeminfo(fs.readFileSync('/proc/meminfo', 'utf8'));
+    if (linux) {
+      mem = {
+        physFreeKb: mem && mem.physFreeKb !== null ? mem.physFreeKb : linux.physFreeKb,
+        swapUsedKb: mem && mem.swapUsedKb !== null ? mem.swapUsedKb : linux.swapUsedKb,
+        swapTotalKb: mem && mem.swapTotalKb !== null ? mem.swapTotalKb : linux.swapTotalKb,
+      };
+    }
+  } catch (e) {
+    // Not Linux, or /proc is unavailable: the census (or nothing) stands.
+  }
+  if (!mem && !processes) return null;
+  const out = { host: os.hostname(), ...(mem || {}) };
+  if (processes) out.processes = processes;
+  return out;
+}
+
+// Heaviest RAM first; a row with no reading sinks below every row that has one.
+function sortRowsByRam(rows) {
+  return rows.sort((a, b) => {
+    const av = a && a.ram && Number.isFinite(a.ram.v) ? a.ram.v : null;
+    const bv = b && b.ram && Number.isFinite(b.ram.v) ? b.ram.v : null;
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av;
+  });
+}
+
+// A worker with no Herdr pane: a headless run from the standalone registry.
+// Everything a normal row carries is filled in, so the shared renderer treats
+// it like any other pane.
+function headlessRow(entry, rss, now) {
+  const status = entry.state === 'waiting-approval' ? 'blocked' : (entry.state || 'working');
+  const heartbeatAt = entry.lastHeartbeat || entry.updatedAt || null;
+  const hb = typeof heartbeatAt === 'number' ? heartbeatAt : (heartbeatAt ? Date.parse(heartbeatAt) : NaN);
+  const statusFor = Number.isFinite(hb) ? Math.max(0, now - hb) : 0;
+  return {
+    paneId: entry.id,
+    workspaceId: null,
+    workspace: entry.owner || entry.host || 'headless',
+    tabId: null,
+    tabNumber: 1,
+    tab: null,
+    tag: null,
+    displayAgent: null,
+    label: null,
+    name: entry.id,
+    agentName: null,
+    displayName: entry.id,
+    isNamed: true,
+    labelName: null,
+    role: null,
+    about: null,
+    task: entry.task || null,
+    taskSrc: entry.task ? 'exact' : 'unknown',
+    kind: entry.kind || 'headless',
+    model: { v: entry.model || null, src: entry.model ? 'exact' : 'unknown' },
+    effort: entry.effort || null,
+    advisory: null,
+    advisoryKind: null,
+    modelStats: null,
+    status,
+    statusFor,
+    statusExact: false,
+    ctx: { v: null, src: 'unknown' },
+    tokens: { v: null, src: 'unknown' },
+    cost: { v: null, src: 'unknown' },
+    price: null,
+    ram: { v: Number.isFinite(rss) ? rss : null, src: 'reported' },
+    budget: null,
+    session: entry.session || null,
+    cwd: entry.cwd || null,
+    crewTags: null,
+    badges: [],
+    crew: null,
+    surge: false,
+    surgeMarker: null,
+    owner: entry.owner || null,
+    orchestrator: entry.orchestrator || null,
+    host: entry.host || 'ovh',
+    mode: 'headless',
+    source: 'reported',
+    pid: entry.pid || null,
+    command: entry.command || null,
+    heartbeatAt,
+    workspaceTabCount: 1,
+  };
 }
 
 function loadMemory() {
@@ -328,6 +476,7 @@ function pick(...candidates) {
 // none until you allow it).
 function buildModel({
   snap, agents, screens = {}, reports = {}, events = {}, rss = {}, crewFor = () => null, mem, now, budget = null, trust = {}, tagScope = null,
+  registry = [], hostMem = null, herdrOnline = true, sort = null,
 }) {
   const paneById = new Map(snap.panes.map((p) => [p.pane_id, p]));
   const tabById = new Map((snap.tabs || []).map((t) => [t.tab_id, t]));
@@ -460,7 +609,46 @@ function buildModel({
   // Blocked panes first within their workspace; otherwise Herdr's order.
   const wsOrder = new Map();
   for (const r of rows) if (!wsOrder.has(r.workspace)) wsOrder.set(r.workspace, wsOrder.size);
+
+  // The standalone registry joins the Herdr rows: an entry with a live pane
+  // enriches that row, a headless entry with no pane becomes a row of its own.
+  const byPane = new Map(rows.map((r) => [r.paneId, r]));
+  const censusProcs = hostMem && Array.isArray(hostMem.processes) ? hostMem.processes : null;
+  const reportedRss = (entry) => {
+    if (censusProcs) {
+      const hit = censusProcs.find((p) => (Number.isFinite(entry.pid) && Number(p.pid) === Number(entry.pid))
+        || (entry.command && p.command === entry.command));
+      if (hit && Number.isFinite(hit.rssKb)) return hit.rssKb;
+    }
+    return Number.isFinite(entry.rssKb) ? entry.rssKb : null;
+  };
+  const registryList = Array.isArray(registry) ? registry : [];
+  for (const entry of registryList) {
+    if (!plainObject(entry)) continue;
+    const id = entry.paneId || entry.id;
+    const target = id ? byPane.get(id) : null;
+    const rss = reportedRss(entry);
+    if (target) {
+      target.owner = entry.owner || null;
+      target.orchestrator = entry.orchestrator || null;
+      target.host = entry.host || null;
+      target.heartbeatAt = entry.lastHeartbeat || entry.updatedAt || null;
+      target.mode = entry.mode || 'pane';
+      target.source = 'reported';
+      if (Number.isFinite(rss)) {
+        target.rssKb = rss;
+        if (!Number.isFinite(target.ram.v) || rss > target.ram.v) target.ram = { v: rss, src: 'reported' };
+      }
+      continue;
+    }
+    if (entry.mode !== 'headless') continue;
+    const row = headlessRow(entry, rss, now);
+    byPane.set(row.paneId, row);
+    rows.push(row);
+  }
+
   rows.sort((x, y) => wsOrder.get(x.workspace) - wsOrder.get(y.workspace) || (y.status === 'blocked') - (x.status === 'blocked'));
+  if (sort === 'ram' || sort === true) sortRowsByRam(rows);
 
   const crewChecks = [];
   for (const crew of crews.values()) {
@@ -489,6 +677,8 @@ function buildModel({
     checkConcurrency: primaryCrew ? primaryCrew.checkConcurrency : 3,
     checkTimeoutMs: primaryCrew ? primaryCrew.checkTimeoutMs : 2000,
     explabsEnabled: trustedCrews.some((c) => c.explabsEnabled),
+    hostMem,
+    herdrOnline,
   };
 }
 
@@ -619,6 +809,11 @@ function rowCells(r, shortState) {
   const glyph = STATUS_GLYPH[r.status] || '?';
   const label = shortState ? glyph : `${glyph} ${r.status}`;
   const tb = tabBadge(r);
+  // A reported worker says where it came from: a headless run has no pane, an
+  // enriched row was joined to the registry. The heartbeat age is the age the
+  // row already carries in `statusFor`.
+  const sourceTag = r.mode === 'headless' ? ' [headless]' : (r.source === 'reported' ? ' [reported]' : '');
+  const heartbeat = r.mode === 'headless' ? ` · hb ${fmtDuration(r.statusFor)}` : '';
   const val = (f, fmt) => (f.v === null
     ? { text: '?', paint: C.dim }
     : { text: fmt(f.v), paint: f.src === 'screen' ? C.screen : C.text });
@@ -626,7 +821,7 @@ function rowCells(r, shortState) {
     tag: { text: r.tag || '', paint: (s) => s },
     name: {
       // The human name, then the role in a dim suffix when it is set.
-      text: r.role ? `${r.name} · ${r.role}` : r.name,
+      text: `${r.role ? `${r.name} · ${r.role}` : r.name}${sourceTag}`,
       paint: (s) => {
         const i = s.indexOf(SEP);
         const head = i >= 0 ? s.slice(0, i) : s;
@@ -638,7 +833,7 @@ function rowCells(r, shortState) {
     id: { text: tb ? `${r.paneId} ${tb}` : r.paneId, paint: C.dim },
     agent: agentCell(r),
     effort: effortCell(r),
-    state: { text: `${label} ${time}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
+    state: { text: `${label} ${time}${heartbeat}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
     ctx: ctxCell(r, val(r.ctx, fmtCtx)),
     tokens: val(r.tokens, fmtTokens),
     cost: costCell(r, estimatedCost(r, val(r.cost, fmtCost))),
@@ -1284,6 +1479,7 @@ function helpLines(menu, sources, width = 100) {
       ] : []),
       ['t', `colour tags (${menu.tags})`],
       ['a', 'allow a new crew file'],
+      ['M', 'sort rows by RAM, heaviest first'],
       ['u', 'install the offered update'],
       ['r', 'refresh now'],
       ['R', 'backups: check what is saved, rebuild a workspace'],
@@ -2814,6 +3010,12 @@ function render(model, {
   if (done > 0) z2 += ` · ${C.cyan(`✓ ${done} done`)}`;
   const ts0 = model.tokscale;
   let z3 = ts0 ? C.text(`today ${fmtCost(ts0.total)}`) : '';
+  const hm = model.hostMem;
+  if (hm && (Number.isFinite(hm.physFreeKb) || Number.isFinite(hm.swapUsedKb))) {
+    const phys = Number.isFinite(hm.physFreeKb) ? `${fmtRam(hm.physFreeKb)} free` : '?';
+    const swap = Number.isFinite(hm.swapUsedKb) ? `${fmtRam(hm.swapUsedKb)} used` : '?';
+    z3 += (z3 ? '   ' : '') + C.text(`PhysMem ${phys} · swap ${swap}`);
+  }
   let maxPace = 0;
   for (const l of (model.limits || [])) {
     for (const w of (l.windows || [])) if (typeof w.pace === 'number' && w.pace > maxPace) maxPace = w.pace;
@@ -3263,6 +3465,7 @@ function toJson(model) {
     scope,
     workspace: scope === 'all' ? null : scope,
     summary,
+    hostMem: model.hostMem || null,
     panes: toJsonRows(model),
   };
 }
@@ -3310,6 +3513,7 @@ options:
   --provider <name|off>   whose usage bars show, or off to hide them
   --subview <name|all>    sub-view inside the active provider, or all
   --interval <seconds>    refresh period, at least 2 (default 3)
+  --sort ram              heaviest RAM first (a row with no reading sinks)
   --once                  print one frame and exit (no colour tags written)
   --backups               open on the backups view (the restore action uses this)
   --options               open on the options view (settings, tokscale, compaction)
@@ -3325,6 +3529,7 @@ function parseArgs(argv) {
   const o = {
     workspace: null, scope: 'all', crew: null, budget: null, tags: process.env.CREW_BOARD_TAGS || null, tagScope: null, view: 'auto',
     provider: null, subview: null, interval: 3, once: false, json: false, jsonRows: false, set: new Set(process.env.CREW_BOARD_TAGS ? ['tags'] : []),
+    sort: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -3354,6 +3559,11 @@ function parseArgs(argv) {
       if (!(o.budget > 0)) throw new Error('--budget must be a positive number of dollars');
     }
     else if (a === '--interval') o.interval = Math.max(2, Number(val()) || 3);
+    else if (a === '--sort') {
+      const v = val();
+      if (v !== 'ram') throw new Error('--sort must be ram');
+      o.sort = v;
+    }
     else if (a === '--once') o.once = true;
     else if (a === '--backups') o.backups = true;
     else if (a === '--options') o.options = true;
@@ -3433,7 +3643,16 @@ async function paneRss(agents, now) {
 // One full data pass: Herdr snapshot, reports, screens where needed.
 async function collect(opts, mem) {
   const now = Date.now();
-  const snap = await herdr.snapshot();
+  let snap;
+  let herdrOnline = true;
+  try {
+    snap = await herdr.snapshot();
+  } catch (e) {
+    // Herdr stopped or unreachable: lose the panes, keep the board. The
+    // standalone headless workers below still show from ~/.roostr/registry.json.
+    herdrOnline = false;
+    snap = { agents: [], panes: [], workspaces: [], tabs: [], layouts: [] };
+  }
   // Save the agent's real session id on the pane before anything reads the
   // snapshot, so backups and sessions.json can resume it later. Only a live
   // board writes metadata back; --json and --once stay read only.
@@ -3485,7 +3704,10 @@ async function collect(opts, mem) {
     const c = crewFor(null);
     if (c) trust[c.file] = c.hash;
   }
-  const model = buildModel({ snap, agents, screens, reports, events, rss, crewFor, mem, now, budget: opts.budget, trust, tagScope: opts.tagScope });
+  const model = buildModel({
+    snap, agents, screens, reports, events, rss, crewFor, mem, now, budget: opts.budget, trust, tagScope: opts.tagScope,
+    registry: readRegistry(), hostMem: readHostMem(), herdrOnline, sort: opts.sort,
+  });
   if (opts.live) {
     for (const a of agents) {
       if (!reports[a.pane_id] && screens[a.pane_id] != null) {
@@ -4389,6 +4611,7 @@ function runLive(opts) {
     else if (k === 's') act('scope');
     else if (k === 'p') act('provider');
     else if (k === 'P') act('subview');
+    else if (k === 'M') { opts.sort = opts.sort === 'ram' ? null : 'ram'; tick(); }
     else if (k === 'a') act('trust');
     else if (k === '?') act('help');
     else if (k === 'd') act('today');
@@ -4585,6 +4808,7 @@ function main(argv) {
 module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
   render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups, findTokscale, optionsLines,
+  readRegistry, readHostMem, parseMeminfo, sortRowsByRam, headlessRow, registryFile, censusFile,
   setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, surge, orchestrationEnabled,
   orchestrateState, orchestrateLines, orchestrateKey, daemonLines, discoverPlanDirs, loadPlanTasks, saveTaskOverride, ORCHESTRATE_TABS,
 };
