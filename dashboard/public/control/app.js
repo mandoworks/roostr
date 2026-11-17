@@ -203,8 +203,9 @@
     return matchesFilter([name, pane.pane_id, task, cwd, title, pane.restore_error], status);
   }
 
-  function buildCollapseHeader(key, labelText, activeCount, blockedCount, totalCount) {
+  function buildCollapseHeader(key, labelText, activeCount, blockedCount, totalCount, opts) {
     const isCollapsed = Boolean(state.collapsed[key]);
+    const isTab = Boolean(opts && opts.isTab);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'collapse-toggle';
@@ -218,7 +219,7 @@
     chev.textContent = isCollapsed ? '\u25B8' : '\u25BE';
 
     const lbl = document.createElement('span');
-    lbl.className = 'collapse-label';
+    lbl.className = 'collapse-label' + (isTab ? ' tab-title' : '');
     lbl.textContent = labelText;
 
     left.appendChild(chev);
@@ -233,7 +234,9 @@
     if (activeCount > 0) {
       counts.appendChild(badge(`${activeCount} active`, 'status-working'));
     }
-    if (blockedCount === 0 && activeCount === 0) {
+    if (isTab) {
+      counts.appendChild(badge(`${totalCount} ${totalCount === 1 ? 'pane' : 'panes'}`, 'tab-count-badge'));
+    } else if (blockedCount === 0 && activeCount === 0) {
       counts.appendChild(badge(`${totalCount}`, ''));
     }
     btn.appendChild(counts);
@@ -462,8 +465,22 @@
 
         const tabBox = document.createElement('div');
         tabBox.className = 'tab-group' + (state.collapsed[tabKey] ? ' collapsed' : '');
-        const tabName = (tab && tab.label ? `Tab ${tab.label}` : tabId) + (tab && tab.focused ? ' (active)' : '');
-        tabBox.appendChild(buildCollapseHeader(tabKey, tabName, tabActive, tabBlocked, tabPanes.length));
+        let tabTitle = tabId;
+        if (tab) {
+          const hasNum = tab.number !== undefined && tab.number !== null && tab.number !== '';
+          const rawLabel = (tab.label || '').trim();
+          if (hasNum && rawLabel && rawLabel !== String(tab.number) && rawLabel !== `Tab ${tab.number}`) {
+            tabTitle = `Tab ${tab.number} \u00B7 ${rawLabel}`;
+          } else if (hasNum) {
+            tabTitle = `Tab ${tab.number}`;
+          } else if (rawLabel) {
+            tabTitle = rawLabel.startsWith('Tab ') ? rawLabel : `Tab ${rawLabel}`;
+          }
+          if (tab.focused) {
+            tabTitle += ' (active)';
+          }
+        }
+        tabBox.appendChild(buildCollapseHeader(tabKey, tabTitle, tabActive, tabBlocked, tabPanes.length, { isTab: true }));
 
         const tabChildren = document.createElement('div');
         tabChildren.className = 'tab-children';
@@ -951,6 +968,139 @@
     }
   }
 
+  function renderMuseInboxStatus(text) {
+    const list = document.getElementById('muse-inbox-list');
+    if (!list) return;
+    list.textContent = '';
+    const msg = document.createElement('span');
+    msg.className = 'muted';
+    msg.textContent = text;
+    list.appendChild(msg);
+  }
+
+  function renderMuseInboxMessages(messages) {
+    const list = document.getElementById('muse-inbox-list');
+    if (!list) return;
+    list.textContent = '';
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      renderMuseInboxStatus('No recent PioRelay messages.');
+      return;
+    }
+
+    for (const m of messages) {
+      const item = document.createElement('div');
+      item.className = 'muse-inbox-item';
+
+      const head = document.createElement('div');
+      head.className = 'muse-inbox-head';
+
+      const badges = document.createElement('div');
+      badges.className = 'muse-inbox-badges';
+      const fromAgent = m.from_agent || m.from || '?';
+      const toAgent = m.to_agent || m.to || '?';
+      badges.appendChild(badge(`${fromAgent} -> ${toAgent}`, 'status-idle'));
+      if (m.project) {
+        badges.appendChild(badge(m.project, 'focused'));
+      }
+
+      const ts = document.createElement('span');
+      ts.className = 'muted';
+      ts.textContent = m.created_at || m.timestamp || m.ts || '';
+
+      head.appendChild(badges);
+      head.appendChild(ts);
+      item.appendChild(head);
+
+      const subj = document.createElement('div');
+      subj.className = 'muse-inbox-subject';
+      const strong = document.createElement('strong');
+      strong.textContent = m.subject || '(no subject)';
+      subj.appendChild(strong);
+      item.appendChild(subj);
+
+      const bodyText = m.body || m.message || m.text || '';
+      if (bodyText) {
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'muse-inbox-body';
+        bodyEl.textContent = bodyText;
+        item.appendChild(bodyEl);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'muse-inbox-actions';
+      const replyBtn = document.createElement('button');
+      replyBtn.type = 'button';
+      replyBtn.className = 'small';
+      replyBtn.textContent = 'Reply in Form';
+      replyBtn.addEventListener('click', () => {
+        const subjInput = document.getElementById('muse-msg-subject');
+        const projInput = document.getElementById('muse-msg-project');
+        const bodyInput = document.getElementById('muse-msg-body');
+        const msgDetails = document.getElementById('muse-message-details');
+        if (msgDetails) msgDetails.open = true;
+        if (subjInput) {
+          const rawSubj = (m.subject || '').trim();
+          subjInput.value = /^re:/i.test(rawSubj) ? rawSubj : `Re: ${rawSubj}`;
+        }
+        if (projInput) {
+          projInput.value = m.project || 'muse';
+        }
+        if (bodyInput) {
+          bodyInput.focus();
+          bodyInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+      actions.appendChild(replyBtn);
+      item.appendChild(actions);
+
+      list.appendChild(item);
+    }
+  }
+
+  async function loadMuseInbox(slug) {
+    if (!slug) return;
+    const refreshBtn = document.getElementById('muse-inbox-refresh-btn');
+    const statusEl = document.getElementById('muse-inbox-status');
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Loading...';
+
+    try {
+      const res = await fetch(`/agents/api/muse/messages?agent=${encodeURIComponent(slug)}&limit=20`, {
+        credentials: 'same-origin',
+      });
+      if (res.status === 401) {
+        window.location.assign(
+          '/agents/auth/login?next=' + encodeURIComponent(window.location.pathname + (window.location.search || ''))
+        );
+        return;
+      }
+      if (state.selectedMuseSlug !== slug) return;
+      if (res.status === 502) {
+        renderMuseInboxStatus('PioRelay inbox unavailable (502).');
+        if (statusEl) statusEl.textContent = 'Relay unavailable';
+        return;
+      }
+      if (!res.ok) {
+        renderMuseInboxStatus(`Could not load inbox (${res.status}).`);
+        if (statusEl) statusEl.textContent = '';
+        return;
+      }
+      const data = await res.json();
+      if (state.selectedMuseSlug !== slug) return;
+      const messages = Array.isArray(data) ? data : (Array.isArray(data && data.messages) ? data.messages : []);
+      renderMuseInboxMessages(messages);
+      if (statusEl) statusEl.textContent = `${messages.length} message${messages.length === 1 ? '' : 's'}`;
+    } catch {
+      if (state.selectedMuseSlug === slug) {
+        renderMuseInboxStatus('PioRelay inbox unavailable.');
+        if (statusEl) statusEl.textContent = '';
+      }
+    } finally {
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+
   function selectMuseAgent(slug) {
     state.selectedMuseSlug = slug;
     state.selectedPaneId = null;
@@ -975,13 +1125,103 @@
       if (emptyEl) emptyEl.hidden = true;
       if (museBody) museBody.hidden = false;
       renderMuseDetail(agent);
+      loadMuseInbox(slug);
     }
 
     updateDetailHeader();
     renderSidebar();
   }
 
+  function populateRestoreWorkspaceSelect() {
+    const select = document.getElementById('restore-workspace-select');
+    if (!select) return;
+    const prev = select.value || 'all';
+    const seen = new Map();
+
+    const data = state.sessionsData;
+    const backups = data && Array.isArray(data.backups) ? data.backups : [];
+    for (const b of backups) {
+      const wsId = b && (b.workspaceId || b.label);
+      if (!wsId || wsId === 'all') continue;
+      const label = b.label && b.workspaceId && b.label !== b.workspaceId
+        ? `${b.label} (${b.workspaceId})`
+        : String(wsId);
+      if (!seen.has(String(wsId))) seen.set(String(wsId), label);
+    }
+
+    for (const s of getSavedSessionsList()) {
+      const wsId = s && (s.workspaceId || s.workspace);
+      if (!wsId || wsId === 'all') continue;
+      if (!seen.has(String(wsId))) {
+        const label = s.workspaceLabel && s.workspaceLabel !== wsId
+          ? `${s.workspaceLabel} (${wsId})`
+          : String(wsId);
+        seen.set(String(wsId), label);
+      }
+    }
+
+    select.textContent = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = 'all';
+    allOpt.textContent = 'All workspaces (all)';
+    select.appendChild(allOpt);
+
+    for (const [wsId, label] of seen.entries()) {
+      const opt = document.createElement('option');
+      opt.value = wsId;
+      opt.textContent = label;
+      select.appendChild(opt);
+    }
+
+    if ([...select.options].some((o) => o.value === prev)) {
+      select.value = prev;
+    }
+  }
+
+  async function captureBackupNow() {
+    const btn = document.getElementById('capture-backup-btn');
+    const statusEl = document.getElementById('orchestration-status');
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Capturing backup...';
+    try {
+      await apiFetch('/agents/api/backups/capture', {
+        method: 'POST',
+        body: '{}',
+      });
+      await refreshSessions();
+      refreshAuditIfOpen();
+      if (statusEl) statusEl.textContent = `Backup captured at ${new Date().toLocaleTimeString()}`;
+    } catch {
+      if (statusEl) statusEl.textContent = 'Backup capture failed.';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function restoreWorkspace(workspace, mode, triggerBtn) {
+    const targetWs = (workspace || '').trim() || 'all';
+    const targetMode = mode === 'backup' ? 'backup' : 'sessions';
+    const statusEl = document.getElementById('orchestration-status');
+    if (triggerBtn) triggerBtn.disabled = true;
+    if (statusEl) statusEl.textContent = `Restoring ${targetWs} (${targetMode})...`;
+    try {
+      await apiFetch('/agents/api/sessions/restore', {
+        method: 'POST',
+        body: JSON.stringify({ workspace: targetWs, mode: targetMode }),
+      });
+      await refreshState();
+      await refreshSessions();
+      refreshAuditIfOpen();
+      if (statusEl) statusEl.textContent = `Restored ${targetWs} (${targetMode}) at ${new Date().toLocaleTimeString()}`;
+    } catch {
+      if (statusEl) statusEl.textContent = `Restore failed for ${targetWs}.`;
+    } finally {
+      if (triggerBtn) triggerBtn.disabled = false;
+    }
+  }
+
   function renderOrchestrationDrawer() {
+    populateRestoreWorkspaceSelect();
     const details = document.getElementById('orchestration-details');
     const content = document.getElementById('orchestration-content');
     if (!details || !details.open || !content) return;
@@ -1014,9 +1254,19 @@
         const row = document.createElement('div');
         row.className = 'orch-row';
         const info = document.createElement('div');
+        info.className = 'orch-row-info';
         const label = s.name || s.slug || s.kind || s.agent || 'session';
         const parts = [label, s.kind || s.agent, s.model, shortCwd(s.cwd), sid ? sid.slice(0, 14) : ''].filter(Boolean);
-        info.textContent = parts.join(' | ');
+        const textSpan = document.createElement('span');
+        textSpan.textContent = parts.join(' | ');
+        info.appendChild(textSpan);
+
+        const tabVal = s.tab && s.tabId && s.tab !== s.tabId
+          ? `${s.tab} (${s.tabId})`
+          : (s.tab || s.tabId || '');
+        if (tabVal) {
+          info.appendChild(badge(`tab: ${tabVal}`, 'tab-count-badge'));
+        }
 
         const actions = document.createElement('div');
         actions.className = 'orch-row-actions';
@@ -1051,23 +1301,42 @@
     bkpTitle.textContent = 'Workspace Backups (~/.roostr/backups/)';
     content.appendChild(bkpTitle);
 
+    const backupsList = document.createElement('div');
+    backupsList.id = 'backups-list';
+    backupsList.className = 'orch-list';
     const backups = Array.isArray(data.backups) ? data.backups : [];
     if (backups.length === 0) {
       const none = document.createElement('span');
       none.className = 'muted';
       none.textContent = 'No workspace backups found.';
-      content.appendChild(none);
+      backupsList.appendChild(none);
     } else {
       for (const b of backups) {
         const row = document.createElement('div');
         row.className = 'orch-row';
+        const info = document.createElement('div');
         const label = b.label || b.workspaceId || 'workspace';
         const ver = b.version !== undefined ? `v${b.version}` : '';
         const count = b.paneCount !== undefined ? `${b.paneCount} panes` : '';
-        row.textContent = [label, ver, count, b.capturedAt || ''].filter(Boolean).join(' | ');
-        content.appendChild(row);
+        info.textContent = [label, ver, count, b.capturedAt || ''].filter(Boolean).join(' | ');
+
+        const actions = document.createElement('div');
+        actions.className = 'orch-row-actions';
+        const restoreBtn = document.createElement('button');
+        restoreBtn.type = 'button';
+        restoreBtn.className = 'small';
+        restoreBtn.textContent = 'Restore Backup';
+        restoreBtn.addEventListener('click', () => {
+          restoreWorkspace(b.workspaceId || b.label, 'backup', restoreBtn);
+        });
+        actions.appendChild(restoreBtn);
+
+        row.appendChild(info);
+        row.appendChild(actions);
+        backupsList.appendChild(row);
       }
     }
+    content.appendChild(backupsList);
 
     // 3. Orchestration Tasks
     const orchTitle = document.createElement('div');
@@ -1595,6 +1864,7 @@
       subjectEl.value = '';
       bodyEl.value = '';
       if (statusEl) statusEl.textContent = `Sent to ${slug} at ${new Date().toLocaleTimeString()}`;
+      loadMuseInbox(slug);
       refreshAuditIfOpen();
     } catch {
       // Error banner handled
@@ -1807,6 +2077,31 @@
 
     const museMessageForm = document.getElementById('muse-message-form');
     if (museMessageForm) museMessageForm.addEventListener('submit', sendMuseMessage);
+
+    const museInboxRefreshBtn = document.getElementById('muse-inbox-refresh-btn');
+    if (museInboxRefreshBtn) {
+      museInboxRefreshBtn.addEventListener('click', () => {
+        if (state.selectedMuseSlug) loadMuseInbox(state.selectedMuseSlug);
+      });
+    }
+
+    const captureBackupBtn = document.getElementById('capture-backup-btn');
+    if (captureBackupBtn) {
+      captureBackupBtn.addEventListener('click', captureBackupNow);
+    }
+
+    const restoreWorkspaceForm = document.getElementById('restore-workspace-form');
+    if (restoreWorkspaceForm) {
+      restoreWorkspaceForm.addEventListener('submit', (evt) => {
+        evt.preventDefault();
+        const wsSelect = document.getElementById('restore-workspace-select');
+        const modeSelect = document.getElementById('restore-mode-select');
+        const restoreBtn = document.getElementById('restore-workspace-btn');
+        const ws = wsSelect ? wsSelect.value : 'all';
+        const mode = modeSelect ? modeSelect.value : 'sessions';
+        restoreWorkspace(ws, mode, restoreBtn);
+      });
+    }
 
     const orchDetails = document.getElementById('orchestration-details');
     if (orchDetails) {

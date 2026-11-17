@@ -203,6 +203,15 @@
           </form>
         </details>
 
+        <details id="muse-inbox-details" class="detail-section sub-panel" open>
+          <summary>Recent PioRelay Messages &amp; Thread</summary>
+          <div class="muse-inbox-toolbar">
+            <button id="muse-inbox-refresh-btn" type="button" class="small">Refresh Inbox</button>
+            <span id="muse-inbox-status" class="muted"></span>
+          </div>
+          <div id="muse-inbox-list" class="muse-inbox-list"></div>
+        </details>
+
         <details id="muse-docs-details" class="detail-section">
           <summary>Agent Docs (SOUL.md, AGENT.md, STATE.md)</summary>
           <div id="muse-docs-container" class="muse-docs-container"></div>
@@ -213,6 +222,20 @@
 
   <details id="orchestration-details" class="card audit-details">
     <summary>Saved Sessions, Backups &amp; Orchestration Tasks</summary>
+    <div class="orch-toolbar">
+      <button id="capture-backup-btn" type="button" class="small primary">Capture Backup Now</button>
+      <form id="restore-workspace-form" class="orch-restore-form">
+        <select id="restore-workspace-select" aria-label="Workspace to restore">
+          <option value="all">All workspaces (all)</option>
+        </select>
+        <select id="restore-mode-select" aria-label="Restore mode">
+          <option value="sessions">Restore Saved Sessions in Workspace</option>
+          <option value="backup">Rebuild Workspace from Latest Backup</option>
+        </select>
+        <button id="restore-workspace-btn" type="submit" class="small">Restore Workspace</button>
+      </form>
+      <span id="orchestration-status" class="muted" role="status" aria-live="polite"></span>
+    </div>
     <div id="orchestration-content" class="orchestration-content">
       <span class="muted">Expand to view saved sessions, workspace backups, and orchestration tasks.</span>
     </div>
