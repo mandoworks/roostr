@@ -679,3 +679,98 @@ test('extractSessions: preserves handoff path and worktree flag when present', (
   assert.equal(extracted[0].worktree, true);
   assert.equal(extracted[0].handoff, handoffFile);
 });
+
+test('extractSessions: persists tabId and tab from rows and snapshots', () => {
+  const fromRowModel = {
+    workspaces: new Map([['w1', 'roostr']]),
+    rows: [
+      {
+        paneId: 'w1:p1', workspace: 'roostr', tabId: 't2', tab: 'migration',
+        name: 'api', cwd: '/tmp/a', kind: 'claude',
+        model: { v: null, src: 'unknown' }, effort: null, status: 'working', task: 'migrate', session: null,
+      },
+    ],
+  };
+  const rowExtracted = sessions.extractSessions(fromRowModel);
+  assert.equal(rowExtracted[0].tabId, 't2');
+  assert.equal(rowExtracted[0].tab, 'migration');
+
+  const snapModel = {
+    workspaces: [{ workspace_id: 'w1', label: 'roostr' }],
+    tabs: [{ tab_id: 't3', workspace_id: 'w1', number: 3, label: 'tests' }],
+    panes: [{ pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 't3', cwd: '/tmp/b' }],
+    agents: [{ pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 't3', agent: 'opencode', name: 'qa', agent_status: 'idle' }],
+  };
+  const snapExtracted = sessions.extractSessions(snapModel);
+  assert.equal(snapExtracted[0].tabId, 't3');
+  assert.equal(snapExtracted[0].tab, 'tests');
+});
+
+test('restoreSessions: creates secondary tabs via createTab when restoring multi-tab workspace', async () => {
+  const calls = [];
+  let splitCount = 0;
+  let tabCount = 1;
+  const fakeHerdr = {
+    snapshot: async () => ({ workspaces: [], panes: [], agents: [] }),
+    createWorkspace: async (label, cwd) => {
+      calls.push(['createWorkspace', label, cwd]);
+      return { workspaceId: 'w1', rootPaneId: 'w1:p1', tabId: 't1' };
+    },
+    createTab: async (wsId, cwd, label) => {
+      tabCount++;
+      calls.push(['createTab', wsId, cwd, label]);
+      return { tabId: `t${tabCount}`, rootPaneId: `w1:t${tabCount}p1` };
+    },
+    splitPane: async (paneId, dir, cwd) => {
+      splitCount++;
+      calls.push(['splitPane', paneId, dir, cwd]);
+      return `w1:split${splitCount}`;
+    },
+    startAgent: async (name, kind, paneId) => {
+      calls.push(['startAgent', name, paneId]);
+    },
+    renamePane: async () => {},
+    closePane: async () => {},
+  };
+
+  const toRestore = [
+    { paneId: 'old:p1', workspaceId: 'old-w1', workspace: 'app', tabId: 'old-t1', tab: '1', name: 'lead', cwd: '/tmp/a', agent: 'claude' },
+    { paneId: 'old:p2', workspaceId: 'old-w1', workspace: 'app', tabId: 'old-t1', tab: '1', name: 'api', cwd: '/tmp/a', agent: 'claude' },
+    { paneId: 'old:p3', workspaceId: 'old-w1', workspace: 'app', tabId: 'old-t2', tab: 'migration', name: 'db', cwd: '/tmp/b', agent: 'opencode' },
+  ];
+
+  const res = await sessions.restoreSessions(toRestore, { herdr: fakeHerdr });
+  assert.equal(res.restored, 3);
+  assert.equal(res.errors.length, 0);
+  assert.deepEqual(calls, [
+    ['createWorkspace', 'app', '/tmp/a'],
+    ['startAgent', 'lead', 'w1:p1'],
+    ['splitPane', 'w1:p1', 'right', '/tmp/a'],
+    ['startAgent', 'api', 'w1:split1'],
+    ['createTab', 'w1', '/tmp/b', 'migration'],
+    ['startAgent', 'db', 'w1:t2p1'],
+  ]);
+});
+
+test('sessionList: merges opencode.db sessions via sqlite3 and deduplicates by id', async () => {
+  const binDir = fs.mkdtempSync(path.join(dir, 'bin-'));
+  const fakeOpencode = path.join(binDir, 'opencode');
+  const fakeSqlite = path.join(binDir, 'sqlite3');
+  const fakeDb = path.join(dir, 'opencode.db');
+  fs.writeFileSync(fakeDb, '');
+  fs.writeFileSync(fakeOpencode, '#!/bin/sh\necho \'[{"id":"ses_cli1","title":"From CLI","directory":"/tmp/c","updated":200}]\'\n');
+  fs.writeFileSync(fakeSqlite, '#!/bin/sh\necho \'[{"id":"ses_cli1","title":"Dup","directory":"/tmp/c","updated":100},{"id":"ses_db2","title":"From DB","directory":"/tmp/d","updated":300}]\'\n');
+  fs.chmodSync(fakeOpencode, 0o755);
+  fs.chmodSync(fakeSqlite, 0o755);
+
+  const prevPath = process.env.PATH;
+  process.env.PATH = `${binDir}:${prevPath}`;
+  try {
+    const list = await sessions.sessionList('opencode', { bin: fakeOpencode, opencodeDb: fakeDb, noCache: true });
+    assert.deepEqual(list.map((s) => s.id), ['ses_cli1', 'ses_db2']);
+    assert.equal(list[0].title, 'From CLI');
+    assert.equal(list[1].title, 'From DB');
+  } finally {
+    process.env.PATH = prevPath;
+  }
+});
