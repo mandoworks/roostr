@@ -689,7 +689,7 @@ test('toJson: envelope has version, scope, summary and pane rows', () => {
   const m = board.buildModel(sample());
   m.scopeLabel = 'all';
   const j = board.toJson(m);
-  assert.deepEqual(Object.keys(j), ['schema', 'version', 'commit', 'generatedAt', 'scope', 'workspace', 'summary', 'panes']);
+  assert.deepEqual(Object.keys(j), ['schema', 'version', 'commit', 'generatedAt', 'scope', 'workspace', 'summary', 'hostMem', 'panes']);
   assert.equal(j.schema, 1);
   assert.match(j.version, /^\d+\.\d+\.\d+$/);
   assert.ok(j.commit === null || /^[0-9a-f]{4,40}$/.test(j.commit));
@@ -2609,3 +2609,143 @@ test('buildModel & render: attaches tab metadata and shows tab badges in table a
   assert.match(cardsOut, /w1:p2 \[t2\]/);
   assert.match(cardsOut, /w1:p3 \[t3:migration\]/);
 });
+
+test('collect: herdr down keeps the board and shows headless registry workers', async () => {
+  const herdr = require('../src/herdr');
+  const savedSnapshot = herdr.snapshot;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-registry-'));
+  const savedRegistry = process.env.ROOSTR_REGISTRY;
+  const savedStateDir = process.env.ROOSTR_STATE_DIR;
+  process.env.ROOSTR_REGISTRY = path.join(dir, 'registry.json');
+  fs.writeFileSync(process.env.ROOSTR_REGISTRY, JSON.stringify({
+    workers: [
+      {
+        id: 'mac-worker-1', owner: 'ana', orchestrator: 'head-honcho', host: 'mac', kind: 'opencode',
+        task: 'fix login timeout', state: 'working', mode: 'headless', rssKb: 512000, session: 'ses_abc',
+        pid: 4242, command: 'opencode run', lastHeartbeat: NOW - 30e3,
+      },
+      {
+        id: 'ovh-worker-2', owner: 'beto', host: 'ovh', kind: 'claude', task: 'needs approval',
+        state: 'waiting-approval', mode: 'headless', rssKb: 262144, lastHeartbeat: NOW - 90e3,
+      },
+    ],
+  }));
+  herdr.snapshot = async () => { throw new Error('herdr is not running'); };
+  try {
+    const m = await board.collect(board.parseArgs([]), { tags: {}, status: {}, prefs: {} });
+    assert.equal(m.herdrOnline, false);
+    assert.equal(m.rows.length, 2);
+    const w1 = m.rows.find((r) => r.paneId === 'mac-worker-1');
+    assert.equal(w1.workspace, 'ana');
+    assert.equal(w1.owner, 'ana');
+    assert.equal(w1.orchestrator, 'head-honcho');
+    assert.equal(w1.host, 'mac');
+    assert.equal(w1.kind, 'opencode');
+    assert.equal(w1.mode, 'headless');
+    assert.equal(w1.source, 'reported');
+    assert.equal(w1.status, 'working');
+    assert.equal(w1.session, 'ses_abc');
+    assert.deepEqual(w1.ram, { v: 512000, src: 'reported' });
+    const w2 = m.rows.find((r) => r.paneId === 'ovh-worker-2');
+    assert.equal(w2.status, 'blocked', 'waiting-approval reads as blocked');
+    assert.equal(w2.host, 'ovh');
+
+    ui.setColor(false);
+    const out = board.render(m, { width: 160, view: 'line' });
+    assert.match(out, /mac-worker-1 \[headless\]/);
+    assert.match(out, /\bhb \d/);
+  } finally {
+    herdr.snapshot = savedSnapshot;
+    if (savedRegistry === undefined) delete process.env.ROOSTR_REGISTRY;
+    else process.env.ROOSTR_REGISTRY = savedRegistry;
+    if (savedStateDir === undefined) delete process.env.ROOSTR_STATE_DIR;
+    else process.env.ROOSTR_STATE_DIR = savedStateDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('toJson: hostMem and headless worker rows appear in the envelope', () => {
+  const hostMem = { host: 'ovh', physFreeKb: 8388608, swapUsedKb: 2097152, swapTotalKb: 4194304 };
+  const m = board.buildModel({
+    snap: { workspaces: [], panes: [], agents: [] },
+    agents: [],
+    mem: { tags: {}, status: {} },
+    now: NOW,
+    registry: [{ id: 'w-1', owner: 'ana', host: 'mac', kind: 'opencode', task: 'ship it', state: 'working', mode: 'headless', rssKb: 1048576, session: 'ses_x' }],
+    hostMem,
+    herdrOnline: false,
+  });
+  m.scopeLabel = 'all';
+  const j = board.toJson(m);
+  assert.deepEqual(j.hostMem, hostMem);
+  const row = j.panes.find((p) => p.paneId === 'w-1');
+  assert.ok(row, 'the headless worker is in the envelope');
+  assert.equal(row.owner, 'ana');
+  assert.equal(row.host, 'mac');
+  assert.equal(row.mode, 'headless');
+  assert.equal(row.source, 'reported');
+  assert.equal(row.task, 'ship it');
+  assert.equal(row.session, 'ses_x');
+  assert.deepEqual(row.ram, { v: 1048576, src: 'reported' });
+  assert.equal('crew' in row, false);
+  assert.equal(board.toJson(m).hostMem.host, 'ovh');
+});
+
+test('sort rows by RAM: --sort ram, heaviest first, nulls last', () => {
+  assert.equal(board.parseArgs(['--sort', 'ram']).sort, 'ram');
+  assert.equal(board.parseArgs([]).sort, null);
+  assert.throws(() => board.parseArgs(['--sort', 'fast']), /--sort must be ram/);
+
+  const rows = [
+    { paneId: 'a', ram: { v: null, src: 'unknown' } },
+    { paneId: 'b', ram: { v: 100, src: 'exact' } },
+    { paneId: 'c', ram: { v: 900, src: 'exact' } },
+    { paneId: 'd' },
+  ];
+  board.sortRowsByRam(rows);
+  assert.deepEqual(rows.map((r) => r.paneId), ['c', 'b', 'a', 'd']);
+
+  const snap = {
+    workspaces: [{ workspace_id: 'w1', label: 'app' }],
+    panes: [],
+    agents: [
+      { pane_id: 'w1:p1', workspace_id: 'w1', agent: 'claude', agent_status: 'idle' },
+      { pane_id: 'w1:p2', workspace_id: 'w1', agent: 'claude', agent_status: 'idle' },
+    ],
+  };
+  const base = { snap, agents: snap.agents, mem: { tags: {}, status: {} }, now: NOW, rss: { 'w1:p1': 1024, 'w1:p2': 2048 } };
+  assert.deepEqual(board.buildModel({ ...base, sort: 'ram' }).rows.map((r) => r.paneId), ['w1:p2', 'w1:p1']);
+  assert.deepEqual(board.buildModel(base).rows.map((r) => r.paneId), ['w1:p1', 'w1:p2'], 'Herdr order without --sort ram');
+});
+
+test('host memory: /proc/meminfo parses into free and swap, header shows it', () => {
+  const parsed = board.parseMeminfo('MemTotal: 16384 kB\nMemAvailable:  8388608 kB\nSwapTotal: 4194304 kB\nSwapFree: 2097152 kB\n');
+  assert.deepEqual(parsed, { physFreeKb: 8388608, swapTotalKb: 4194304, swapUsedKb: 2097152 });
+  assert.equal(board.parseMeminfo('nothing to read'), null);
+
+  const m = board.buildModel(sample());
+  m.hostMem = { host: 'ovh', physFreeKb: 8388608, swapUsedKb: 2097152, swapTotalKb: 4194304 };
+  ui.setColor(false);
+  const head = board.render(m, { width: 200 }).split('\n')[0];
+  assert.match(head, /PhysMem 8\.0G free · swap 2\.0G used/);
+});
+
+test('registry: a live pane joins its reported owner, host and RAM', () => {
+  const input = sample();
+  const m = board.buildModel({
+    ...input,
+    registry: [{ id: 'w1:p1', owner: 'ana', orchestrator: 'head-honcho', host: 'mac', mode: 'pane', rssKb: 2097152, lastHeartbeat: NOW - 5e3 }],
+  });
+  const row = m.rows.find((r) => r.paneId === 'w1:p1');
+  assert.equal(row.owner, 'ana');
+  assert.equal(row.orchestrator, 'head-honcho');
+  assert.equal(row.host, 'mac');
+  assert.equal(row.mode, 'pane');
+  assert.equal(row.source, 'reported');
+  assert.equal(row.heartbeatAt, NOW - 5e3);
+  assert.deepEqual(row.ram, { v: 2097152, src: 'reported' }, 'the higher reported RSS wins');
+
+  const lighter = board.buildModel({ ...input, registry: [{ id: 'w1:p1', mode: 'pane', rssKb: 100 }] });
+  assert.deepEqual(lighter.rows.find((r) => r.paneId === 'w1:p1').ram, { v: 1572864, src: 'exact' }, 'the pane reading stays when it is heavier');
+});
+
