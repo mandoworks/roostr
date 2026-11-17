@@ -3,12 +3,12 @@
   "plan": "docs/orchestration-plan.md",
   "tasks": [
     {
-      "id": "pkg-session-recovery",
-      "title": "Auto-detect and persist agy/claude/opencode/kilo sessions and models for restore/log",
+      "id": "pkg-multitab-board",
+      "title": "Fix multi-tab agent detection, tab display/focus, multi-tab session restore, and opencode SQLite v2 lookup",
       "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-session-recovery.md",
-      "report": "docs/orchestration/reports/pkg-session-recovery.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-multitab-board.md",
+      "report": "docs/orchestration/reports/pkg-multitab-board.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "medium",
       "model": "gemini-4-hydrogen-medium",
@@ -16,45 +16,25 @@
         "gemini-4-hydrogen-low"
       ],
       "owns": [
-        "bin/roostr",
-        "src/sessions.js",
-        "src/session-log.js",
-        "src/workers.js",
-        "test/sessions.test.js",
-        "test/session-log.test.js",
-        "docs/orchestration/reports/pkg-session-recovery.md"
-      ],
-      "depends_on": []
-    },
-    {
-      "id": "pkg-tui-recovery-ui",
-      "title": "Upgrade TUI Board [L log] and [B backups] drawers for multi-agent session recovery",
-      "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-tui-recovery-ui.md",
-      "report": "docs/orchestration/reports/pkg-tui-recovery-ui.md",
-      "status": "done",
-      "tool": "agy",
-      "effort": "low",
-      "model": "gemini-4-hydrogen-low",
-      "fallbacks": [
-        "gemini-4-hydrogen-medium"
-      ],
-      "owns": [
-        "src/ui.js",
+        "src/herdr.js",
         "src/board.js",
-        "test/ui.test.js",
+        "src/sessions.js",
+        "src/restore.js",
+        "src/backup.js",
         "test/board.test.js",
-        "docs/orchestration/reports/pkg-tui-recovery-ui.md"
+        "test/sessions.test.js",
+        "test/restore.test.js",
+        "docs/orchestration/reports/pkg-multitab-board.md"
       ],
       "depends_on": []
     },
     {
-      "id": "pkg-web-backend-muse",
-      "title": "Add dashboard backend APIs for session recovery, pane split/resume, and Muse agents workflow",
+      "id": "pkg-web-backup-inbox-api",
+      "title": "Add dashboard backend endpoints for backup capture, session/backup restore, and Muse PioRelay inbox",
       "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-web-backend-muse.md",
-      "report": "docs/orchestration/reports/pkg-web-backend-muse.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-web-backup-inbox-api.md",
+      "report": "docs/orchestration/reports/pkg-web-backup-inbox-api.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "medium",
       "model": "gemini-4-hydrogen-medium",
@@ -62,25 +42,21 @@
         "gemini-4-hydrogen-low"
       ],
       "owns": [
-        "dashboard/src/config.js",
-        "dashboard/src/validate.js",
-        "dashboard/src/herdr.js",
-        "dashboard/src/muse.js",
         "dashboard/src/sessions-bridge.js",
+        "dashboard/src/muse.js",
         "dashboard/src/app.js",
-        "dashboard/test/validate.test.js",
         "dashboard/test/app.test.js",
-        "docs/orchestration/reports/pkg-web-backend-muse.md"
+        "docs/orchestration/reports/pkg-web-backup-inbox-api.md"
       ],
       "depends_on": []
     },
     {
-      "id": "pkg-web-control-ui",
-      "title": "Build collapsible panes, session recovery, orchestration view, and Muse workflow in Web UI",
+      "id": "pkg-web-backup-inbox-ui",
+      "title": "Wire 1-click backup capture, workspace restore, and Muse PioRelay inbox viewer in Web Control UI",
       "kind": "feature",
-      "brief": "docs/orchestration/tasks/pkg-web-control-ui.md",
-      "report": "docs/orchestration/reports/pkg-web-control-ui.md",
-      "status": "done",
+      "brief": "docs/orchestration/tasks/pkg-web-backup-inbox-ui.md",
+      "report": "docs/orchestration/reports/pkg-web-backup-inbox-ui.md",
+      "status": "pending",
       "tool": "agy",
       "effort": "medium",
       "model": "gemini-4-hydrogen-medium",
@@ -91,9 +67,7 @@
         "dashboard/public/control/index.html",
         "dashboard/public/control/style.css",
         "dashboard/public/control/app.js",
-        "dashboard/public/names/index.html",
-        "dashboard/public/names/names.js",
-        "docs/orchestration/reports/pkg-web-control-ui.md"
+        "docs/orchestration/reports/pkg-web-backup-inbox-ui.md"
       ],
       "depends_on": []
     }

@@ -1,30 +1,19 @@
-# Orchestration plan: Session Storage & Recovery + Web & TUI Dashboard Improvements + Muse Agents Workflow
+# Orchestration plan: Multi-Tab Board & Session Recovery + Web Backup/Restore + Two-Way Muse Inbox
 
-Four parallel Hydrogen (`agy`) workers (`gemini-4-hydrogen-medium` / `gemini-4-hydrogen-low`) supervised by `roosty-argon` (`gemini-4-argon-medium`) in `/home/ubuntu/workspace/roostr`.
+Three parallel Hydrogen (`agy`, `gemini-4-hydrogen-medium`) workers supervised by `roosty-argon` (`gemini-4-argon-medium`) in `/home/ubuntu/workspace/roostr`. Keep repo private on OVH (do not push to public remotes).
 
 ## Goal and done check
 
-1. **Session Storage & Recovery (`pkg-session-recovery`)**:
-   - Auto-detect and persist session IDs + exact models for `agy` (`~/.gemini/antigravity-cli/brain/`), `claude` (`~/.claude/projects/`), `opencode`, and `kilo` in `~/.roostr/sessions.json` and `~/.roostr/backups/`.
-   - Pass `--model`, `--effort`, and `--conversation` / `--resume` / `--session` in `sessions.agentArgs(s)`.
-   - Auto-save `~/.roostr/sessions.json` during `roostr --json` and `roostr workers` (so `roostr-publish.timer` persists live sessions every 60s even when no TUI board is open) and attach active orchestration task/worktree/handoff metadata.
-   - Extend `roostr log` (`src/session-log.js`) to support `--kind agy|claude|opencode|kilo|all` so both CLI and TUI can list and resume `agy` and `claude` conversations.
-2. **TUI Board Log & Backup Recovery Upgrades (`pkg-tui-recovery-ui`)**:
-   - Upgrade `[L log]` and `[B backups]` drawers in `src/ui.js` and `src/board.js` to show `agy` and `claude` sessions alongside `opencode` and `kilo`, display session ID / model / handoff badges, and show inline restore/resume status.
-3. **Web Dashboard Backend: Sessions, Recovery & Muse Agents API (`pkg-web-backend-muse`)**:
-   - Add `/agents/api/sessions`, `/agents/api/sessions/restore`, and `/agents/api/backups/capture` to expose saved sessions (`~/.roostr/sessions.json`), resumable conversations, workspace backups, and active orchestration tasks/handoffs.
-   - Enhance `POST /agents/api/pane/:id/start` with optional `model`, `effort`, and `session` resume args, and add `POST /agents/api/pane/:id/split` for spawning panes from the web UI.
-   - Add `GET /agents/api/muse` and `POST /agents/api/muse/message` (`dashboard/src/muse.js`) to unify Muse agents (`data.json` `roman_desk`/`tier1`/`tier2`, `workers/workers.muse.json`, `status.json`, `names.json`) into `/agents/control/` and dispatch tasks/messages via PioRelay (`PIORELAY_BASE`).
-4. **Web Control UI: Collapsible Panes, Agent Management & Muse Workflow (`pkg-web-control-ui`)**:
-   - Collapsible workspaces, tabs, Muse desks, and detail sections (`Collapse All` / `Expand All`, persisted in `localStorage`) + search/host/status filter bar + batch cleanup of dead `(deleted)` panes.
-   - Session & Backup Recovery panel in `/agents/control/` (1-click Resume Saved Session vs Start Fresh with tool/model/effort selector, Capture Backup, Restore Workspace Sessions, Split Pane, and quick command chips like `Shift+Tab` accept-edits, `/model`, `/clear`, `/new`).
-   - Full Muse Agents workflow tab/view in `/agents/control/` and `/agents/names.html` showing live status, session ID, tasks (`in-progress`, `blocked`, `done`), collapsible `SOUL.md`/`AGENT.md`/`STATE.md` docs, inline canonical name/orchestrator controls, and direct PioRelay task/message dispatch.
-5. **Done check**:
-   - All 4 worker branches pass `(cd dashboard && npm test)` and `env -u HERDR_ENV ./verify.sh` with 0 failures, merge cleanly into `main`, and deploy to `/home/ubuntu/roostr-dashboard/` (`roostr-dashboard.service` restarted).
-
-## Routing rationale
-
-- `pkg-session-recovery` (`feature`, `gemini-4-hydrogen-medium`): session discovery and persistence across `src/sessions.js`, `src/session-log.js`, `src/workers.js`, and `bin/roostr`.
-- `pkg-tui-recovery-ui` (`ui`, `gemini-4-hydrogen-low`): TUI `[L log]` and `[B backups]` drawer formatting and key handling in `src/ui.js` and `src/board.js`.
-- `pkg-web-backend-muse` (`feature`, `gemini-4-hydrogen-medium`): HTTP routes, validation, Herdr resume/split args, and Muse/PioRelay integration in `dashboard/src/` + unit tests.
-- `pkg-web-control-ui` (`ui`, `gemini-4-hydrogen-medium`): collapsible pane/workspace/Muse UI, session recovery controls, orchestration progress, and Muse workflow view in `dashboard/public/`.
+1. **Multi-Tab Agent Detection, Display & Restore (`pkg-multitab-board`)**:
+   - Fix `selectAgents` / `collect` in `src/board.js` so agents across **all tabs** (`t1`, `t2`, `t3`, etc.) are included on the board: merge `snap.agents` with any pane in `snap.panes` (across all tabs of the workspace) that has `pane.agent`, `pane.agent_session`, `pane.restore_error`, a live agent child process in `ram.processTable()`, a `roostr report`, a saved entry in `sessions.json`, or a crew tag/label (`TAG_RE`).
+   - Add `tabId`, `tab` (tab label/number from `snap.tabs`), and `tabNumber` to every board row in `src/board.js`, sort rows by `(workspace, tabNumber, pane)`, and render `[t2]` / `[tab 3 · migration]` tab badges/headers when a workspace has multiple tabs or a named tab.
+   - Make `herdr.focusAgent(paneId)` in `src/herdr.js` fall back to `herdr pane focus <paneId>` so jumping to a pane on another tab works even if the agent process exited.
+   - Save `tabId` and `tab` on every session in `src/sessions.js`, restore multi-tab sessions into their respective tabs in `restoreSessions`, and support reading `~/.local/share/opencode/opencode.db` (`session_v2` and `session` across all directories) in `sessionList('opencode')`.
+2. **Web Backend: 1-Click Backup Capture, Workspace Restore & Two-Way Muse Inbox (`pkg-web-backend-inbox-api`)**:
+   - Add `POST /agents/api/backups/capture` and `POST /agents/api/sessions/restore` in `dashboard/src/sessions-bridge.js` and `dashboard/src/app.js`.
+   - Add `GET /agents/api/muse/messages` (`?agent=<slug>&limit=20`) in `dashboard/src/muse.js` and `dashboard/src/app.js` to fetch recent PioRelay inbox/thread messages for any Muse agent or `roman`.
+3. **Web Control UI: Backup/Restore Controls, Tab Badges & Muse Inbox (`pkg-web-backup-inbox-ui`)**:
+   - Add **Capture Backup** and **Restore Workspace Sessions / Backup** buttons in `#orchestration-details` in `dashboard/public/control/index.html` and `dashboard/public/control/app.js`.
+   - Add a **Recent PioRelay Messages / Thread** section inside `#muse-detail-body` with a Refresh button and message list (`from -> to`, timestamp, subject, body, project).
+4. **Done check**:
+   - All 3 branches pass `(cd dashboard && npm test)` and `env -u HERDR_ENV ./verify.sh` with 0 failures, merge cleanly into `main`, deploy to `/home/ubuntu/roostr-dashboard/`, and update `roostr-publish.service`.
