@@ -27,8 +27,8 @@ const {
 } = require('./session');
 const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
 const { createNamesStore } = require('./names');
-const { getRecoverySnapshot } = require('./sessions-bridge');
-const { getMuseSnapshot, sendPioRelayMessage } = require('./muse');
+const { getRecoverySnapshot, captureBackups, restoreWorkspace } = require('./sessions-bridge');
+const { getMuseSnapshot, sendPioRelayMessage, fetchPioRelayMessages } = require('./muse');
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -198,7 +198,7 @@ function decodeSubpath(encoded) {
   }
 }
 
-function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl }) {
+function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl, execFile: execFileImpl }) {
   const authPublicDir = path.join(config.publicDir, 'auth');
   const controlPublicDir = path.join(config.publicDir, 'control');
   const namesPublicDir = path.join(config.publicDir, 'names');
@@ -431,6 +431,66 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetc
       }));
     }
 
+    if (pathname === '/agents/api/backups/capture' && method === 'POST') {
+      const capRes = await captureBackups({
+        roostrRepoDir: config.roostrRepoDir,
+        roostrStateDir: config.roostrStateDir,
+        execFileImpl,
+      });
+      if (!capRes.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'backups.capture',
+          summary: `err=${capRes.error}`,
+          ok: false,
+        });
+        return sendJson(res, capRes.status || 502, { error: capRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'backups.capture',
+        summary: 'captured',
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, captured: capRes.captured });
+    }
+
+    if (pathname === '/agents/api/sessions/restore' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const restRes = await restoreWorkspace({
+        roostrRepoDir: config.roostrRepoDir,
+        roostrStateDir: config.roostrStateDir,
+        workspace: body.workspace,
+        mode: body.mode,
+        version: body.version,
+        layout: body.layout,
+        execFileImpl,
+      });
+      if (!restRes.ok) {
+        if ((restRes.status || 502) !== 400) {
+          audit.log({
+            ip: clientIp,
+            action: 'sessions.restore',
+            summary: `workspace=${String(body.workspace || '')} mode=${String(body.mode || 'sessions')} err=${restRes.error}`,
+            ok: false,
+          });
+        }
+        return sendJson(res, restRes.status || 502, { error: restRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'sessions.restore',
+        summary: `workspace=${String(body.workspace).trim()} mode=${restRes.mode}`,
+        ok: true,
+      });
+      return sendJson(res, 200, restRes);
+    }
+
     if (pathname === '/agents/api/muse' && method === 'GET') {
       return sendJson(res, 200, getMuseSnapshot({
         staticDir: config.staticDir,
@@ -476,6 +536,47 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetc
         ok: true,
       });
       return sendJson(res, 200, { ok: true, relay: relayRes.result });
+    }
+
+    if (pathname === '/agents/api/muse/messages' && method === 'GET') {
+      const agentParam = url.searchParams.get('agent') || '';
+      if (!/^[a-z0-9-]{1,32}$/.test(agentParam)) {
+        return sendJson(res, 400, { error: 'invalid agent' });
+      }
+      let limitVal = 20;
+      if (url.searchParams.has('limit') && url.searchParams.get('limit') !== '') {
+        const rawLimit = url.searchParams.get('limit');
+        if (!/^\d+$/.test(rawLimit)) {
+          return sendJson(res, 400, { error: 'limit must be between 1 and 50' });
+        }
+        limitVal = Number.parseInt(rawLimit, 10);
+        if (limitVal < 1 || limitVal > 50) {
+          return sendJson(res, 400, { error: 'limit must be between 1 and 50' });
+        }
+      }
+      let projectVal = null;
+      if (url.searchParams.has('project')) {
+        const rawProject = url.searchParams.get('project') || '';
+        if (/[\x00-\x1f\x7f-\x9f]/.test(rawProject) || rawProject.length > 64) {
+          return sendJson(res, 400, { error: 'invalid project' });
+        }
+        projectVal = rawProject.trim() || null;
+      }
+      const relayRes = await fetchPioRelayMessages({
+        piorelayBase: config.piorelayBase,
+        agent: agentParam,
+        project: projectVal,
+        limit: limitVal,
+        fetchImpl,
+      });
+      if (!relayRes.ok) {
+        return sendJson(res, relayRes.status || 502, { error: relayRes.error });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        agent: relayRes.agent,
+        messages: relayRes.messages,
+      });
     }
 
     if (pathname === '/agents/api/names' && method === 'GET') {

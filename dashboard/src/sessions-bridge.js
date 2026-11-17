@@ -2,6 +2,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+
+const CLI_TIMEOUT_MS = 15000;
+const WORKSPACE_RE = /^[A-Za-z0-9_ -]{1,64}$/;
+const BACKUP_LAYOUTS = new Set(['even', 'saved', 'columns', 'rows']);
 
 function readJsonSafe(filePath) {
   try {
@@ -148,9 +153,138 @@ function getRecoverySnapshot({ roostrStateDir, roostrRepoDir } = {}) {
   };
 }
 
+function execFileAsync(execFileImpl, bin, args, opts) {
+  const fn = execFileImpl || execFile;
+  return new Promise((resolve) => {
+    fn(bin, args, opts, (err, stdout, stderr) => {
+      resolve({ err, stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
+function extractErrorLine(err, stderr) {
+  const line = String(stderr || '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .find(Boolean);
+  return line || (err && err.message) || 'command failed';
+}
+
+async function captureBackups({ roostrRepoDir, roostrStateDir, execFileImpl } = {}) {
+  if (!roostrRepoDir) {
+    return { ok: false, status: 502, error: 'roostrRepoDir not configured' };
+  }
+  const binPath = path.join(roostrRepoDir, 'bin', 'roostr');
+  const env = {
+    ...process.env,
+    ...(roostrStateDir ? { ROOSTR_STATE_DIR: roostrStateDir } : {}),
+  };
+  const { err, stdout, stderr } = await execFileAsync(
+    execFileImpl,
+    process.execPath,
+    [binPath, 'backups', 'capture', '--json'],
+    { timeout: CLI_TIMEOUT_MS, env }
+  );
+  if (err) {
+    return { ok: false, status: 502, error: extractErrorLine(err, stderr) };
+  }
+  try {
+    const parsed = JSON.parse(String(stdout || '').trim() || '{}');
+    return { ok: true, captured: parsed };
+  } catch {
+    return { ok: false, status: 502, error: 'invalid JSON from roostr backups capture' };
+  }
+}
+
+async function restoreWorkspace({
+  roostrRepoDir,
+  roostrStateDir,
+  workspace,
+  mode,
+  version,
+  layout,
+  execFileImpl,
+} = {}) {
+  const ws = typeof workspace === 'string' ? workspace.trim() : '';
+  if (!ws || !WORKSPACE_RE.test(ws) || ws.startsWith('-')) {
+    return { ok: false, status: 400, error: 'invalid workspace' };
+  }
+
+  const resolvedMode = (mode === undefined || mode === null || mode === '') ? 'sessions' : mode;
+  if (resolvedMode !== 'sessions' && resolvedMode !== 'backup') {
+    return { ok: false, status: 400, error: 'invalid restore mode' };
+  }
+
+  let versionArg = null;
+  let layoutArg = null;
+  if (resolvedMode === 'backup') {
+    if (version !== undefined && version !== null && version !== '') {
+      const vStr = String(version).trim();
+      if (!/^\d+$/.test(vStr) || Number.parseInt(vStr, 10) < 1) {
+        return { ok: false, status: 400, error: 'invalid version' };
+      }
+      versionArg = vStr;
+    }
+    if (layout !== undefined && layout !== null && layout !== '') {
+      if (typeof layout !== 'string' || !BACKUP_LAYOUTS.has(layout)) {
+        return { ok: false, status: 400, error: 'invalid layout' };
+      }
+      layoutArg = layout;
+    }
+  }
+
+  if (!roostrRepoDir) {
+    return { ok: false, status: 502, error: 'roostrRepoDir not configured' };
+  }
+
+  const binPath = path.join(roostrRepoDir, 'bin', 'roostr');
+  const env = {
+    ...process.env,
+    ...(roostrStateDir ? { ROOSTR_STATE_DIR: roostrStateDir } : {}),
+  };
+
+  if (resolvedMode === 'backup') {
+    const args = [binPath, 'backups', 'restore', ws, '--yes'];
+    if (versionArg) args.push('--version', versionArg);
+    if (layoutArg) args.push('--layout', layoutArg);
+    const { err, stdout, stderr } = await execFileAsync(
+      execFileImpl,
+      process.execPath,
+      args,
+      { timeout: CLI_TIMEOUT_MS, env }
+    );
+    if (err) {
+      return { ok: false, status: 502, error: extractErrorLine(err, stderr) };
+    }
+    return { ok: true, mode: 'backup', output: String(stdout || '').trim() };
+  }
+
+  const { err, stdout, stderr } = await execFileAsync(
+    execFileImpl,
+    process.execPath,
+    [binPath, 'restore', '--workspace', ws, '--yes', '--json'],
+    { timeout: CLI_TIMEOUT_MS, env }
+  );
+  if (err) {
+    return { ok: false, status: 502, error: extractErrorLine(err, stderr) };
+  }
+  const trimmed = String(stdout || '').trim();
+  let result = {};
+  if (trimmed) {
+    try {
+      result = JSON.parse(trimmed);
+    } catch {
+      return { ok: false, status: 502, error: 'invalid JSON from roostr restore' };
+    }
+  }
+  return { ok: true, mode: 'sessions', result };
+}
+
 module.exports = {
   readSavedSessions,
   readBackups,
   readOrchestration,
   getRecoverySnapshot,
+  captureBackups,
+  restoreWorkspace,
 };

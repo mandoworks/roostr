@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const RELAY_TIMEOUT_MS = 5000;
+const AGENT_SLUG_RE = /^[a-z0-9-]{1,32}$/;
 
 function readJsonSafe(filePath) {
   try {
@@ -280,8 +281,109 @@ async function sendPioRelayMessage({
   }
 }
 
+function normalizeRelayMessage(m) {
+  if (!m || typeof m !== 'object') return null;
+  return {
+    id: m.id ?? m.msg_id ?? m.client_msg_id ?? null,
+    from: m.from ?? m.from_agent ?? null,
+    to: m.to ?? m.to_agent ?? null,
+    subject: typeof m.subject === 'string' ? m.subject : '',
+    body: typeof m.body === 'string' ? m.body : (typeof m.text === 'string' ? m.text : ''),
+    project: m.project ?? null,
+    threadId: m.threadId ?? m.thread_id ?? null,
+    createdAt: m.createdAt ?? m.created_at ?? m.timestamp ?? null,
+    read: Boolean(m.read ?? m.is_read ?? m.read_at),
+  };
+}
+
+async function fetchPioRelayMessages({
+  piorelayBase = 'http://100.97.196.10:3016/api/v1',
+  agent = null,
+  project = null,
+  limit = 20,
+  fetchImpl = null,
+} = {}) {
+  let agentSlug = null;
+  if (agent !== undefined && agent !== null && agent !== '') {
+    if (typeof agent !== 'string' || !AGENT_SLUG_RE.test(agent)) {
+      return { ok: false, status: 400, error: 'invalid agent' };
+    }
+    agentSlug = agent;
+  }
+
+  const fetchFn = fetchImpl || globalThis.fetch;
+  if (typeof fetchFn !== 'function') {
+    return { ok: false, status: 502, error: 'fetch unavailable' };
+  }
+
+  const parsedLimit = Number.isFinite(Number(limit))
+    ? Math.max(1, Math.min(50, Math.trunc(Number(limit))))
+    : 20;
+
+  const base = String(piorelayBase || '').replace(/\/+$/, '');
+  const params = new URLSearchParams();
+  if (agentSlug) {
+    params.set('agent', agentSlug);
+  }
+  params.set('limit', String(parsedLimit));
+  if (typeof project === 'string' && project.trim()) {
+    params.set('project', project.trim());
+  }
+  const url = `${base}/agent-messages?${params.toString()}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
+
+  try {
+    const response = await fetchFn(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    let parsed = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+    }
+
+    if (!response.ok) {
+      const errMsg = (parsed && parsed.error) || `piorelay returned HTTP ${response.status}`;
+      return { ok: false, status: 502, error: errMsg };
+    }
+
+    let rawList = [];
+    if (Array.isArray(parsed)) {
+      rawList = parsed;
+    } else if (parsed && Array.isArray(parsed.messages)) {
+      rawList = parsed.messages;
+    } else if (parsed && Array.isArray(parsed.items)) {
+      rawList = parsed.items;
+    }
+
+    const messages = rawList.map(normalizeRelayMessage).filter(Boolean);
+    return {
+      ok: true,
+      agent: agentSlug,
+      messages,
+    };
+  } catch (err) {
+    const msg = err && err.name === 'AbortError'
+      ? 'piorelay request timed out'
+      : ((err && err.message) || 'piorelay request failed');
+    return { ok: false, status: 502, error: msg };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 module.exports = {
   RELAY_TIMEOUT_MS,
   getMuseSnapshot,
   sendPioRelayMessage,
+  fetchPioRelayMessages,
 };
