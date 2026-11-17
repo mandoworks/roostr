@@ -241,6 +241,23 @@
     </div>
   </details>
 
+  <details id="registry-details" class="card audit-details" open>
+    <summary>Standalone Workers &amp; RAM Monitor</summary>
+    <div class="orch-toolbar">
+      <span id="host-mem-summary" class="badge">PhysMem free: - | Swap used: -</span>
+      <button id="sort-ram-btn" type="button" class="small" aria-pressed="false">Sort by RAM: Off</button>
+      <button id="registry-refresh-btn" type="button" class="small">Refresh</button>
+      <span id="registry-status" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <div id="registry-content" class="orchestration-content">
+      <span class="muted">Standalone workers appear here even when herdr is stopped.</span>
+    </div>
+    <div class="registry-log-wrap">
+      <div class="orch-section-title">Log Tail</div>
+      <pre id="worker-log-preview" class="worker-log-preview">Select Log Tail on a worker row.</pre>
+    </div>
+  </details>
+
   <details id="audit-details" class="card audit-details">
     <summary>Recent control audit (last 20)</summary>
     <div id="audit-list" class="audit-list">

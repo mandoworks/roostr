@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const { loadConfig } = require('../src/config');
 const { createSecretStore } = require('../src/secrets');
@@ -211,7 +212,7 @@ function createHarness(opts = {}) {
 
   const rateLimiter = createRateLimiter({ maxRequests: 20, windowMs: 10000 });
   const audit = createAuditLogger(store.auditPath);
-  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit, fetch: opts.fetch, execFile: opts.execFile });
+  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit, fetch: opts.fetch, execFile: opts.execFile, registryDeps: opts.registryDeps });
 
   return {
     tmpBase,
@@ -1563,6 +1564,177 @@ describe('dashboard herdr client and HTTP app', () => {
         headers: { cookie },
       });
       assert.equal(netErrMsgs.status, 502);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('authenticates agent reporting with X-Roostr-Token and serves registry, log, and reap routes', async () => {
+    const killed = [];
+    const processTable = () => ([{ pid: 4321, command: 'node runner.js --id worker-1' }]);
+    const h = createHarness({
+      registryDeps: {
+        processTable,
+        killImpl: (pid, signal) => killed.push({ pid, signal }),
+      },
+    });
+    try {
+      const enrollToken = h.store.getEnrollToken();
+      const opt = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token: enrollToken },
+      });
+      const ver = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token: enrollToken, challengeId: JSON.parse(opt.body).challengeId, response: { id: 'cred-1' } },
+      });
+      const cookie = ver.headers['set-cookie'].split(';')[0];
+
+      const rawToken = 'agent-token-abc-123';
+      const hash = crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
+      fs.writeFileSync(
+        path.join(h.config.roostrStateDir, 'tokens.json'),
+        JSON.stringify({ schema: 1, tokens: [{ label: 'test-agent', hash, createdAt: new Date().toISOString() }] })
+      );
+
+      const xff = { 'x-forwarded-for': '100.64.1.1' };
+
+      // 401 without a token or passkey session.
+      const unauthRegister = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: xff,
+        body: { id: 'worker-1' },
+      });
+      assert.equal(unauthRegister.status, 401);
+
+      const unauthStatus = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/status',
+        headers: xff,
+        body: { id: 'worker-1', state: 'idle' },
+      });
+      assert.equal(unauthStatus.status, 401);
+
+      // 200 with a valid X-Roostr-Token (no CSRF header required).
+      const reg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: { 'x-roostr-token': rawToken, ...xff },
+        body: {
+          id: 'worker-1',
+          owner: 'fernando',
+          host: 'ovh',
+          task: 'monitor',
+          kind: 'opencode',
+          pid: 4321,
+          command: 'node runner.js --id worker-1',
+          rssKb: 254000,
+          state: 'working',
+          mode: 'headless',
+          logFile: 'logs/worker-1.log',
+        },
+      });
+      assert.equal(reg.status, 200);
+      const regWorker = JSON.parse(reg.body).worker;
+      assert.equal(regWorker.id, 'worker-1');
+      assert.equal(regWorker.source, 'reported');
+      assert.equal(regWorker.mode, 'headless');
+
+      const statusRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/status',
+        headers: { 'x-roostr-token': rawToken, ...xff },
+        body: { id: 'worker-1', state: 'idle', task: 'updated task' },
+      });
+      assert.equal(statusRes.status, 200);
+      const statusWorker = JSON.parse(statusRes.body).worker;
+      assert.equal(statusWorker.state, 'idle');
+      assert.equal(statusWorker.task, 'updated task');
+      assert.equal(statusWorker.pid, 4321);
+
+      // 200 with only a passkey session cookie.
+      const regCookie = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: { cookie, ...xff },
+        body: { id: 'worker-2', owner: 'pio', mode: 'pane', state: 'working', pid: 7, command: 'pane worker' },
+      });
+      assert.equal(regCookie.status, 200);
+      assert.equal(JSON.parse(regCookie.body).worker.id, 'worker-2');
+
+      // Registry snapshot is passkey gated.
+      const regUnauth = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: xff });
+      assert.equal(regUnauth.status, 401);
+
+      const registry = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: { cookie, ...xff } });
+      assert.equal(registry.status, 200);
+      const snapshot = JSON.parse(registry.body);
+      assert.equal(snapshot.workers.length, 2);
+      assert.ok(snapshot.hostMem && typeof snapshot.hostMem === 'object');
+      assert.ok('physFreeKb' in snapshot.hostMem);
+      assert.ok('swapUsedKb' in snapshot.hostMem);
+      assert.ok(Array.isArray(snapshot.closedSessions));
+
+      // Log tail (passkey gated, id validated).
+      const logsDir = path.join(h.config.roostrStateDir, 'logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, 'worker-1.log'), 'l1\nl2\nl3\nl4\n');
+      const logRes = await invokeHandler(h.handler, {
+        url: '/agents/api/registry/worker-1/log?lines=2',
+        headers: { cookie, ...xff },
+      });
+      assert.equal(logRes.status, 200);
+      assert.deepEqual(JSON.parse(logRes.body), { id: 'worker-1', text: 'l3\nl4' });
+
+      const badLog = await invokeHandler(h.handler, {
+        url: '/agents/api/registry/worker-1/log?lines=0',
+        headers: { cookie, ...xff },
+      });
+      assert.equal(badLog.status, 400);
+
+      // Reap rejects a PID/command mismatch against the registry row.
+      const reapMismatch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/registry/worker-1/reap',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, ...xff },
+        body: { pid: 9999, command: 'node runner.js --id worker-1' },
+      });
+      assert.equal(reapMismatch.status, 409);
+
+      // Reap accepts a matching PID/command and SIGTERMs the live process.
+      const reapOk = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/registry/worker-1/reap',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, ...xff },
+        body: { pid: 4321, command: 'node runner.js --id worker-1' },
+      });
+      assert.equal(reapOk.status, 200);
+      assert.equal(JSON.parse(reapOk.body).ok, true);
+      assert.deepEqual(killed, [{ pid: 4321, signal: 'SIGTERM' }]);
+
+      const closedLines = fs
+        .readFileSync(path.join(h.config.roostrStateDir, 'closed-sessions.jsonl'), 'utf8')
+        .trim()
+        .split('\n');
+      assert.equal(closedLines.length, 1);
+      assert.equal(JSON.parse(closedLines[0]).id, 'worker-1');
+      assert.equal(JSON.parse(closedLines[0]).reason, 'reaped');
+
+      const afterReap = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: { cookie, ...xff } });
+      const reapedWorker = JSON.parse(afterReap.body).workers.find((w) => w.id === 'worker-1');
+      assert.equal(reapedWorker.state, 'failed');
+
+      const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie, ...xff } });
+      const { entries } = JSON.parse(auditRes.body);
+      assert.ok(entries.some((e) => e.action === 'registry.register' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.status' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.reap' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.auth_denied' && e.ok === false));
     } finally {
       h.cleanup();
     }
