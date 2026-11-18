@@ -147,6 +147,21 @@ update_skills() {
   run python3 "$SKILLS_DIR/skills_manager.py" sync
 }
 
+# OpenCode loads the integration from a configured path, and every Herdr
+# reinstall lands in a new version directory. Keep one stable path that agent
+# configs can point at, refreshed here.
+link_opencode() {
+  local root src link
+  root="$(plugin_info | cut -f2)"
+  [ -n "$root" ] || root="$ROOT"
+  src="$root/integrations/opencode/crew-board.mjs"
+  [ -f "$src" ] || return 0
+  link="${ROOSTR_OPENCODE_PLUGIN:-$HOME/.roostr/crew-board-opencode.mjs}"
+  run mkdir -p "$(dirname "$link")"
+  run ln -sfn "$src" "$link"
+  say "opencode: plugin link -> $src"
+}
+
 label_of() {
   local root="$1"
   [ -n "$root" ] && [ -f "$root/src/version.js" ] || return 0
@@ -157,7 +172,10 @@ label_of() {
   ' "$root/src/version.js" 2>/dev/null || true
 }
 
-if [ "$DO_PLUGIN" = 1 ]; then update_plugin; fi
+if [ "$DO_PLUGIN" = 1 ]; then
+  update_plugin
+  link_opencode
+fi
 if [ "$DO_SKILLS" = 1 ]; then update_skills; fi
 
 installed_root="$(plugin_info | cut -f2)"

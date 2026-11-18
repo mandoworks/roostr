@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "plan": "docs/orchestration-plan.md",
+  "tasks": [
+    {
+      "id": "pkg-p2-state-lock-and-hygiene",
+      "title": "Harden state.writeJson locking, generalize validWorkerId, and make verify.sh --public pass cleanly",
+      "kind": "tooling",
+      "brief": "docs/orchestration/tasks/pkg-p2-state-lock-and-hygiene.md",
+      "report": "docs/orchestration/reports/pkg-p2-state-lock-and-hygiene.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "src/state.js",
+        "src/report.js",
+        "verify.sh",
+        "docs/roostr-standalone.md",
+        "docs/spawn-policy.md",
+        "docs/orchestration-plan.md",
+        "dashboard/src/config.js",
+        "test/security.test.js",
+        "docs/orchestration/reports/pkg-p2-state-lock-and-hygiene.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-p2-approvals-engine-and-web",
+      "title": "Build P2 approvals engine, 60s poll + zero-RAM hibernate/wakeup, Chicken-Grill bridge, and Web Approvals UI",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p2-approvals-engine-and-web.md",
+      "report": "docs/orchestration/reports/pkg-p2-approvals-engine-and-web.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "high",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "claude-sonnet-4-5"
+      ],
+      "owns": [
+        "src/approvals.js",
+        "test/approvals.test.js",
+        "dashboard/src/approvals-bridge.js",
+        "dashboard/src/app.js",
+        "dashboard/public/control/index.html",
+        "dashboard/public/control/app.js",
+        "dashboard/public/control/style.css",
+        "dashboard/test/app.test.js",
+        "docs/orchestration/reports/pkg-p2-approvals-engine-and-web.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-p2-board-split-and-tui-viewer",
+      "title": "Split src/board.js into src/board/* modules and add collapsible log-tail + interactive TTY attach viewer",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p2-board-split-and-tui-viewer.md",
+      "report": "docs/orchestration/reports/pkg-p2-board-split-and-tui-viewer.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "high",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "claude-sonnet-4-5"
+      ],
+      "owns": [
+        "src/board.js",
+        "src/board/index.js",
+        "src/board/state.js",
+        "src/board/model.js",
+        "src/board/collect.js",
+        "src/board/render.js",
+        "src/board/views.js",
+        "src/board/viewer.js",
+        "test/board.test.js",
+        "docs/orchestration/reports/pkg-p2-board-split-and-tui-viewer.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-p2-spawn-drawer-and-advisor",
+      "title": "Add TUI [S spawn] and Web + Spawn Worker drawers with empirical tool/model/effort selection",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p2-spawn-drawer-and-advisor.md",
+      "report": "docs/orchestration/reports/pkg-p2-spawn-drawer-and-advisor.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "src/board/views.js",
+        "dashboard/src/registry-bridge.js",
+        "dashboard/public/control/app.js",
+        "test/advisor-spawn.test.js",
+        "docs/orchestration/reports/pkg-p2-spawn-drawer-and-advisor.md"
+      ],
+      "depends_on": [
+        "pkg-p2-approvals-engine-and-web",
+        "pkg-p2-board-split-and-tui-viewer"
+      ]
+    },
+    {
+      "id": "pkg-p2-herdr-demotion-and-orchestrator",
+      "title": "Demote herdr.js to optional viewer, add roostrd control daemon, and wire roostr tasks dispatch",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p2-herdr-demotion-and-orchestrator.md",
+      "report": "docs/orchestration/reports/pkg-p2-herdr-demotion-and-orchestrator.md",
+      "status": "pending",
+      "tool": "agy",
+      "effort": "high",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "claude-sonnet-4-5"
+      ],
+      "owns": [
+        "src/roostrd.js",
+        "src/herdr.js",
+        "src/viewers/herdr.js",
+        "src/daemon.js",
+        "src/tasks.js",
+        "bin/roostr",
+        "test/roostrd.test.js",
+        "docs/orchestration/reports/pkg-p2-herdr-demotion-and-orchestrator.md"
+      ],
+      "depends_on": [
+        "pkg-p2-state-lock-and-hygiene",
+        "pkg-p2-approvals-engine-and-web",
+        "pkg-p2-board-split-and-tui-viewer"
+      ]
+    }
+  ]
+}
