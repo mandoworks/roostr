@@ -22,9 +22,9 @@ Hi Argon! We are at an inflection point with `roostr` and want your honest archi
 
 Running dozens of agents inside Herdr panes consumes massive RAM (multiple GBs of idle TUI runtimes on a 16 GB laptop). We want to **move away from depending on Herdr at all**:
 
-1. **Zero Herdr Dependency**: Stop treating `roostr` as a Herdr plugin (`herdr-plugin.toml` / `HERDR_ENV=1`). Make `roostr` a standalone app (daemon/server + CLI + TUI + web dashboard).
-2. **Headless Workers by Default**: Subagents and workers run detached in the background (`roostr run`), logging to disk and reporting state + RSS to the Roostr registry.
-3. **Our Own Lightweight TUI Board (Worker-Focused)**: Keep the `roostr` TUI board, and borrow the best parts of a multiplexer/viewer UX (split/collapsible worker list, live log tailing, interactive attach/resume when needed), but centered on **workers** rather than terminal panes.
+1. **TUI + Web GUI Orchestrating Board (Standalone App)**: `roostr` is a self-contained TUI and Web GUI orchestrating board (no `herdr-plugin.toml` / `HERDR_ENV=1` requirement).
+2. **Pick Model & Effort Without Heavy Resource Overhead**: Let the operator pick (or accept empirical recommendations for) each spawned worker's **tool, model, and effort** directly from the TUI or Web GUI, and launch them **headless** (`roostr run`) so they log to disk and report state + RSS without holding gigabytes of idle terminal/TUI RAM.
+3. **Our Own Lightweight Worker-Focused TUI**: Keep the `roostr` TUI board, borrowing the best parts of a clean split/collapsible viewer UX (worker list, live log tailing, interactive attach/resume only when needed), centered on **workers** rather than terminal panes.
 4. **Web Approvals (P2)**: Move approval prompts out of terminal panes into first-class approval objects (`routine` vs `big-decision`) on the passkey-gated web dashboard so agents never sit parked on an invisible terminal prompt.
 
 ## 3. Questions & Recommendations Needed from Argon
