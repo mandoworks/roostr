@@ -10,6 +10,11 @@ const {
   validatePaneLabel,
   validateAgentName,
   validateAgentKind,
+  validateOptionalModel,
+  validateOptionalEffort,
+  validateOptionalSessionId,
+  validateSplitDirection,
+  validateMuseMessage,
   resolveStaticPath,
 } = require('./validate');
 const {
@@ -22,6 +27,16 @@ const {
 } = require('./session');
 const { HerdrError, resolveAgentTargetFromSnapshot } = require('./herdr');
 const { createNamesStore } = require('./names');
+const { getRecoverySnapshot, captureBackups, restoreWorkspace } = require('./sessions-bridge');
+const { getMuseSnapshot, sendPioRelayMessage, fetchPioRelayMessages } = require('./muse');
+const {
+  authenticateToken,
+  registerWorker,
+  updateWorkerStatus,
+  getRegistrySnapshot,
+  tailWorkerLog,
+  reapWorkerProcess,
+} = require('./registry-bridge');
 
 const MAX_JSON_BYTES = 64 * 1024;
 
@@ -191,7 +206,7 @@ function decodeSubpath(encoded) {
   }
 }
 
-function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
+function createApp({ config, store, auth, herdr, rateLimiter, audit, names, fetch: fetchImpl, execFile: execFileImpl, registryDeps }) {
   const authPublicDir = path.join(config.publicDir, 'auth');
   const controlPublicDir = path.join(config.publicDir, 'control');
   const namesPublicDir = path.join(config.publicDir, 'names');
@@ -254,6 +269,60 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
           { 'Retry-After': String(rl.retryAfterSec) }
         );
       }
+    }
+
+    // Agent reporting bridge. Authenticates with X-Roostr-Token OR a passkey
+    // session cookie, and deliberately does not require the CSRF header so a
+    // standalone (headless) agent can register and report status.
+    if (method === 'POST' && (pathname === '/agents/api/register' || pathname === '/agents/api/status')) {
+      const tokenOk = authenticateToken(req, config.roostrStateDir);
+      if (!tokenOk && !getSession(req)) {
+        audit.log({ ip: clientIp, action: 'registry.auth_denied', summary: pathname, ok: false });
+        return sendJson(res, 401, { error: 'unauthorized' });
+      }
+      let bridgeBody;
+      try {
+        bridgeBody = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const via = tokenOk ? 'token' : 'passkey';
+      if (pathname === '/agents/api/register') {
+        const result = registerWorker(config.roostrStateDir, bridgeBody);
+        if (!result.ok) {
+          audit.log({
+            ip: clientIp,
+            action: 'registry.register',
+            summary: `via=${via} err=${result.error}`,
+            ok: false,
+          });
+          return sendJson(res, result.status || 400, { error: result.error });
+        }
+        audit.log({
+          ip: clientIp,
+          action: 'registry.register',
+          summary: `id=${result.worker.id} via=${via}`,
+          ok: true,
+        });
+        return sendJson(res, 200, { ok: true, worker: result.worker });
+      }
+      const result = updateWorkerStatus(config.roostrStateDir, bridgeBody);
+      if (!result.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'registry.status',
+          summary: `via=${via} err=${result.error}`,
+          ok: false,
+        });
+        return sendJson(res, result.status || 400, { error: result.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'registry.status',
+        summary: `id=${result.worker.id} state=${result.worker.state} via=${via}`,
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, worker: result.worker });
     }
 
     if (method === 'POST') {
@@ -415,6 +484,228 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
 
     if (pathname === '/agents/api/audit' && method === 'GET') {
       return sendJson(res, 200, { entries: audit.readRecent(20) });
+    }
+
+    if (pathname === '/agents/api/sessions' && method === 'GET') {
+      return sendJson(res, 200, getRecoverySnapshot({
+        roostrStateDir: config.roostrStateDir,
+        roostrRepoDir: config.roostrRepoDir,
+      }));
+    }
+
+    if (pathname === '/agents/api/registry' && method === 'GET') {
+      return sendJson(res, 200, getRegistrySnapshot(config.roostrStateDir));
+    }
+
+    if (pathname.startsWith('/agents/api/registry/')) {
+      const rest = pathname.slice('/agents/api/registry/'.length);
+      const slash = rest.lastIndexOf('/');
+      if (slash === -1) {
+        return sendJson(res, 404, { error: 'not found' });
+      }
+      const rawId = decodeSubpath(rest.slice(0, slash));
+      const action = rest.slice(slash + 1);
+      if (rawId === null) {
+        return sendJson(res, 400, { error: 'invalid worker id' });
+      }
+
+      if (action === 'log' && method === 'GET') {
+        const lv = validateLines(url.searchParams.get('lines'));
+        if (!lv.ok) {
+          return sendJson(res, 400, { error: lv.error });
+        }
+        const logRes = tailWorkerLog(config.roostrStateDir, rawId, lv.value);
+        if (!logRes.ok) {
+          return sendJson(res, logRes.status || 400, { error: logRes.error });
+        }
+        return sendJson(res, 200, { id: logRes.id, text: logRes.text });
+      }
+
+      if (action === 'reap' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const reapRes = reapWorkerProcess(
+          config.roostrStateDir,
+          rawId,
+          { pid: body.pid, command: body.command },
+          registryDeps
+        );
+        if (!reapRes.ok) {
+          audit.log({
+            ip: clientIp,
+            action: 'registry.reap',
+            summary: `id=${rawId} err=${reapRes.error}`,
+            ok: false,
+          });
+          return sendJson(res, reapRes.status || 400, { error: reapRes.error });
+        }
+        audit.log({
+          ip: clientIp,
+          action: 'registry.reap',
+          summary: `id=${reapRes.id} pid=${reapRes.pid}`,
+          ok: true,
+        });
+        return sendJson(res, 200, {
+          ok: true,
+          id: reapRes.id,
+          pid: reapRes.pid,
+          command: reapRes.command,
+        });
+      }
+
+      return sendJson(res, 404, { error: 'not found' });
+    }
+
+    if (pathname === '/agents/api/backups/capture' && method === 'POST') {
+      const capRes = await captureBackups({
+        roostrRepoDir: config.roostrRepoDir,
+        roostrStateDir: config.roostrStateDir,
+        execFileImpl,
+      });
+      if (!capRes.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'backups.capture',
+          summary: `err=${capRes.error}`,
+          ok: false,
+        });
+        return sendJson(res, capRes.status || 502, { error: capRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'backups.capture',
+        summary: 'captured',
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, captured: capRes.captured });
+    }
+
+    if (pathname === '/agents/api/sessions/restore' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const restRes = await restoreWorkspace({
+        roostrRepoDir: config.roostrRepoDir,
+        roostrStateDir: config.roostrStateDir,
+        workspace: body.workspace,
+        mode: body.mode,
+        version: body.version,
+        layout: body.layout,
+        execFileImpl,
+      });
+      if (!restRes.ok) {
+        if ((restRes.status || 502) !== 400) {
+          audit.log({
+            ip: clientIp,
+            action: 'sessions.restore',
+            summary: `workspace=${String(body.workspace || '')} mode=${String(body.mode || 'sessions')} err=${restRes.error}`,
+            ok: false,
+          });
+        }
+        return sendJson(res, restRes.status || 502, { error: restRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'sessions.restore',
+        summary: `workspace=${String(body.workspace).trim()} mode=${restRes.mode}`,
+        ok: true,
+      });
+      return sendJson(res, 200, restRes);
+    }
+
+    if (pathname === '/agents/api/muse' && method === 'GET') {
+      return sendJson(res, 200, getMuseSnapshot({
+        staticDir: config.staticDir,
+        statusPath: config.statusPath,
+        namesStore,
+      }));
+    }
+
+    if (pathname === '/agents/api/muse/message' && method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (err) {
+        return sendJson(res, err.statusCode || 400, { error: err.message });
+      }
+      const mv = validateMuseMessage(body);
+      if (!mv.ok) {
+        return sendJson(res, 400, { error: mv.error });
+      }
+      const relayRes = await sendPioRelayMessage({
+        piorelayBase: config.piorelayBase,
+        from: session.label || session.sub || 'pio',
+        to: mv.value.to,
+        subject: mv.value.subject,
+        body: mv.value.body,
+        project: mv.value.project,
+        threadId: mv.value.threadId,
+        fetchImpl,
+      });
+      if (!relayRes.ok) {
+        audit.log({
+          ip: clientIp,
+          action: 'muse.message',
+          summary: `to=${mv.value.to} err=${relayRes.error}`,
+          ok: false,
+        });
+        return sendJson(res, relayRes.status || 502, { error: relayRes.error });
+      }
+      audit.log({
+        ip: clientIp,
+        action: 'muse.message',
+        summary: `to=${mv.value.to} subject=${mv.value.subject.slice(0, 40)}`,
+        ok: true,
+      });
+      return sendJson(res, 200, { ok: true, relay: relayRes.result });
+    }
+
+    if (pathname === '/agents/api/muse/messages' && method === 'GET') {
+      const agentParam = url.searchParams.get('agent') || '';
+      if (!/^[a-z0-9-]{1,32}$/.test(agentParam)) {
+        return sendJson(res, 400, { error: 'invalid agent' });
+      }
+      let limitVal = 20;
+      if (url.searchParams.has('limit') && url.searchParams.get('limit') !== '') {
+        const rawLimit = url.searchParams.get('limit');
+        if (!/^\d+$/.test(rawLimit)) {
+          return sendJson(res, 400, { error: 'limit must be between 1 and 50' });
+        }
+        limitVal = Number.parseInt(rawLimit, 10);
+        if (limitVal < 1 || limitVal > 50) {
+          return sendJson(res, 400, { error: 'limit must be between 1 and 50' });
+        }
+      }
+      let projectVal = null;
+      if (url.searchParams.has('project')) {
+        const rawProject = url.searchParams.get('project') || '';
+        if (/[\x00-\x1f\x7f-\x9f]/.test(rawProject) || rawProject.length > 64) {
+          return sendJson(res, 400, { error: 'invalid project' });
+        }
+        projectVal = rawProject.trim() || null;
+      }
+      const relayRes = await fetchPioRelayMessages({
+        piorelayBase: config.piorelayBase,
+        agent: agentParam,
+        project: projectVal,
+        limit: limitVal,
+        fetchImpl,
+      });
+      if (!relayRes.ok) {
+        return sendJson(res, relayRes.status || 502, { error: relayRes.error });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        agent: relayRes.agent,
+        messages: relayRes.messages,
+      });
     }
 
     if (pathname === '/agents/api/names' && method === 'GET') {
@@ -627,22 +918,123 @@ function createApp({ config, store, auth, herdr, rateLimiter, audit, names }) {
         if (!kv.ok) {
           return sendJson(res, 400, { error: kv.error });
         }
+        const mv = validateOptionalModel(body.model);
+        if (!mv.ok) {
+          return sendJson(res, 400, { error: mv.error });
+        }
+        const ev = validateOptionalEffort(body.effort);
+        if (!ev.ok) {
+          return sendJson(res, 400, { error: ev.error });
+        }
+        const sv = validateOptionalSessionId(body.session);
+        if (!sv.ok) {
+          return sendJson(res, 400, { error: sv.error });
+        }
+        const startOpts = {
+          model: mv.value,
+          effort: ev.value,
+          session: sv.value,
+        };
         try {
-          await herdr.startAgent(paneId, nv.value, kv.value);
+          await herdr.startAgent(paneId, nv.value, kv.value, startOpts);
           audit.log({
             ip: clientIp,
             action: 'pane.start',
             paneId,
-            summary: `name=${nv.value} kind=${kv.value}`,
+            summary: `name=${nv.value} kind=${kv.value}${mv.value ? ` model=${mv.value}` : ''}${ev.value ? ` effort=${ev.value}` : ''}${sv.value ? ` session=${sv.value}` : ''}`,
             ok: true,
           });
-          return sendJson(res, 200, { ok: true, name: nv.value, kind: kv.value });
+          return sendJson(res, 200, {
+            ok: true,
+            name: nv.value,
+            kind: kv.value,
+            model: mv.value,
+            effort: ev.value,
+            session: sv.value,
+          });
         } catch (err) {
           audit.log({
             ip: clientIp,
             action: 'pane.start',
             paneId,
             summary: `name=${nv.value} kind=${kv.value} err=${err.message}`,
+            ok: false,
+          });
+          return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });
+        }
+      }
+
+      if (parts.length === 2 && parts[1] === 'split' && method === 'POST') {
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (err) {
+          return sendJson(res, err.statusCode || 400, { error: err.message });
+        }
+        const dv = validateSplitDirection(body.direction);
+        if (!dv.ok) {
+          return sendJson(res, 400, { error: dv.error });
+        }
+
+        let cwdVal = null;
+        if (body.cwd !== undefined && body.cwd !== null && body.cwd !== '') {
+          if (typeof body.cwd !== 'string' || /[\x00-\x1f\x7f-\x9f]/.test(body.cwd)) {
+            return sendJson(res, 400, { error: 'invalid cwd' });
+          }
+          const trimmedCwd = body.cwd.trim();
+          if (trimmedCwd.startsWith('-')) {
+            return sendJson(res, 400, { error: 'invalid cwd' });
+          }
+          if (trimmedCwd) {
+            cwdVal = trimmedCwd;
+          }
+        }
+
+        let startCfg = null;
+        if (body.startAgent !== undefined && body.startAgent !== null) {
+          if (typeof body.startAgent !== 'object' || Array.isArray(body.startAgent)) {
+            return sendJson(res, 400, { error: 'startAgent must be an object' });
+          }
+          const sa = body.startAgent;
+          const nv = validateAgentName(sa.name);
+          if (!nv.ok) return sendJson(res, 400, { error: nv.error });
+          const kv = validateAgentKind(sa.kind);
+          if (!kv.ok) return sendJson(res, 400, { error: kv.error });
+          const mv = validateOptionalModel(sa.model);
+          if (!mv.ok) return sendJson(res, 400, { error: mv.error });
+          const ev = validateOptionalEffort(sa.effort);
+          if (!ev.ok) return sendJson(res, 400, { error: ev.error });
+          const sv = validateOptionalSessionId(sa.session);
+          if (!sv.ok) return sendJson(res, 400, { error: sv.error });
+          startCfg = {
+            name: nv.value,
+            kind: kv.value,
+            opts: { model: mv.value, effort: ev.value, session: sv.value },
+          };
+        }
+
+        try {
+          const splitResult = await herdr.splitPane(paneId, dv.value, cwdVal);
+          const newPaneId = typeof splitResult === 'string'
+            ? splitResult
+            : (splitResult && splitResult.paneId) || null;
+          if (startCfg && newPaneId) {
+            await herdr.startAgent(newPaneId, startCfg.name, startCfg.kind, startCfg.opts);
+          }
+          audit.log({
+            ip: clientIp,
+            action: 'pane.split',
+            paneId,
+            summary: `direction=${dv.value}${newPaneId ? ` newPane=${newPaneId}` : ''}${startCfg ? ` start=${startCfg.name}:${startCfg.kind}` : ''}`,
+            ok: true,
+          });
+          return sendJson(res, 200, { ok: true, paneId: newPaneId });
+        } catch (err) {
+          audit.log({
+            ip: clientIp,
+            action: 'pane.split',
+            paneId,
+            summary: `direction=${dv.value} err=${err.message}`,
             ok: false,
           });
           return sendJson(res, err instanceof HerdrError ? 502 : 500, { error: err.message });

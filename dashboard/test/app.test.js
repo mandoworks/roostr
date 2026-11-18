@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 const { loadConfig } = require('../src/config');
 const { createSecretStore } = require('../src/secrets');
@@ -85,7 +86,12 @@ function createHarness(opts = {}) {
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'roostr-dash-app-'));
   const configDir = path.join(tmpBase, 'config');
   const staticDir = path.join(tmpBase, 'static');
+  const roostrStateDir = path.join(tmpBase, 'roostr-state');
+  const roostrRepoDir = path.join(tmpBase, 'roostr-repo');
+  const statusPath = path.join(tmpBase, 'status.json');
   fs.mkdirSync(staticDir, { recursive: true });
+  fs.mkdirSync(roostrStateDir, { recursive: true });
+  fs.mkdirSync(roostrRepoDir, { recursive: true });
   fs.writeFileSync(path.join(staticDir, 'index.html'), '<h1>Agents Index</h1>');
 
   const config = loadConfig({
@@ -93,6 +99,10 @@ function createHarness(opts = {}) {
     RP_ID: 'example.ts.net',
     ORIGIN: 'https://example.ts.net',
     STATIC_DIR: staticDir,
+    ROOSTR_STATE_DIR: roostrStateDir,
+    ROOSTR_REPO_DIR: roostrRepoDir,
+    AGENT_STATUS_PATH: statusPath,
+    PIORELAY_BASE: opts.piorelayBase || 'http://127.0.0.1:3016/api/v1',
     ROOSTR_DASHBOARD_CONFIG_DIR: configDir,
     ALLOW_ADD_CREDENTIAL: opts.allowAddCredential ? '1' : '0',
   });
@@ -186,6 +196,9 @@ function createHarness(opts = {}) {
     if (args[0] === 'pane' && args[1] === 'read') {
       return cb(null, 'Allow tool? (y/n)\n', '');
     }
+    if (args[0] === 'pane' && args[1] === 'split') {
+      return cb(null, JSON.stringify({ pane_id: 'w1:p2' }), '');
+    }
     return cb(null, '', '');
   };
 
@@ -199,7 +212,7 @@ function createHarness(opts = {}) {
 
   const rateLimiter = createRateLimiter({ maxRequests: 20, windowMs: 10000 });
   const audit = createAuditLogger(store.auditPath);
-  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit });
+  const handler = createApp({ config, store, auth, herdr, rateLimiter, audit, fetch: opts.fetch, execFile: opts.execFile, registryDeps: opts.registryDeps });
 
   return {
     tmpBase,
@@ -382,6 +395,16 @@ describe('dashboard herdr client and HTTP app', () => {
       assert.equal(promptRes.status, 200);
       assert.deepEqual(h.herdrCalls[4].args, ['agent', 'prompt', 'miguel', 'run tests now']);
 
+      // Leading '-' in prompt text is prefixed with space to prevent CLI flag injection
+      const dashPromptRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/prompt',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { text: '--wait' },
+      });
+      assert.equal(dashPromptRes.status, 200);
+      assert.deepEqual(h.herdrCalls[5].args, ['agent', 'prompt', 'miguel', ' --wait']);
+
       // POST /agents/api/pane/<paneId>/close requires matching confirm
       const badClose = await invokeHandler(h.handler, {
         method: 'POST',
@@ -398,7 +421,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { confirm: 'w1:p1' },
       });
       assert.equal(okClose.status, 200);
-      assert.deepEqual(h.herdrCalls[5].args, ['pane', 'close', 'w1:p1']);
+      assert.deepEqual(h.herdrCalls[6].args, ['pane', 'close', 'w1:p1']);
 
       // Rename pane and clear label
       const okRename = await invokeHandler(h.handler, {
@@ -408,7 +431,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { label: 'Nora · garden' },
       });
       assert.equal(okRename.status, 200);
-      assert.deepEqual(h.herdrCalls[6].args, ['pane', 'rename', 'w1:p1', 'Nora · garden']);
+      assert.deepEqual(h.herdrCalls[7].args, ['pane', 'rename', 'w1:p1', 'Nora · garden']);
 
       const okClearRename = await invokeHandler(h.handler, {
         method: 'POST',
@@ -417,7 +440,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { label: '' },
       });
       assert.equal(okClearRename.status, 200);
-      assert.deepEqual(h.herdrCalls[7].args, ['pane', 'rename', 'w1:p1', '--clear']);
+      assert.deepEqual(h.herdrCalls[8].args, ['pane', 'rename', 'w1:p1', '--clear']);
 
       // Start fresh agent (and reject disallowed kind)
       const badStart = await invokeHandler(h.handler, {
@@ -435,7 +458,7 @@ describe('dashboard herdr client and HTTP app', () => {
         body: { name: 'nora', kind: 'opencode' },
       });
       assert.equal(okStart.status, 200);
-      assert.deepEqual(h.herdrCalls[8].args, ['agent', 'start', 'nora', '--kind', 'opencode', '--pane', 'w1:p1']);
+      assert.deepEqual(h.herdrCalls[9].args, ['agent', 'start', 'nora', '--kind', 'opencode', '--pane', 'w1:p1']);
 
       // Audit log contains entries with no cookies/secrets
       const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie } });
@@ -660,6 +683,22 @@ describe('dashboard herdr client and HTTP app', () => {
       });
       assert.equal(tooLongLabel.status, 400);
 
+      const dashLabel = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: '--clear' },
+      });
+      assert.equal(dashLabel.status, 400);
+
+      const dashPaneRename = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/--help:p1/rename',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, 'x-forwarded-for': '100.64.0.12' },
+        body: { label: 'ok' },
+      });
+      assert.equal(dashPaneRename.status, 400);
+
       h.setFailNextHerdr('pane not found');
       const herdrFailRename = await invokeHandler(h.handler, {
         method: 'POST',
@@ -852,6 +891,850 @@ describe('dashboard herdr client and HTTP app', () => {
         body: {},
       });
       assert.equal(noMoreRev.status, 404);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('handles sessions recovery, pane start options, pane split, muse snapshot, and muse messaging', async () => {
+    const relayRequests = [];
+    let relayMode = 'ok';
+    const mockFetch = async (url, init) => {
+      relayRequests.push({ url, init, body: JSON.parse(init.body) });
+      if (relayMode === 'network-error') {
+        throw new Error('connect ECONNREFUSED');
+      }
+      if (relayMode === 'http-500') {
+        return {
+          ok: false,
+          status: 500,
+          async text() {
+            return JSON.stringify({ error: 'relay down' });
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({ id: 'msg-123', status: 'queued' });
+        },
+      };
+    };
+
+    const h = createHarness({ fetch: mockFetch });
+    try {
+      // Populate recovery snapshot files
+      fs.writeFileSync(
+        path.join(h.config.roostrStateDir, 'sessions.json'),
+        JSON.stringify([{ paneId: 'w2:p1', agent: 'claude', session: 'sess-1', model: 'sonnet' }])
+      );
+      const backupWsDir = path.join(h.config.roostrStateDir, 'backups', 'w2');
+      fs.mkdirSync(backupWsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(backupWsDir, 'v1.json'),
+        JSON.stringify({
+          workspaceId: 'w2',
+          label: 'doma',
+          version: 1,
+          capturedAt: '2026-11-16T10:00:00.000Z',
+          panes: [{ paneId: 'w2:p1', agent: 'claude' }],
+        })
+      );
+      const orchDir = path.join(h.config.roostrRepoDir, 'docs', 'orchestration');
+      fs.mkdirSync(path.join(orchDir, 'handoffs'), { recursive: true });
+      fs.mkdirSync(path.join(orchDir, 'reports'), { recursive: true });
+      fs.writeFileSync(
+        path.join(orchDir, 'tasks.json'),
+        JSON.stringify({ version: 1, plan: 'docs/orchestration-plan.md', tasks: [{ id: 't1', status: 'done' }] })
+      );
+      fs.writeFileSync(path.join(orchDir, 'handoffs', 'h1.md'), '# Handoff 1');
+      fs.writeFileSync(path.join(orchDir, 'reports', 'r1.md'), '# Report 1');
+
+      // Populate Muse static files + status + names override
+      fs.mkdirSync(path.join(h.config.staticDir, 'workers'), { recursive: true });
+      fs.writeFileSync(
+        path.join(h.config.staticDir, 'data.json'),
+        JSON.stringify({
+          generated_epoch: 1794835050,
+          stamp_ast: '09:17 AM AST',
+          roman_desk: {
+            chat_id: 'roman-chat-1',
+            chat_title: 'Main chat',
+            last_activity_ast: '09:13 AM AST',
+            tokens_in_today: 100,
+            tokens_out_today: 50,
+          },
+          tier1: [
+            {
+              id: 'engy',
+              name: 'Engy',
+              emoji: '✍️',
+              role: 'Copywriter',
+              cls: 'done',
+              current_task: 'Drafting',
+              next_task: 'Review',
+              blocker: null,
+              tasks: [{ title: 't1', status: 'done' }],
+              docs: [{ file: 'SOUL.md', words: 100 }],
+              bank: 'coding-agent::engy',
+            },
+          ],
+          tier2: [{ label: 'free-model-radar', status: 'running' }],
+        })
+      );
+      fs.writeFileSync(
+        path.join(h.config.staticDir, 'workers', 'workers.muse.json'),
+        JSON.stringify({
+          schema: 1,
+          host: 'muse',
+          workers: [
+            {
+              pane_id: 'muse:engy',
+              agent: 'engy',
+              state: 'working',
+              task: 'Shadow-draft',
+              model: 'ipnext/avocado-5.16-v1',
+              tokens: 42,
+              session: 'engy-sess-1',
+            },
+          ],
+        })
+      );
+      fs.writeFileSync(
+        h.config.statusPath,
+        JSON.stringify({
+          generated_epoch: 1794835418,
+          agents: {
+            engy: { agent: 'engy', state: 'working', label: 'Active copy', at_ast: '09:20 AM AST' },
+          },
+        })
+      );
+      fs.writeFileSync(
+        h.config.namesPath,
+        JSON.stringify({
+          schema: 1,
+          orchestrators: ['engy'],
+          overrides: { engy: { name: 'Engy Prime' } },
+          history: [],
+        })
+      );
+
+      // Enroll and authenticate
+      const token = h.store.getEnrollToken();
+      const regOpts = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, label: 'Test Mac' },
+      });
+      assert.equal(regOpts.status, 200);
+      const { challengeId } = JSON.parse(regOpts.body);
+      const regVerify = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, challengeId, response: { id: 'cred-1' }, label: 'Test Mac' },
+      });
+      assert.equal(regVerify.status, 200);
+      const cookie = regVerify.headers['set-cookie'].split(';')[0];
+
+      // 1. GET /agents/api/sessions
+      const sessionsRes = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/sessions',
+        headers: { cookie },
+      });
+      assert.equal(sessionsRes.status, 200);
+      const sessionsBody = JSON.parse(sessionsRes.body);
+      assert.equal(sessionsBody.sessions.length, 1);
+      assert.equal(sessionsBody.sessions[0].paneId, 'w2:p1');
+      assert.equal(sessionsBody.backups.length, 1);
+      assert.equal(sessionsBody.backups[0].workspaceId, 'w2');
+      assert.equal(sessionsBody.backups[0].paneCount, 1);
+      assert.equal(sessionsBody.orchestration.tasks.length, 1);
+      assert.equal(sessionsBody.orchestration.handoffs[0].file, 'h1.md');
+      assert.equal(sessionsBody.orchestration.reports[0].file, 'r1.md');
+
+      // 2. POST /agents/api/pane/:id/start with session, model, effort
+      const startClaude = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'nora',
+          kind: 'claude',
+          session: 'sess-abc',
+          model: 'claude-sonnet-4-5',
+          effort: 'high',
+        },
+      });
+      assert.equal(startClaude.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'nora',
+        '--kind',
+        'claude',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--resume',
+        'sess-abc',
+        '--model',
+        'claude-sonnet-4-5',
+        '--effort',
+        'high',
+      ]);
+
+      const startOpencode = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'kilo-1',
+          kind: 'opencode',
+          session: 'oc-1',
+          model: 'openrouter/free',
+          effort: 'medium',
+        },
+      });
+      assert.equal(startOpencode.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'kilo-1',
+        '--kind',
+        'opencode',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--session',
+        'oc-1',
+        '--model',
+        'openrouter/free',
+      ]);
+
+      const startAgy = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          name: 'agy-1',
+          kind: 'agy',
+          session: 'conv-1',
+          model: 'gemini-4-hydrogen-medium',
+          effort: 'xhigh',
+        },
+      });
+      assert.equal(startAgy.status, 200);
+      assert.deepEqual(h.herdrCalls[h.herdrCalls.length - 1].args, [
+        'agent',
+        'start',
+        'agy-1',
+        '--kind',
+        'agy',
+        '--pane',
+        'w1:p1',
+        '--',
+        '--conversation',
+        'conv-1',
+        '--model',
+        'gemini-4-hydrogen-medium',
+        '--effort',
+        'xhigh',
+      ]);
+
+      const badStart = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/start',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { name: 'nora', kind: 'claude', effort: 'invalid' },
+      });
+      assert.equal(badStart.status, 400);
+
+      // 3. POST /agents/api/pane/:id/split
+      const splitRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/split',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          direction: 'down',
+          cwd: '/tmp/work',
+          startAgent: {
+            name: 'valentin',
+            kind: 'agy',
+            model: 'gemini-4-hydrogen-medium',
+          },
+        },
+      });
+      assert.equal(splitRes.status, 200);
+      assert.deepEqual(JSON.parse(splitRes.body), { ok: true, paneId: 'w1:p2' });
+      const lastTwo = h.herdrCalls.slice(-2).map((c) => c.args);
+      assert.deepEqual(lastTwo[0], [
+        'pane',
+        'split',
+        '--pane',
+        'w1:p1',
+        '--direction',
+        'down',
+        '--cwd',
+        '/tmp/work',
+        '--no-focus',
+      ]);
+      assert.deepEqual(lastTwo[1], [
+        'agent',
+        'start',
+        'valentin',
+        '--kind',
+        'agy',
+        '--pane',
+        'w1:p2',
+        '--',
+        '--model',
+        'gemini-4-hydrogen-medium',
+      ]);
+
+      const badSplit = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/pane/w1%3Ap1/split',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { direction: 'up' },
+      });
+      assert.equal(badSplit.status, 400);
+
+      // 4. GET /agents/api/muse
+      const museRes = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse',
+        headers: { cookie },
+      });
+      assert.equal(museRes.status, 200);
+      const museBody = JSON.parse(museRes.body);
+      assert.equal(museBody.romanDesk.chat_id, 'roman-chat-1');
+      assert.equal(museBody.tier2.length, 1);
+      assert.equal(museBody.agents.length, 2);
+      const roman = museBody.agents.find((a) => a.slug === 'roman');
+      assert.equal(roman.isOrchestrator, true);
+      assert.equal(roman.tokensToday, 150);
+      const engy = museBody.agents.find((a) => a.slug === 'engy');
+      assert.equal(engy.name, 'Engy Prime');
+      assert.equal(engy.sourceName, 'Engy');
+      assert.equal(engy.overrideName, 'Engy Prime');
+      assert.equal(engy.isOrchestrator, true);
+      assert.equal(engy.model, 'ipnext/avocado-5.16-v1');
+      assert.equal(engy.session, 'engy-sess-1');
+      assert.equal(engy.state, 'working');
+
+      // 5. POST /agents/api/muse/message
+      const msgRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {
+          to: 'engy',
+          subject: 'Check slide 3',
+          body: 'Please update the headline',
+        },
+      });
+      assert.equal(msgRes.status, 200);
+      const msgBody = JSON.parse(msgRes.body);
+      assert.equal(msgBody.ok, true);
+      assert.equal(msgBody.relay.id, 'msg-123');
+      assert.equal(relayRequests[0].body.to_agent, 'engy');
+      assert.equal(relayRequests[0].body.project, 'muse');
+      assert.equal(relayRequests[0].body.kind, 'task');
+
+      const badMsg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { to: 'INVALID', subject: '', body: '' },
+      });
+      assert.equal(badMsg.status, 400);
+
+      relayMode = 'network-error';
+      const downMsg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/muse/message',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { to: 'engy', subject: 'Ping', body: 'Hello' },
+      });
+      assert.equal(downMsg.status, 502);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('handles backup capture, workspace/session restore, and PioRelay inbox messages APIs', async () => {
+    const cliCalls = [];
+    let cliMode = 'ok';
+    const mockCliExecFile = (bin, args, execOpts, cb) => {
+      cliCalls.push({ bin, args, execOpts });
+      if (cliMode === 'fail') {
+        const err = new Error('exit 1');
+        return cb(err, '', 'roostr backups: herdr offline\n');
+      }
+      if (args.includes('capture')) {
+        return cb(null, JSON.stringify({ captured: 2, workspaces: ['w1', 'w2'] }), '');
+      }
+      if (args.includes('backups') && args.includes('restore')) {
+        return cb(null, 'restored doma *restored (2 panes)\n', '');
+      }
+      if (args.includes('restore')) {
+        return cb(null, JSON.stringify({ restored: 1, workspace: 'w2', items: [{ paneId: 'w2:p1' }] }), '');
+      }
+      return cb(null, '', '');
+    };
+
+    const relayGetRequests = [];
+    let relayGetMode = 'messages-obj';
+    const mockFetch = async (url, init) => {
+      relayGetRequests.push({ url, method: init.method });
+      if (relayGetMode === 'network-error') {
+        throw new Error('ECONNREFUSED');
+      }
+      if (relayGetMode === 'http-500') {
+        return {
+          ok: false,
+          status: 500,
+          async text() {
+            return JSON.stringify({ error: 'relay unavailable' });
+          },
+        };
+      }
+      if (relayGetMode === 'items-obj') {
+        return {
+          ok: true,
+          status: 200,
+          async text() {
+            return JSON.stringify({
+              items: [
+                {
+                  id: 'm2',
+                  from: 'roman',
+                  to: 'engy',
+                  subject: 'Items shape',
+                  body: 'Body text',
+                  project: 'muse',
+                  threadId: 'th-2',
+                  createdAt: '2026-11-16T12:00:00Z',
+                  read: true,
+                },
+              ],
+            });
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            messages: [
+              {
+                msg_id: 'm1',
+                from_agent: 'pio',
+                to_agent: 'engy',
+                subject: 'Slide check',
+                body: 'Please review',
+                project: 'muse',
+                thread_id: 'th-1',
+                created_at: '2026-11-16T11:00:00Z',
+                is_read: false,
+              },
+            ],
+          });
+        },
+      };
+    };
+
+    const h = createHarness({ execFile: mockCliExecFile, fetch: mockFetch });
+    try {
+      const token = h.store.getEnrollToken();
+      const opt = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token },
+      });
+      const ver = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token, challengeId: JSON.parse(opt.body).challengeId, response: { id: 'cred-1' } },
+      });
+      const cookie = ver.headers['set-cookie'].split(';')[0];
+
+      // 1. POST /agents/api/backups/capture
+      const capRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/backups/capture',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {},
+      });
+      assert.equal(capRes.status, 200);
+      const capBody = JSON.parse(capRes.body);
+      assert.equal(capBody.ok, true);
+      assert.equal(capBody.captured.captured, 2);
+      assert.equal(cliCalls[0].bin, process.execPath);
+      assert.deepEqual(cliCalls[0].args, [
+        path.join(h.config.roostrRepoDir, 'bin', 'roostr'),
+        'backups',
+        'capture',
+        '--json',
+      ]);
+      assert.equal(cliCalls[0].execOpts.timeout, 15000);
+      assert.equal(cliCalls[0].execOpts.env.ROOSTR_STATE_DIR, h.config.roostrStateDir);
+
+      cliMode = 'fail';
+      const capFail = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/backups/capture',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: {},
+      });
+      assert.equal(capFail.status, 502);
+      assert.deepEqual(JSON.parse(capFail.body), { error: 'roostr backups: herdr offline' });
+      cliMode = 'ok';
+
+      // 2. POST /agents/api/sessions/restore (sessions default + backup mode + validation)
+      const badWs = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: '--help' },
+      });
+      assert.equal(badWs.status, 400);
+
+      const emptyWs = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: '' },
+      });
+      assert.equal(emptyWs.status, 400);
+
+      const badMode = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: 'w2', mode: 'nuke' },
+      });
+      assert.equal(badMode.status, 400);
+
+      const badLayout = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: 'w2', mode: 'backup', layout: 'diagonal' },
+      });
+      assert.equal(badLayout.status, 400);
+
+      const restSessions = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: 'w2' },
+      });
+      assert.equal(restSessions.status, 200);
+      const restSessionsBody = JSON.parse(restSessions.body);
+      assert.equal(restSessionsBody.ok, true);
+      assert.equal(restSessionsBody.mode, 'sessions');
+      assert.equal(restSessionsBody.result.restored, 1);
+      assert.deepEqual(cliCalls[2].args, [
+        path.join(h.config.roostrRepoDir, 'bin', 'roostr'),
+        'restore',
+        '--workspace',
+        'w2',
+        '--yes',
+        '--json',
+      ]);
+
+      const restBackup = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: 'doma', mode: 'backup', version: 2, layout: 'saved' },
+      });
+      assert.equal(restBackup.status, 200);
+      const restBackupBody = JSON.parse(restBackup.body);
+      assert.equal(restBackupBody.ok, true);
+      assert.equal(restBackupBody.mode, 'backup');
+      assert.match(restBackupBody.output, /restored doma/);
+      assert.deepEqual(cliCalls[3].args, [
+        path.join(h.config.roostrRepoDir, 'bin', 'roostr'),
+        'backups',
+        'restore',
+        'doma',
+        '--yes',
+        '--version',
+        '2',
+        '--layout',
+        'saved',
+      ]);
+
+      cliMode = 'fail';
+      const restFail = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/sessions/restore',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { workspace: 'w2' },
+      });
+      assert.equal(restFail.status, 502);
+
+      // Verify audit log recorded backups.capture and sessions.restore
+      const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie } });
+      const { entries } = JSON.parse(auditRes.body);
+      assert.ok(entries.some((e) => e.action === 'backups.capture' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'backups.capture' && e.ok === false));
+      assert.ok(entries.some((e) => e.action === 'sessions.restore' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'sessions.restore' && e.ok === false));
+
+      // 3. GET /agents/api/muse/messages
+      const badAgent = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=Bad_Agent',
+        headers: { cookie },
+      });
+      assert.equal(badAgent.status, 400);
+
+      const missingAgent = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages',
+        headers: { cookie },
+      });
+      assert.equal(missingAgent.status, 400);
+
+      const badLimit = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=engy&limit=99',
+        headers: { cookie },
+      });
+      assert.equal(badLimit.status, 400);
+
+      const okMsgs = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=engy&limit=10&project=muse',
+        headers: { cookie },
+      });
+      assert.equal(okMsgs.status, 200);
+      const okMsgsBody = JSON.parse(okMsgs.body);
+      assert.equal(okMsgsBody.ok, true);
+      assert.equal(okMsgsBody.agent, 'engy');
+      assert.equal(okMsgsBody.messages.length, 1);
+      assert.deepEqual(okMsgsBody.messages[0], {
+        id: 'm1',
+        from: 'pio',
+        to: 'engy',
+        subject: 'Slide check',
+        body: 'Please review',
+        project: 'muse',
+        threadId: 'th-1',
+        createdAt: '2026-11-16T11:00:00Z',
+        read: false,
+      });
+      assert.equal(
+        relayGetRequests[0].url,
+        'http://127.0.0.1:3016/api/v1/agent-messages?agent=engy&limit=10&project=muse'
+      );
+
+      relayGetMode = 'items-obj';
+      const itemsMsgs = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=engy',
+        headers: { cookie },
+      });
+      assert.equal(itemsMsgs.status, 200);
+      assert.equal(JSON.parse(itemsMsgs.body).messages[0].id, 'm2');
+      assert.equal(JSON.parse(itemsMsgs.body).messages[0].read, true);
+
+      relayGetMode = 'http-500';
+      const err500Msgs = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=engy',
+        headers: { cookie },
+      });
+      assert.equal(err500Msgs.status, 502);
+
+      relayGetMode = 'network-error';
+      const netErrMsgs = await invokeHandler(h.handler, {
+        method: 'GET',
+        url: '/agents/api/muse/messages?agent=engy',
+        headers: { cookie },
+      });
+      assert.equal(netErrMsgs.status, 502);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it('authenticates agent reporting with X-Roostr-Token and serves registry, log, and reap routes', async () => {
+    const killed = [];
+    const processTable = () => ([{ pid: 4321, command: 'node runner.js --id worker-1' }]);
+    const h = createHarness({
+      registryDeps: {
+        processTable,
+        killImpl: (pid, signal) => killed.push({ pid, signal }),
+      },
+    });
+    try {
+      const enrollToken = h.store.getEnrollToken();
+      const opt = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/options',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token: enrollToken },
+      });
+      const ver = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/auth/register/verify',
+        headers: { 'x-roostr-csrf': '1', origin: h.config.origin },
+        body: { token: enrollToken, challengeId: JSON.parse(opt.body).challengeId, response: { id: 'cred-1' } },
+      });
+      const cookie = ver.headers['set-cookie'].split(';')[0];
+
+      const rawToken = 'agent-token-abc-123';
+      const hash = crypto.createHash('sha256').update(rawToken, 'utf8').digest('hex');
+      fs.writeFileSync(
+        path.join(h.config.roostrStateDir, 'tokens.json'),
+        JSON.stringify({ schema: 1, tokens: [{ label: 'test-agent', hash, createdAt: new Date().toISOString() }] })
+      );
+
+      const xff = { 'x-forwarded-for': '100.64.1.1' };
+
+      // 401 without a token or passkey session.
+      const unauthRegister = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: xff,
+        body: { id: 'worker-1' },
+      });
+      assert.equal(unauthRegister.status, 401);
+
+      const unauthStatus = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/status',
+        headers: xff,
+        body: { id: 'worker-1', state: 'idle' },
+      });
+      assert.equal(unauthStatus.status, 401);
+
+      // 200 with a valid X-Roostr-Token (no CSRF header required).
+      const reg = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: { 'x-roostr-token': rawToken, ...xff },
+        body: {
+          id: 'worker-1',
+          owner: 'fernando',
+          host: 'ovh',
+          task: 'monitor',
+          kind: 'opencode',
+          pid: 4321,
+          command: 'node runner.js --id worker-1',
+          rssKb: 254000,
+          state: 'working',
+          mode: 'headless',
+          logFile: 'logs/worker-1.log',
+        },
+      });
+      assert.equal(reg.status, 200);
+      const regWorker = JSON.parse(reg.body).worker;
+      assert.equal(regWorker.id, 'worker-1');
+      assert.equal(regWorker.source, 'reported');
+      assert.equal(regWorker.mode, 'headless');
+
+      const statusRes = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/status',
+        headers: { 'x-roostr-token': rawToken, ...xff },
+        body: { id: 'worker-1', state: 'idle', task: 'updated task' },
+      });
+      assert.equal(statusRes.status, 200);
+      const statusWorker = JSON.parse(statusRes.body).worker;
+      assert.equal(statusWorker.state, 'idle');
+      assert.equal(statusWorker.task, 'updated task');
+      assert.equal(statusWorker.pid, 4321);
+
+      // 200 with only a passkey session cookie.
+      const regCookie = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/register',
+        headers: { cookie, ...xff },
+        body: { id: 'worker-2', owner: 'pio', mode: 'pane', state: 'working', pid: 7, command: 'pane worker' },
+      });
+      assert.equal(regCookie.status, 200);
+      assert.equal(JSON.parse(regCookie.body).worker.id, 'worker-2');
+
+      // Registry snapshot is passkey gated.
+      const regUnauth = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: xff });
+      assert.equal(regUnauth.status, 401);
+
+      const registry = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: { cookie, ...xff } });
+      assert.equal(registry.status, 200);
+      const snapshot = JSON.parse(registry.body);
+      assert.equal(snapshot.workers.length, 2);
+      assert.ok(snapshot.hostMem && typeof snapshot.hostMem === 'object');
+      assert.ok('physFreeKb' in snapshot.hostMem);
+      assert.ok('swapUsedKb' in snapshot.hostMem);
+      assert.ok(Array.isArray(snapshot.closedSessions));
+
+      // Log tail (passkey gated, id validated).
+      const logsDir = path.join(h.config.roostrStateDir, 'logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.writeFileSync(path.join(logsDir, 'worker-1.log'), 'l1\nl2\nl3\nl4\n');
+      const logRes = await invokeHandler(h.handler, {
+        url: '/agents/api/registry/worker-1/log?lines=2',
+        headers: { cookie, ...xff },
+      });
+      assert.equal(logRes.status, 200);
+      assert.deepEqual(JSON.parse(logRes.body), { id: 'worker-1', text: 'l3\nl4' });
+
+      const badLog = await invokeHandler(h.handler, {
+        url: '/agents/api/registry/worker-1/log?lines=0',
+        headers: { cookie, ...xff },
+      });
+      assert.equal(badLog.status, 400);
+
+      // Reap rejects a PID/command mismatch against the registry row.
+      const reapMismatch = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/registry/worker-1/reap',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, ...xff },
+        body: { pid: 9999, command: 'node runner.js --id worker-1' },
+      });
+      assert.equal(reapMismatch.status, 409);
+
+      // Reap accepts a matching PID/command and SIGTERMs the live process.
+      const reapOk = await invokeHandler(h.handler, {
+        method: 'POST',
+        url: '/agents/api/registry/worker-1/reap',
+        headers: { cookie, 'x-roostr-csrf': '1', origin: h.config.origin, ...xff },
+        body: { pid: 4321, command: 'node runner.js --id worker-1' },
+      });
+      assert.equal(reapOk.status, 200);
+      assert.equal(JSON.parse(reapOk.body).ok, true);
+      assert.deepEqual(killed, [{ pid: 4321, signal: 'SIGTERM' }]);
+
+      const closedLines = fs
+        .readFileSync(path.join(h.config.roostrStateDir, 'closed-sessions.jsonl'), 'utf8')
+        .trim()
+        .split('\n');
+      assert.equal(closedLines.length, 1);
+      assert.equal(JSON.parse(closedLines[0]).id, 'worker-1');
+      assert.equal(JSON.parse(closedLines[0]).reason, 'reaped');
+
+      const afterReap = await invokeHandler(h.handler, { url: '/agents/api/registry', headers: { cookie, ...xff } });
+      const reapedWorker = JSON.parse(afterReap.body).workers.find((w) => w.id === 'worker-1');
+      assert.equal(reapedWorker.state, 'failed');
+
+      const auditRes = await invokeHandler(h.handler, { url: '/agents/api/audit', headers: { cookie, ...xff } });
+      const { entries } = JSON.parse(auditRes.body);
+      assert.ok(entries.some((e) => e.action === 'registry.register' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.status' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.reap' && e.ok === true));
+      assert.ok(entries.some((e) => e.action === 'registry.auth_denied' && e.ok === false));
     } finally {
       h.cleanup();
     }

@@ -3,47 +3,89 @@
   "plan": "docs/orchestration-plan.md",
   "tasks": [
     {
-      "id": "pkg-skill-docs",
-      "title": "Sync roostr skill, schema reference, and dashboard README",
-      "kind": "docs",
-      "brief": "docs/orchestration/tasks/pkg-skill-docs.md",
-      "report": "docs/orchestration/reports/pkg-skill-docs.md",
+      "id": "pkg-p1-registry-governor",
+      "title": "Build ~/.roostr/registry.json, X-Roostr-Token auth, resource governor, and idle reaper",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p1-registry-governor.md",
+      "report": "docs/orchestration/reports/pkg-p1-registry-governor.md",
       "status": "done",
       "tool": "agy",
-      "effort": "low",
-      "model": "gemini-4-hydrogen-low",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
       "fallbacks": [
-        "gemini-4-hydrogen-medium"
+        "gemini-4-hydrogen-low"
       ],
       "owns": [
-        "skills/roostr/SKILL.md",
-        "skills/roostr/references/schemas-and-config.md",
-        "dashboard/README.md",
-        "docs/orchestration/reports/pkg-skill-docs.md"
+        "bin/roostr",
+        "src/registry.js",
+        "src/governor.js",
+        "test/registry.test.js",
+        "test/governor.test.js",
+        "docs/orchestration/reports/pkg-p1-registry-governor.md"
       ],
       "depends_on": []
     },
     {
-      "id": "pkg-onboard-hardening",
-      "title": "Fix onboard announce kind and fetch diagnostics, audit, and expand tests",
-      "kind": "tests",
-      "brief": "docs/orchestration/tasks/pkg-onboard-hardening.md",
-      "report": "docs/orchestration/reports/pkg-onboard-hardening.md",
+      "id": "pkg-p1-headless-runner",
+      "title": "Build detached headless runner with log capture, RSS sampling, and placement enforcement",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p1-headless-runner.md",
+      "report": "docs/orchestration/reports/pkg-p1-headless-runner.md",
       "status": "done",
       "tool": "agy",
-      "effort": "high",
-      "model": "gemini-4-hydrogen-high",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
       "fallbacks": [
-        "gemini-4-hydrogen-xhigh"
+        "gemini-4-hydrogen-low"
       ],
       "owns": [
-        "src/onboard.js",
-        "test/onboard.test.js",
-        "dashboard/src/names.js",
-        "dashboard/test/names.test.js",
+        "src/runner.js",
+        "test/runner.test.js",
+        "docs/orchestration/reports/pkg-p1-headless-runner.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-p1-monitor-board",
+      "title": "Upgrade board.js as Section 6 monitor joining registry, herdr, and per-worker RAM/swap",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p1-monitor-board.md",
+      "report": "docs/orchestration/reports/pkg-p1-monitor-board.md",
+      "status": "done",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "src/board.js",
+        "test/board.test.js",
+        "docs/orchestration/reports/pkg-p1-monitor-board.md"
+      ],
+      "depends_on": []
+    },
+    {
+      "id": "pkg-p1-web-registry-api",
+      "title": "Add dashboard /api/register, /api/status, /api/registry, reap, log tail, and RAM monitor UI",
+      "kind": "feature",
+      "brief": "docs/orchestration/tasks/pkg-p1-web-registry-api.md",
+      "report": "docs/orchestration/reports/pkg-p1-web-registry-api.md",
+      "status": "done",
+      "tool": "agy",
+      "effort": "medium",
+      "model": "gemini-4-hydrogen-medium",
+      "fallbacks": [
+        "gemini-4-hydrogen-low"
+      ],
+      "owns": [
+        "dashboard/src/registry-bridge.js",
+        "dashboard/src/app.js",
+        "dashboard/public/control/index.html",
+        "dashboard/public/control/style.css",
+        "dashboard/public/control/app.js",
         "dashboard/test/app.test.js",
-        "dashboard/test/validate.test.js",
-        "docs/orchestration/reports/pkg-onboard-hardening.md"
+        "docs/orchestration/reports/pkg-p1-web-registry-api.md"
       ],
       "depends_on": []
     }

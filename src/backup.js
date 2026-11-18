@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const sessions = require('./sessions');
+const stateDir = require('./state-dir');
 const ui = require('./ui');
 
 const KEEP = 4;
@@ -28,12 +29,7 @@ const USAGE = 'usage: roostr backups [--json] | backups capture [--json] [--dir 
 
 function backupsDir(dir) {
   if (dir) return dir;
-  if (process.env.ROOSTR_STATE_DIR) return path.join(process.env.ROOSTR_STATE_DIR, 'backups');
-  if (process.env.CREW_BOARD_STATE_DIR) return path.join(process.env.CREW_BOARD_STATE_DIR, 'backups');
-  const roostr = path.join(os.homedir(), '.roostr', 'backups');
-  const legacy = path.join(os.homedir(), '.crew-board', 'backups');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('backups', [], { dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'] });
 }
 
 function str(v, max = 240) {

@@ -9,6 +9,7 @@
 <body>
   <header class="topbar">
     <div class="topbar-left">
+      <button id="sidebar-toggle-btn" type="button" class="small" aria-expanded="true" aria-controls="sidebar-panel">Sidebar</button>
       <span class="brand">Herdr Control</span>
       <a class="back-link" href="/agents/">Agents Site</a>
       <a class="back-link" href="/agents/names.html">Names</a>
@@ -24,16 +25,44 @@
     <button id="error-dismiss" type="button" class="small">Dismiss</button>
   </div>
 
-  <main class="layout">
-    <section class="card" aria-label="Panes">
+  <main id="main-layout" class="layout">
+    <section id="sidebar-panel" class="card sidebar-card" aria-label="Panes">
       <div class="section-head">
-        <h2>Panes</h2>
+        <h2>Panes &amp; Agents</h2>
         <span id="snapshot-age" class="muted">Loading...</span>
       </div>
+
+      <div class="sidebar-controls">
+        <div id="view-tabs" class="view-tabs" role="tablist" aria-label="Sidebar view">
+          <button type="button" class="tab-pill active" data-view="all" role="tab" aria-selected="true">All</button>
+          <button type="button" class="tab-pill" data-view="panes" role="tab" aria-selected="false">Panes</button>
+          <button type="button" class="tab-pill" data-view="muse" role="tab" aria-selected="false">Muse</button>
+        </div>
+
+        <div class="filter-row">
+          <input id="pane-filter" type="text" placeholder="Filter name, id, task, cwd..." aria-label="Filter panes and agents">
+          <select id="status-filter" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="working">working</option>
+            <option value="blocked">blocked</option>
+            <option value="idle">idle</option>
+            <option value="done">done</option>
+            <option value="shell">shell</option>
+          </select>
+        </div>
+
+        <div class="sidebar-actions-row">
+          <button id="collapse-all-btn" type="button" class="small">Collapse All</button>
+          <button id="expand-all-btn" type="button" class="small">Expand All</button>
+          <button id="clean-dead-shells-btn" type="button" class="small">Clean Dead Shells</button>
+        </div>
+      </div>
+
       <div id="pane-list"></div>
+      <div id="muse-list"></div>
     </section>
 
-    <section class="card" aria-label="Pane detail">
+    <section class="card detail-card" aria-label="Pane detail">
       <div class="section-head">
         <div class="detail-head-text">
           <h2 id="detail-title">Select a pane</h2>
@@ -41,6 +70,7 @@
         </div>
         <div id="detail-tools" class="detail-tools" hidden>
           <button id="rename-toggle-btn" type="button" class="small">Rename</button>
+          <button id="session-panel-toggle-btn" type="button" class="small" aria-pressed="false">Session / Model / Split</button>
           <button id="wrap-toggle-btn" type="button" class="small" aria-pressed="false">Wrap: Off</button>
         </div>
       </div>
@@ -52,55 +82,181 @@
       </form>
 
       <div id="detail-empty" class="detail-empty">
-        Pick a pane from the list to view its screen and send keys or prompts.
+        Pick a pane or Muse agent from the list to inspect state, recover sessions, or send instructions.
       </div>
 
       <div id="detail-body" hidden>
-        <div id="recovery-panel" class="recovery-panel" hidden>
-          <div id="recovery-msg" class="recovery-msg"></div>
-          <div id="recovery-actions" class="recovery-actions">
-            <form id="start-agent-form" class="start-agent-form">
-              <input id="start-agent-name" type="text" maxlength="32" placeholder="agent slug (e.g. nora)" pattern="[a-z0-9][a-z0-9_-]{0,31}">
-              <select id="start-agent-kind" aria-label="Agent tool">
-                <option value="opencode">opencode</option>
-                <option value="claude">claude</option>
-                <option value="kilo">kilo</option>
-                <option value="agy">agy</option>
-              </select>
-              <button id="start-agent-btn" type="submit" class="small primary">Start fresh session</button>
-            </form>
-            <button id="recovery-close-btn" type="button" class="small danger" hidden>Close dead pane</button>
+        <details id="recovery-details" class="detail-section" open>
+          <summary>Session Recovery, Model &amp; Split</summary>
+          <div id="recovery-panel" class="recovery-panel" hidden>
+            <div id="recovery-msg" class="recovery-msg"></div>
+            <div id="recovery-actions" class="recovery-actions">
+              <form id="start-agent-form" class="start-agent-form">
+                <input id="start-agent-name" type="text" maxlength="32" placeholder="agent slug (e.g. nora)" pattern="[a-z0-9][a-z0-9_-]{0,31}">
+                <select id="start-agent-kind" aria-label="Agent tool">
+                  <option value="opencode">opencode</option>
+                  <option value="claude">claude</option>
+                  <option value="kilo">kilo</option>
+                  <option value="agy">agy</option>
+                  <option value="codex">codex</option>
+                  <option value="gemini">gemini</option>
+                </select>
+                <input id="start-agent-model" type="text" list="model-presets" maxlength="80" placeholder="Model (optional)" aria-label="Model">
+                <datalist id="model-presets">
+                  <option value="gemini-4-hydrogen-medium"></option>
+                  <option value="gemini-4-hydrogen-low"></option>
+                  <option value="gemini-4-argon-medium"></option>
+                  <option value="claude-sonnet-4-6"></option>
+                  <option value="openrouter/xiaomi/mimo-v2-pro"></option>
+                </datalist>
+                <select id="start-agent-effort" aria-label="Effort level">
+                  <option value="">Effort: default</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
+                </select>
+                <select id="start-agent-session" aria-label="Saved session">
+                  <option value="">Fresh session (no resume)</option>
+                </select>
+                <button id="start-agent-btn" type="submit" class="small primary">Start Agent</button>
+              </form>
+              <div class="split-actions">
+                <button id="split-right-btn" type="button" class="small">Split Right</button>
+                <button id="split-down-btn" type="button" class="small">Split Down</button>
+                <button id="recovery-close-btn" type="button" class="small danger" hidden>Close dead pane</button>
+              </div>
+            </div>
           </div>
-        </div>
+        </details>
 
-        <pre id="pane-screen" class="screen-box" aria-live="polite"></pre>
+        <details id="screen-details" class="detail-section" open>
+          <summary>Screen Output</summary>
+          <pre id="pane-screen" class="screen-box" aria-live="polite"></pre>
+        </details>
 
-        <div class="actions-grid">
-          <button type="button" class="approve" data-key="enter">Approve (Enter)</button>
-          <button type="button" class="deny" data-key="esc">Deny (Esc)</button>
-          <button type="button" data-key="y">Yes (y)</button>
-          <button type="button" data-key="n">No (n)</button>
-          <button type="button" data-key="up">Up</button>
-          <button type="button" data-key="down">Down</button>
-          <button type="button" data-key="tab">Tab</button>
-          <button type="button" data-key="ctrl-c">Ctrl+C</button>
-        </div>
-
-        <form id="prompt-form" class="prompt-form">
-          <label for="prompt-input" class="muted">Send prompt to agent</label>
-          <textarea id="prompt-input" maxlength="4000" placeholder="Enter instruction for agent..."></textarea>
-          <div class="prompt-row">
-            <span id="prompt-hint" class="muted">Max 4000 characters</span>
-            <button id="prompt-send" type="submit" class="primary">Send prompt</button>
+        <details id="keys-details" class="detail-section" open>
+          <summary>Quick Keys &amp; Commands</summary>
+          <div class="quick-chips">
+            <button type="button" class="chip" data-key="shift-tab">Shift+Tab (Accept Edits)</button>
+            <button type="button" class="chip" data-prompt="/model medium">/model medium</button>
+            <button type="button" class="chip" data-prompt="/clear">/clear</button>
+            <button type="button" class="chip" data-prompt="/new">/new</button>
           </div>
-        </form>
+          <div class="actions-grid">
+            <button type="button" class="approve" data-key="enter">Approve (Enter)</button>
+            <button type="button" class="deny" data-key="esc">Deny (Esc)</button>
+            <button type="button" data-key="y">Yes (y)</button>
+            <button type="button" class="data-key-n" data-key="n">No (n)</button>
+            <button type="button" data-key="up">Up</button>
+            <button type="button" data-key="down">Down</button>
+            <button type="button" data-key="tab">Tab</button>
+            <button type="button" data-key="ctrl-c">Ctrl+C</button>
+          </div>
+        </details>
+
+        <details id="prompt-details" class="detail-section" open>
+          <summary>Prompt</summary>
+          <form id="prompt-form" class="prompt-form">
+            <label for="prompt-input" class="muted">Send prompt to agent</label>
+            <textarea id="prompt-input" maxlength="4000" placeholder="Enter instruction for agent..."></textarea>
+            <div class="prompt-row">
+              <span id="prompt-hint" class="muted">Max 4000 characters</span>
+              <button id="prompt-send" type="submit" class="primary">Send prompt</button>
+            </div>
+          </form>
+        </details>
 
         <div class="danger-zone">
           <button id="close-pane-btn" type="button" class="danger">Close pane</button>
         </div>
       </div>
+
+      <div id="muse-detail-body" hidden>
+        <div id="muse-detail-header" class="muse-header-card"></div>
+
+        <form id="muse-override-form" class="inline-form">
+          <input id="muse-override-input" type="text" maxlength="64" placeholder="Canonical display name (empty clears)">
+          <button id="muse-override-save" type="submit" class="small primary">Save Name</button>
+          <button id="muse-orch-toggle" type="button" class="small">Mark Orchestrator</button>
+        </form>
+
+        <div id="muse-summary-card" class="muse-summary-card"></div>
+
+        <details id="muse-tasks-details" class="detail-section" open>
+          <summary>Tasks Checklist</summary>
+          <div id="muse-tasks-list" class="muse-tasks-list"></div>
+        </details>
+
+        <details id="muse-message-details" class="detail-section" open>
+          <summary>Send Task / PioRelay Message</summary>
+          <form id="muse-message-form" class="prompt-form">
+            <div class="filter-row">
+              <input id="muse-msg-subject" type="text" maxlength="140" placeholder="Subject (required)" required>
+              <input id="muse-msg-project" type="text" maxlength="32" value="muse" placeholder="Project (default: muse)">
+            </div>
+            <textarea id="muse-msg-body" maxlength="16000" placeholder="Enter task or message for agent..." required></textarea>
+            <div class="prompt-row">
+              <span id="muse-msg-status" class="muted">Delivered via PioRelay</span>
+              <button id="muse-msg-send" type="submit" class="primary">Send via PioRelay</button>
+            </div>
+          </form>
+        </details>
+
+        <details id="muse-inbox-details" class="detail-section sub-panel" open>
+          <summary>Recent PioRelay Messages &amp; Thread</summary>
+          <div class="muse-inbox-toolbar">
+            <button id="muse-inbox-refresh-btn" type="button" class="small">Refresh Inbox</button>
+            <span id="muse-inbox-status" class="muted"></span>
+          </div>
+          <div id="muse-inbox-list" class="muse-inbox-list"></div>
+        </details>
+
+        <details id="muse-docs-details" class="detail-section">
+          <summary>Agent Docs (SOUL.md, AGENT.md, STATE.md)</summary>
+          <div id="muse-docs-container" class="muse-docs-container"></div>
+        </details>
+      </div>
     </section>
   </main>
+
+  <details id="orchestration-details" class="card audit-details">
+    <summary>Saved Sessions, Backups &amp; Orchestration Tasks</summary>
+    <div class="orch-toolbar">
+      <button id="capture-backup-btn" type="button" class="small primary">Capture Backup Now</button>
+      <form id="restore-workspace-form" class="orch-restore-form">
+        <select id="restore-workspace-select" aria-label="Workspace to restore">
+          <option value="all">All workspaces (all)</option>
+        </select>
+        <select id="restore-mode-select" aria-label="Restore mode">
+          <option value="sessions">Restore Saved Sessions in Workspace</option>
+          <option value="backup">Rebuild Workspace from Latest Backup</option>
+        </select>
+        <button id="restore-workspace-btn" type="submit" class="small">Restore Workspace</button>
+      </form>
+      <span id="orchestration-status" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <div id="orchestration-content" class="orchestration-content">
+      <span class="muted">Expand to view saved sessions, workspace backups, and orchestration tasks.</span>
+    </div>
+  </details>
+
+  <details id="registry-details" class="card audit-details" open>
+    <summary>Standalone Workers &amp; RAM Monitor</summary>
+    <div class="orch-toolbar">
+      <span id="host-mem-summary" class="badge">PhysMem free: - | Swap used: -</span>
+      <button id="sort-ram-btn" type="button" class="small" aria-pressed="false">Sort by RAM: Off</button>
+      <button id="registry-refresh-btn" type="button" class="small">Refresh</button>
+      <span id="registry-status" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <div id="registry-content" class="orchestration-content">
+      <span class="muted">Standalone workers appear here even when herdr is stopped.</span>
+    </div>
+    <div class="registry-log-wrap">
+      <div class="orch-section-title">Log Tail</div>
+      <pre id="worker-log-preview" class="worker-log-preview">Select Log Tail on a worker row.</pre>
+    </div>
+  </details>
 
   <details id="audit-details" class="card audit-details">
     <summary>Recent control audit (last 20)</summary>
@@ -116,6 +272,16 @@
     <div class="dialog-actions">
       <button id="close-cancel" type="button">Cancel</button>
       <button id="close-submit" type="button" class="danger" disabled>Close pane</button>
+    </div>
+  </dialog>
+
+  <dialog id="clean-shells-dialog">
+    <h3>Clean Dead Shells</h3>
+    <p id="clean-shells-msg" class="muted"></p>
+    <div id="clean-shells-list" class="audit-list"></div>
+    <div class="dialog-actions">
+      <button id="clean-shells-cancel" type="button">Cancel</button>
+      <button id="clean-shells-confirm" type="button" class="danger">Close Dead Shells</button>
     </div>
   </dialog>
 

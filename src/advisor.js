@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const config = require('./config');
 const crewfile = require('./crewfile');
+const stateDir = require('./state-dir');
 
 const EFFORT_RANK = { low: 1, medium: 2, high: 3, xhigh: 4, max: 4 };
 const EFFORT_ORDER = ['low', 'medium', 'high'];
@@ -63,21 +64,11 @@ let cachedSummaryPath = null;
 const modelMapCache = new Map();
 
 function summaryPath() {
-  if (process.env.ROOSTR_SUMMARY) return process.env.ROOSTR_SUMMARY;
-  if (process.env.CREW_BOARD_SUMMARY) return process.env.CREW_BOARD_SUMMARY;
-  const roostr = path.join(os.homedir(), '.roostr', 'summary.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'summary.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('summary.json', ['ROOSTR_SUMMARY', 'CREW_BOARD_SUMMARY']);
 }
 
 function modelMapPath() {
-  if (process.env.ROOSTR_MODELS) return process.env.ROOSTR_MODELS;
-  if (process.env.CREW_BOARD_MODELS) return process.env.CREW_BOARD_MODELS;
-  const roostr = path.join(os.homedir(), '.roostr', 'models.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'models.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('models.json', ['ROOSTR_MODELS', 'CREW_BOARD_MODELS']);
 }
 
 function loadSummary() {
@@ -127,15 +118,16 @@ function readModelMapFile(p) {
   }
 }
 
-// Tier map order: an explicit path, then CREW_BOARD_MODELS, then the setup
-// config, then the older models.json file. Any missing or broken tier is
-// simply absent, never a crash.
+// Tier map order: an explicit path, then ROOSTR_MODELS / CREW_BOARD_MODELS,
+// then the setup config, then the older models.json file. Any missing or
+// broken tier is simply absent, never a crash.
 function loadModelMap(p = null) {
   if (p) return readModelMapFile(p);
+  if (process.env.ROOSTR_MODELS) return readModelMapFile(process.env.ROOSTR_MODELS);
   if (process.env.CREW_BOARD_MODELS) return readModelMapFile(process.env.CREW_BOARD_MODELS);
   const fromConfig = mapFrom(config.loadConfig().config.models);
   if (fromConfig) return fromConfig;
-  return readModelMapFile(path.join(os.homedir(), '.crew-board', 'models.json'));
+  return readModelMapFile(modelMapPath());
 }
 
 function detectKind(task) {

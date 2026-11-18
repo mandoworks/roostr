@@ -277,3 +277,34 @@ test('execute: a pane saved under its pane id is restored under its agent kind',
   await restore.execute(plan, { id: 'w1', label: 'App' }, { herdr: fake });
   assert.deepEqual(started, ['opencode', 'agy']);
 });
+
+test('execute: multi-tab plan creates secondary tabs via createTab', async () => {
+  const createdTabs = [];
+  const started = [];
+  const fake = {
+    snapshot: async () => snapshot(),
+    createTab: async (wsId, cwd, label) => {
+      createdTabs.push({ wsId, cwd, label });
+      return { tabId: 't2', rootPaneId: 'w1:p20' };
+    },
+    splitPane: async () => 'w1:p2',
+    startAgent: async (name, kind, paneId) => { started.push({ name, paneId }); },
+    renamePane: async () => {},
+    closePane: async () => {},
+  };
+  const plan = {
+    entries: [
+      { session: { ...savedList()[0], paneId: 'w1:p7', tabId: 't1', tab: '1', name: 'api', agent: 'claude' }, action: 'open', reason: null },
+      { session: { ...savedList()[1], paneId: 'w1:p8', tabId: 't2', tab: 'migration', name: 'db', agent: 'opencode' }, action: 'open', reason: null },
+    ],
+    live: [{ paneId: 'w1:p1', cwd: '/tmp/a', name: 'docs', agent: 'claude' }],
+    taken: new Set(['docs']),
+  };
+  const res = await restore.execute(plan, { id: 'w1', label: 'App' }, { herdr: fake });
+  assert.equal(res.code, 0);
+  assert.deepEqual(createdTabs, [{ wsId: 'w1', cwd: '/tmp/b', label: 'migration' }]);
+  assert.deepEqual(started, [
+    { name: 'api', paneId: 'w1:p2' },
+    { name: 'db', paneId: 'w1:p20' },
+  ]);
+});

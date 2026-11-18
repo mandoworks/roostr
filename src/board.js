@@ -32,6 +32,7 @@ const orchestrator = require('./orchestrator');
 const { VERSION, COMMIT, label: buildLabel } = require('./version');
 const pricing = require('./pricing');
 const state = require('./state');
+const stateDirResolver = require('./state-dir');
 const sessions = require('./sessions');
 const backup = require('./backup');
 const sessionLog = require('./session-log');
@@ -109,6 +110,153 @@ function memFile() {
 
 function plainObject(v) {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+}
+
+// ------------------------------------------------------------------ registry
+
+// The standalone workers registry (~/.roostr/registry.json), respecting
+// ROOSTR_STATE_DIR / ROOSTR_REGISTRY. A missing or malformed file reads as [].
+function registryFile() {
+  return stateDirResolver.resolvePath('registry.json', ['ROOSTR_REGISTRY'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
+}
+
+function readRegistry() {
+  const data = state.readJson(registryFile());
+  const workers = Array.isArray(data) ? data
+    : (plainObject(data) && Array.isArray(data.workers) ? data.workers : []);
+  return workers.filter(plainObject);
+}
+
+// The Mac Swapy census (~/.roostr/swapy-census.json), when a Mac has run one.
+function censusFile() {
+  return stateDirResolver.resolvePath('swapy-census.json', ['ROOSTR_SWAPY_CENSUS'], {
+    dirEnvNames: ['ROOSTR_STATE_DIR', 'CREW_BOARD_STATE_DIR'],
+  });
+}
+
+// /proc/meminfo, in KiB, exactly as the kernel reports it.
+function parseMeminfo(text) {
+  const read = (key) => {
+    const m = new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec(String(text));
+    return m ? Number(m[1]) : null;
+  };
+  const physFreeKb = read('MemAvailable');
+  const swapTotalKb = read('SwapTotal');
+  const swapFreeKb = read('SwapFree');
+  if (physFreeKb === null && swapTotalKb === null) return null;
+  return {
+    physFreeKb,
+    swapTotalKb,
+    swapUsedKb: (swapTotalKb !== null && swapFreeKb !== null) ? swapTotalKb - swapFreeKb : null,
+  };
+}
+
+// Host memory truth: the Swapy census first (Mac), then /proc/meminfo (Linux).
+// The census also carries the process table used to give a headless worker a
+// live RSS figure. Null when neither source has anything to say.
+function readHostMem() {
+  let mem = null;
+  let processes = null;
+  const census = state.readJson(censusFile());
+  if (plainObject(census)) {
+    processes = Array.isArray(census.processes) ? census.processes.filter(plainObject) : null;
+    mem = {
+      physFreeKb: Number.isFinite(census.physFreeKb) ? census.physFreeKb : null,
+      swapUsedKb: Number.isFinite(census.swapUsedKb) ? census.swapUsedKb : null,
+      swapTotalKb: Number.isFinite(census.swapTotalKb) ? census.swapTotalKb : null,
+    };
+  }
+  try {
+    const linux = parseMeminfo(fs.readFileSync('/proc/meminfo', 'utf8'));
+    if (linux) {
+      mem = {
+        physFreeKb: mem && mem.physFreeKb !== null ? mem.physFreeKb : linux.physFreeKb,
+        swapUsedKb: mem && mem.swapUsedKb !== null ? mem.swapUsedKb : linux.swapUsedKb,
+        swapTotalKb: mem && mem.swapTotalKb !== null ? mem.swapTotalKb : linux.swapTotalKb,
+      };
+    }
+  } catch (e) {
+    // Not Linux, or /proc is unavailable: the census (or nothing) stands.
+  }
+  if (!mem && !processes) return null;
+  const out = { host: os.hostname(), ...(mem || {}) };
+  if (processes) out.processes = processes;
+  return out;
+}
+
+// Heaviest RAM first; a row with no reading sinks below every row that has one.
+function sortRowsByRam(rows) {
+  return rows.sort((a, b) => {
+    const av = a && a.ram && Number.isFinite(a.ram.v) ? a.ram.v : null;
+    const bv = b && b.ram && Number.isFinite(b.ram.v) ? b.ram.v : null;
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return bv - av;
+  });
+}
+
+// A worker with no Herdr pane: a headless run from the standalone registry.
+// Everything a normal row carries is filled in, so the shared renderer treats
+// it like any other pane.
+function headlessRow(entry, rss, now) {
+  const status = entry.state === 'waiting-approval' ? 'blocked' : (entry.state || 'working');
+  const heartbeatAt = entry.lastHeartbeat || entry.updatedAt || null;
+  const hb = typeof heartbeatAt === 'number' ? heartbeatAt : (heartbeatAt ? Date.parse(heartbeatAt) : NaN);
+  const statusFor = Number.isFinite(hb) ? Math.max(0, now - hb) : 0;
+  return {
+    paneId: entry.id,
+    workspaceId: null,
+    workspace: entry.owner || entry.host || 'headless',
+    tabId: null,
+    tabNumber: 1,
+    tab: null,
+    tag: null,
+    displayAgent: null,
+    label: null,
+    name: entry.id,
+    agentName: null,
+    displayName: entry.id,
+    isNamed: true,
+    labelName: null,
+    role: null,
+    about: null,
+    task: entry.task || null,
+    taskSrc: entry.task ? 'exact' : 'unknown',
+    kind: entry.kind || 'headless',
+    model: { v: entry.model || null, src: entry.model ? 'exact' : 'unknown' },
+    effort: entry.effort || null,
+    advisory: null,
+    advisoryKind: null,
+    modelStats: null,
+    status,
+    statusFor,
+    statusExact: false,
+    ctx: { v: null, src: 'unknown' },
+    tokens: { v: null, src: 'unknown' },
+    cost: { v: null, src: 'unknown' },
+    price: null,
+    ram: { v: Number.isFinite(rss) ? rss : null, src: 'reported' },
+    budget: null,
+    session: entry.session || null,
+    cwd: entry.cwd || null,
+    crewTags: null,
+    badges: [],
+    crew: null,
+    surge: false,
+    surgeMarker: null,
+    owner: entry.owner || null,
+    orchestrator: entry.orchestrator || null,
+    host: entry.host || 'ovh',
+    mode: 'headless',
+    source: 'reported',
+    pid: entry.pid || null,
+    command: entry.command || null,
+    heartbeatAt,
+    workspaceTabCount: 1,
+  };
 }
 
 function loadMemory() {
@@ -232,14 +380,74 @@ function isBoardAgent(a, myPaneId) {
 }
 
 function selectAgents(snap, workspace, opts = {}) {
-  const wsLabel = new Map(snap.workspaces.map((w) => [w.workspace_id, w.label]));
+  const workspaces = Array.isArray(snap && snap.workspaces) ? snap.workspaces : [];
+  const rawAgents = Array.isArray(snap && snap.agents) ? snap.agents : [];
+  const panes = Array.isArray(snap && snap.panes) ? snap.panes : [];
+  const tabs = Array.isArray(snap && snap.tabs) ? snap.tabs : [];
+
+  const wsLabel = new Map(workspaces.map((w) => [w.workspace_id, w.label]));
+  const paneById = new Map(panes.filter((p) => p && p.pane_id).map((p) => [p.pane_id, p]));
   const myPaneId = (opts && opts.myPaneId) || null;
-  let agents = snap.agents.filter((a) => a && a.pane_id && !isBoardAgent(a, myPaneId));
+  const reports = (opts && opts.reports) || null;
+  const savedByPane = (opts && opts.savedByPane) || null;
+  const detectedByPane = (opts && opts.detectedByPane) || null;
+
+  const agentByPane = new Map();
+  for (const a of rawAgents) if (a && a.pane_id) agentByPane.set(a.pane_id, a);
+
+  let agents = rawAgents.filter((a) => a && a.pane_id && !isBoardAgent(a, myPaneId));
+
+  for (const p of panes) {
+    if (!p || !p.pane_id || agentByPane.has(p.pane_id) || isBoardAgent(p, myPaneId)) continue;
+    const hasAgentField = (typeof p.agent === 'string' && p.agent.trim() !== '') || Boolean(p.agent_session && p.agent_session.agent);
+    const hasRestoreError = Boolean(p.restore_error);
+    const hasSavedOrReport = Boolean((reports && reports[p.pane_id]) || (savedByPane && savedByPane.has(p.pane_id)));
+    const hasCrewTag = typeof p.label === 'string' && TAG_RE.test(p.label);
+    const hasDetected = Boolean(detectedByPane && detectedByPane.has(p.pane_id));
+    if (!hasAgentField && !hasRestoreError && !hasSavedOrReport && !hasCrewTag && !hasDetected) continue;
+
+    const rep = reports && reports[p.pane_id];
+    const saved = savedByPane && typeof savedByPane.get === 'function' ? savedByPane.get(p.pane_id) : null;
+    const detected = detectedByPane && typeof detectedByPane.get === 'function' ? detectedByPane.get(p.pane_id) : null;
+    const inferredKind = (typeof p.agent === 'string' && p.agent.trim())
+      || (p.agent_session && typeof p.agent_session.agent === 'string' && p.agent_session.agent.trim())
+      || (typeof detected === 'string' && detected.trim())
+      || (saved && typeof saved.agent === 'string' && saved.agent.trim())
+      || (rep && typeof rep.agent === 'string' && rep.agent.trim())
+      || null;
+
+    agents.push({
+      ...p,
+      pane_id: p.pane_id,
+      workspace_id: p.workspace_id,
+      tab_id: p.tab_id,
+      agent: inferredKind,
+      name: p.name || null,
+      agent_status: p.restore_error ? 'blocked' : (p.agent_status || 'unknown'),
+    });
+  }
+
   if (workspace) agents = agents.filter((a) => a.workspace_id === workspace || wsLabel.get(a.workspace_id) === workspace);
-  const order = new Map(snap.workspaces.map((w, i) => [w.workspace_id, i]));
+
+  const wsOrder = new Map(workspaces.map((w, i) => [w.workspace_id, i]));
+  const tabOrder = new Map();
+  tabs.forEach((t, i) => {
+    if (t && t.tab_id) tabOrder.set(t.tab_id, typeof t.number === 'number' ? t.number : i);
+  });
+  const paneOrder = new Map(panes.map((p, i) => [p.pane_id, i]));
+
   return agents
-    .map((a, i) => ({ a, i }))
-    .sort((x, y) => (order.get(x.a.workspace_id) ?? 1e9) - (order.get(y.a.workspace_id) ?? 1e9) || x.i - y.i)
+    .map((a, i) => {
+      const pane = paneById.get(a.pane_id);
+      const tabId = a.tab_id || (pane && pane.tab_id) || null;
+      const tOrd = tabId != null && tabOrder.has(tabId) ? tabOrder.get(tabId) : 1e9;
+      const pOrd = paneOrder.has(a.pane_id) ? paneOrder.get(a.pane_id) : 1e9;
+      return { a, i, tOrd, pOrd };
+    })
+    .sort((x, y) => (wsOrder.get(x.a.workspace_id) ?? 1e9) - (wsOrder.get(y.a.workspace_id) ?? 1e9)
+      || x.tOrd - y.tOrd
+      || x.pOrd - y.pOrd
+      || x.i - y.i)
     .map((x) => x.a);
 }
 
@@ -268,8 +476,16 @@ function pick(...candidates) {
 // none until you allow it).
 function buildModel({
   snap, agents, screens = {}, reports = {}, events = {}, rss = {}, crewFor = () => null, mem, now, budget = null, trust = {}, tagScope = null,
+  registry = [], hostMem = null, herdrOnline = true, sort = null,
 }) {
   const paneById = new Map(snap.panes.map((p) => [p.pane_id, p]));
+  const tabById = new Map((snap.tabs || []).map((t) => [t.tab_id, t]));
+  const wsTabIds = new Map();
+  for (const t of snap.tabs || []) {
+    if (!t || !t.workspace_id || !t.tab_id) continue;
+    if (!wsTabIds.has(t.workspace_id)) wsTabIds.set(t.workspace_id, new Set());
+    wsTabIds.get(t.workspace_id).add(t.tab_id);
+  }
   const wsLabel = new Map(snap.workspaces.map((w) => [w.workspace_id, ui.clean(w.label) || w.workspace_id]));
   const live = new Set([...snap.panes.map((p) => p.pane_id), ...snap.agents.map((a) => a.pane_id)]);
   assignTags(mem, agents.map((a) => a.pane_id), live);
@@ -333,11 +549,20 @@ function buildModel({
     const costField = pick([rep.cost, 'exact'], [scr.cost, 'screen'], [apiEstimate && apiEstimate.cost, 'estimate']);
     const rec = recommend(task.v, effortVal, modelField.v, ok ? crew : null);
     const isSurging = inSurge && surge.isDeepSeekModel(modelField.v);
+    const tabId = a.tab_id || pane.tab_id || null;
+    const tab = tabId ? tabById.get(tabId) : null;
+    if (tabId && a.workspace_id) {
+      if (!wsTabIds.has(a.workspace_id)) wsTabIds.set(a.workspace_id, new Set());
+      wsTabIds.get(a.workspace_id).add(tabId);
+    }
 
     return {
       paneId: a.pane_id,
       workspaceId: a.workspace_id || null,
       workspace: wsLabel.get(a.workspace_id) || a.workspace_id || '?',
+      tabId,
+      tabNumber: (tab && tab.number) || 1,
+      tab: (tab && tab.label) || null,
       tag: mem.tags[a.pane_id],
       displayAgent: a.display_agent || pane.display_agent || null,
       label,
@@ -377,10 +602,53 @@ function buildModel({
     };
   });
 
+  for (const r of rows) {
+    r.workspaceTabCount = (r.workspaceId && wsTabIds.has(r.workspaceId)) ? wsTabIds.get(r.workspaceId).size : 1;
+  }
+
   // Blocked panes first within their workspace; otherwise Herdr's order.
   const wsOrder = new Map();
   for (const r of rows) if (!wsOrder.has(r.workspace)) wsOrder.set(r.workspace, wsOrder.size);
+
+  // The standalone registry joins the Herdr rows: an entry with a live pane
+  // enriches that row, a headless entry with no pane becomes a row of its own.
+  const byPane = new Map(rows.map((r) => [r.paneId, r]));
+  const censusProcs = hostMem && Array.isArray(hostMem.processes) ? hostMem.processes : null;
+  const reportedRss = (entry) => {
+    if (censusProcs) {
+      const hit = censusProcs.find((p) => (Number.isFinite(entry.pid) && Number(p.pid) === Number(entry.pid))
+        || (entry.command && p.command === entry.command));
+      if (hit && Number.isFinite(hit.rssKb)) return hit.rssKb;
+    }
+    return Number.isFinite(entry.rssKb) ? entry.rssKb : null;
+  };
+  const registryList = Array.isArray(registry) ? registry : [];
+  for (const entry of registryList) {
+    if (!plainObject(entry)) continue;
+    const id = entry.paneId || entry.id;
+    const target = id ? byPane.get(id) : null;
+    const rss = reportedRss(entry);
+    if (target) {
+      target.owner = entry.owner || null;
+      target.orchestrator = entry.orchestrator || null;
+      target.host = entry.host || null;
+      target.heartbeatAt = entry.lastHeartbeat || entry.updatedAt || null;
+      target.mode = entry.mode || 'pane';
+      target.source = 'reported';
+      if (Number.isFinite(rss)) {
+        target.rssKb = rss;
+        if (!Number.isFinite(target.ram.v) || rss > target.ram.v) target.ram = { v: rss, src: 'reported' };
+      }
+      continue;
+    }
+    if (entry.mode !== 'headless') continue;
+    const row = headlessRow(entry, rss, now);
+    byPane.set(row.paneId, row);
+    rows.push(row);
+  }
+
   rows.sort((x, y) => wsOrder.get(x.workspace) - wsOrder.get(y.workspace) || (y.status === 'blocked') - (x.status === 'blocked'));
+  if (sort === 'ram' || sort === true) sortRowsByRam(rows);
 
   const crewChecks = [];
   for (const crew of crews.values()) {
@@ -409,6 +677,8 @@ function buildModel({
     checkConcurrency: primaryCrew ? primaryCrew.checkConcurrency : 3,
     checkTimeoutMs: primaryCrew ? primaryCrew.checkTimeoutMs : 2000,
     explabsEnabled: trustedCrews.some((c) => c.explabsEnabled),
+    hostMem,
+    herdrOnline,
   };
 }
 
@@ -526,11 +796,24 @@ function effortCell(r) {
 
 // Plain text and a painter for every cell of a row. Exact values in normal
 // text, screen values tinted, "?" dim (red is kept for blocked panes).
+function tabBadge(r) {
+  if (!r) return null;
+  const hasNamedTab = Boolean(r.tab && !/^\d+$/.test(r.tab));
+  if (!(r.tabNumber > 1 || hasNamedTab)) return null;
+  return `[t${r.tabNumber || 1}${hasNamedTab ? `:${r.tab}` : ''}]`;
+}
+
 function rowCells(r, shortState) {
   const paintStatus = STATUS_PAINT[r.status] || C.dim;
   const time = r.statusExact ? fmtDuration(r.statusFor) : `≥${fmtDuration(r.statusFor)}`;
   const glyph = STATUS_GLYPH[r.status] || '?';
   const label = shortState ? glyph : `${glyph} ${r.status}`;
+  const tb = tabBadge(r);
+  // A reported worker says where it came from: a headless run has no pane, an
+  // enriched row was joined to the registry. The heartbeat age is the age the
+  // row already carries in `statusFor`.
+  const sourceTag = r.mode === 'headless' ? ' [headless]' : (r.source === 'reported' ? ' [reported]' : '');
+  const heartbeat = r.mode === 'headless' ? ` · hb ${fmtDuration(r.statusFor)}` : '';
   const val = (f, fmt) => (f.v === null
     ? { text: '?', paint: C.dim }
     : { text: fmt(f.v), paint: f.src === 'screen' ? C.screen : C.text });
@@ -538,7 +821,7 @@ function rowCells(r, shortState) {
     tag: { text: r.tag || '', paint: (s) => s },
     name: {
       // The human name, then the role in a dim suffix when it is set.
-      text: r.role ? `${r.name} · ${r.role}` : r.name,
+      text: `${r.role ? `${r.name} · ${r.role}` : r.name}${sourceTag}`,
       paint: (s) => {
         const i = s.indexOf(SEP);
         const head = i >= 0 ? s.slice(0, i) : s;
@@ -547,10 +830,10 @@ function rowCells(r, shortState) {
         return bold(base(head)) + (tail ? C.dim(tail) : '');
       },
     },
-    id: { text: r.paneId, paint: C.dim },
+    id: { text: tb ? `${r.paneId} ${tb}` : r.paneId, paint: C.dim },
     agent: agentCell(r),
     effort: effortCell(r),
-    state: { text: `${label} ${time}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
+    state: { text: `${label} ${time}${heartbeat}`, paint: (s) => paintStatus(s.slice(0, label.length)) + C.dim(s.slice(label.length)) },
     ctx: ctxCell(r, val(r.ctx, fmtCtx)),
     tokens: val(r.tokens, fmtTokens),
     cost: costCell(r, estimatedCost(r, val(r.cost, fmtCost))),
@@ -1196,6 +1479,7 @@ function helpLines(menu, sources, width = 100) {
       ] : []),
       ['t', `colour tags (${menu.tags})`],
       ['a', 'allow a new crew file'],
+      ['M', 'sort rows by RAM, heaviest first'],
       ['u', 'install the offered update'],
       ['r', 'refresh now'],
       ['R', 'backups: check what is saved, rebuild a workspace'],
@@ -1535,18 +1819,50 @@ function backupLines(st, width, now = Date.now()) {
   if (st.status) lines.push(C.cyan(ui.clean(st.status)));
   // previewLines cleans every saved value itself; ui.clean here would squeeze the drawing.
   for (const l of backup.previewLines(v.backup, width, now, st.layout || 'even')) lines.push(C.text(l));
+  const agentPanes = [];
+  for (const t of (v.backup.tabs || [])) {
+    for (const p of (t.panes || [])) {
+      if (p.agent) agentPanes.push(p.agent);
+    }
+  }
+  if (agentPanes.length) {
+    lines.push('');
+    lines.push(bold(C.dim('recovery readiness')));
+    for (const a of agentPanes) {
+      const badge = a.session
+        ? C.green('[resumable]')
+        : (a.handoff ? C.amber('[handoff]') : C.dim('[fresh]'));
+      const who = ui.clean(a.name || a.kind || 'agent');
+      const me = [a.model && ui.clean(a.model), a.effort && `effort ${ui.clean(a.effort)}`].filter(Boolean).join(' · ');
+      const detail = me ? ` ${C.dim(me)}` : '';
+      lines.push(`  ${badge} ${C.text(who)}${detail}`);
+    }
+  }
   return lines;
+}
+
+const LOG_KINDS = ['all', 'opencode', 'claude', 'agy', 'kilo'];
+
+function logAgo(updated, now) {
+  const t = typeof updated === 'number' ? updated : Date.parse(updated);
+  if (!Number.isFinite(t)) return '?';
+  const m = Math.max(0, Math.round((now - t) / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.round(m / 60)}h`;
+  return `${Math.round(m / 1440)}d`;
 }
 
 // The log view: recent conversations from the agent's own session store, so a
 // closed tab can be reopened without a workspace backup. enter resumes one in
 // the current workspace; a switches between that workspace and every directory.
 function logViewLines(st, width, now = Date.now()) {
-  const lines = [`${bold(C.title('log'))}  ${C.dim('↑↓ session · ↵ resume · a here/all · r refresh · esc close')}`];
+  const kind = st.kind || 'all';
+  const lines = [`${bold(C.title('log'))}  ${C.dim(`↑↓ session · ↵ resume · k kind:${kind} · a here/all · r refresh · esc close`)}`];
   const n = st.items.length;
   const dirs = st.dirs.length;
   const scope = st.all ? 'every directory' : `${dirs} director${dirs === 1 ? 'y' : 'ies'} of this workspace`;
-  lines.push(C.dim(`scope: ${scope} · ${n} session${n === 1 ? '' : 's'}`));
+  const kindLabel = LOG_KINDS.map((k) => (k === kind ? bold(C.cyan(k)) : C.dim(k))).join(C.dim(' ▸ '));
+  lines.push(`${C.dim(`scope: ${scope} · ${n} session${n === 1 ? '' : 's'} · kind: `)}${kindLabel}`);
   if (st.status) lines.push(C.cyan(ui.clean(st.status)));
   if (!n) {
     lines.push(C.dim(st.busy ? 'reading the session stores…' : 'No sessions yet. A closed tab leaves its conversation in the agent store.'));
@@ -1554,8 +1870,13 @@ function logViewLines(st, width, now = Date.now()) {
   }
   st.items.forEach((s, i) => {
     const on = i === st.sel;
-    const text = sessionLog.line(s, now, width - 3);
-    lines.push(`${on ? bold(C.cyan('▸')) : C.dim(' ')} ${on ? bold(C.text(text)) : C.text(text)}`);
+    const tool = ui.clean(s.kind || '?');
+    const idPrefix = ui.clean(String(s.id || '').slice(0, 8));
+    const age = logAgo(s.updated, now);
+    const dirBase = s.directory ? ui.clean(path.basename(s.directory)) : '?';
+    const title = ui.clean(s.title || s.id || '');
+    const row = ui.truncate(`[${tool}] ${idPrefix} ${age} ${dirBase}  ${title}`, width - 3);
+    lines.push(`${on ? bold(C.cyan('▸')) : C.dim(' ')} ${on ? bold(C.text(row)) : C.text(row)}`);
   });
   return lines;
 }
@@ -2689,6 +3010,12 @@ function render(model, {
   if (done > 0) z2 += ` · ${C.cyan(`✓ ${done} done`)}`;
   const ts0 = model.tokscale;
   let z3 = ts0 ? C.text(`today ${fmtCost(ts0.total)}`) : '';
+  const hm = model.hostMem;
+  if (hm && (Number.isFinite(hm.physFreeKb) || Number.isFinite(hm.swapUsedKb))) {
+    const phys = Number.isFinite(hm.physFreeKb) ? `${fmtRam(hm.physFreeKb)} free` : '?';
+    const swap = Number.isFinite(hm.swapUsedKb) ? `${fmtRam(hm.swapUsedKb)} used` : '?';
+    z3 += (z3 ? '   ' : '') + C.text(`PhysMem ${phys} · swap ${swap}`);
+  }
   let maxPace = 0;
   for (const l of (model.limits || [])) {
     for (const w of (l.windows || [])) if (typeof w.pace === 'number' && w.pace > maxPace) maxPace = w.pace;
@@ -2808,7 +3135,8 @@ function render(model, {
       const effStr = r.effort ? ` (${r.effort})` : '';
       const modelStr = r.model.v ? `${shortModel(r.model.v)}${effStr}` : '?';
       const surgeBadge = (r.surge || r.surgeMarker) ? ` ${bold(C.amber('▲ 2× SURGE'))}` : '';
-      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)} · ${C.text(modelStr)}${surgeBadge}`;
+      const tb = tabBadge(r);
+      const headLeft = `${tagStr}${nameText} ${C.dim(`(${r.kind})`)} · ${C.cyan(r.paneId)}${tb ? ` ${C.dim(tb)}` : ''} · ${C.text(modelStr)}${surgeBadge}`;
       const headRight = c.state.paint(c.state.text);
       const gap1 = Math.max(2, width - 4 - ui.strWidth(headLeft) - ui.strWidth(headRight));
       const line1 = `  ${headLeft}${' '.repeat(gap1)}${headRight}`;
@@ -3137,6 +3465,7 @@ function toJson(model) {
     scope,
     workspace: scope === 'all' ? null : scope,
     summary,
+    hostMem: model.hostMem || null,
     panes: toJsonRows(model),
   };
 }
@@ -3184,6 +3513,7 @@ options:
   --provider <name|off>   whose usage bars show, or off to hide them
   --subview <name|all>    sub-view inside the active provider, or all
   --interval <seconds>    refresh period, at least 2 (default 3)
+  --sort ram              heaviest RAM first (a row with no reading sinks)
   --once                  print one frame and exit (no colour tags written)
   --backups               open on the backups view (the restore action uses this)
   --options               open on the options view (settings, tokscale, compaction)
@@ -3199,6 +3529,7 @@ function parseArgs(argv) {
   const o = {
     workspace: null, scope: 'all', crew: null, budget: null, tags: process.env.CREW_BOARD_TAGS || null, tagScope: null, view: 'auto',
     provider: null, subview: null, interval: 3, once: false, json: false, jsonRows: false, set: new Set(process.env.CREW_BOARD_TAGS ? ['tags'] : []),
+    sort: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -3228,6 +3559,11 @@ function parseArgs(argv) {
       if (!(o.budget > 0)) throw new Error('--budget must be a positive number of dollars');
     }
     else if (a === '--interval') o.interval = Math.max(2, Number(val()) || 3);
+    else if (a === '--sort') {
+      const v = val();
+      if (v !== 'ram') throw new Error('--sort must be ram');
+      o.sort = v;
+    }
     else if (a === '--once') o.once = true;
     else if (a === '--backups') o.backups = true;
     else if (a === '--options') o.options = true;
@@ -3307,7 +3643,16 @@ async function paneRss(agents, now) {
 // One full data pass: Herdr snapshot, reports, screens where needed.
 async function collect(opts, mem) {
   const now = Date.now();
-  const snap = await herdr.snapshot();
+  let snap;
+  let herdrOnline = true;
+  try {
+    snap = await herdr.snapshot();
+  } catch (e) {
+    // Herdr stopped or unreachable: lose the panes, keep the board. The
+    // standalone headless workers below still show from ~/.roostr/registry.json.
+    herdrOnline = false;
+    snap = { agents: [], panes: [], workspaces: [], tabs: [], layouts: [] };
+  }
   // Save the agent's real session id on the pane before anything reads the
   // snapshot, so backups and sessions.json can resume it later. Only a live
   // board writes metadata back; --json and --once stay read only.
@@ -3359,7 +3704,10 @@ async function collect(opts, mem) {
     const c = crewFor(null);
     if (c) trust[c.file] = c.hash;
   }
-  const model = buildModel({ snap, agents, screens, reports, events, rss, crewFor, mem, now, budget: opts.budget, trust, tagScope: opts.tagScope });
+  const model = buildModel({
+    snap, agents, screens, reports, events, rss, crewFor, mem, now, budget: opts.budget, trust, tagScope: opts.tagScope,
+    registry: readRegistry(), hostMem: readHostMem(), herdrOnline, sort: opts.sort,
+  });
   if (opts.live) {
     for (const a of agents) {
       if (!reports[a.pane_id] && screens[a.pane_id] != null) {
@@ -3829,7 +4177,7 @@ function runLive(opts) {
     if (!logView || logView.busy) return;
     logView.busy = true;
     draw();
-    sessionLog.list({ dirs: logView.all ? [] : logView.dirs, all: logView.all, noCache: true })
+    sessionLog.list({ dirs: logView.all ? [] : logView.dirs, all: logView.all, kind: logView.kind || 'all', noCache: true })
       .then((items) => {
         if (!logView) return;
         logView.items = items;
@@ -3851,7 +4199,7 @@ function runLive(opts) {
       draw();
       return;
     }
-    logView = { items: [], sel: 0, all: false, dirs: workspaceDirs(), busy: false, status: null, at: 0 };
+    logView = { items: [], sel: 0, all: false, kind: 'all', dirs: workspaceDirs(), busy: false, status: null, at: 0 };
     refreshLog();
   };
 
@@ -4206,8 +4554,9 @@ function runLive(opts) {
       const n = logView.items.length;
       if (k === '\x1b' || k === 'L' || k === 'q') logView = null;
       else if (k === '\x03') return quit();
-      else if (k === '\x1b[A' || k === 'k') logView.sel = Math.max(0, logView.sel - 1);
+      else if (k === '\x1b[A') logView.sel = Math.max(0, logView.sel - 1);
       else if (k === '\x1b[B' || k === 'j') logView.sel = Math.min(Math.max(0, n - 1), logView.sel + 1);
+      else if (k === 'k') { logView.kind = cycle(LOG_KINDS, logView.kind || 'all'); refreshLog(); return; }
       else if (k === 'a') { logView.all = !logView.all; refreshLog(); return; }
       else if (k === 'r') { refreshLog(); return; }
       else if ((k === '\r' || k === '\n') && n) { resumeLogged(); return; }
@@ -4262,6 +4611,7 @@ function runLive(opts) {
     else if (k === 's') act('scope');
     else if (k === 'p') act('provider');
     else if (k === 'P') act('subview');
+    else if (k === 'M') { opts.sort = opts.sort === 'ram' ? null : 'ram'; tick(); }
     else if (k === 'a') act('trust');
     else if (k === '?') act('help');
     else if (k === 'd') act('today');
@@ -4458,6 +4808,7 @@ function main(argv) {
 module.exports = {
   saveMemory, loadMemory, TAGS, parseLabel, stripTag, assignTags, trackStatus, selectAgents, needsScreen, buildModel,
   render, toJson, toJsonRows, shortModel, fmtRam, banner, budgetState, trustCrews, fmtDuration, fmtTokens, fmtCost, parseArgs, main, HELP, collect, applyTags, sidebarTokens, editedLabel, editChunk, applyPrefs, crewResolver, MOUSE_RE, isDoubleClick, copyToClipboard, detailBox, providers, sourcesOf, providerOf, refreshBackups, findTokscale, optionsLines,
+  readRegistry, readHostMem, parseMeminfo, sortRowsByRam, headlessRow, registryFile, censusFile,
   setupState, setupLines, setupKey, setupReady, SETUP_ROWS, TASK_KIND_ROWS, headLines, surge, orchestrationEnabled,
   orchestrateState, orchestrateLines, orchestrateKey, daemonLines, discoverPlanDirs, loadPlanTasks, saveTaskOverride, ORCHESTRATE_TABS,
 };

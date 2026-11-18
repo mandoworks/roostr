@@ -11,6 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const config = require('./config');
+const stateDir = require('./state-dir');
 
 const LANGUAGES = config.LANGUAGES;
 
@@ -89,15 +90,10 @@ function draw({ language, count = 1, exclude = [] } = {}) {
   return out;
 }
 
-const USAGE = 'usage: roostr name [--language en|es|pt|fr] [--count 1..20] [--exclude a,b,c] [--no-record] [--history [--json]]';
+const USAGE = 'usage: roostr name [--language en|es|pt|fr] [--count 1..20] [--exclude a,b,c] [--no-record] [--json] [--history [--json]]';
 
 function historyPath() {
-  if (process.env.ROOSTR_NAMES) return process.env.ROOSTR_NAMES;
-  if (process.env.CREW_BOARD_NAMES) return process.env.CREW_BOARD_NAMES;
-  const roostr = path.join(os.homedir(), '.roostr', 'names.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'names.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('names.json', ['ROOSTR_NAMES', 'CREW_BOARD_NAMES']);
 }
 
 function readHistory(file = historyPath()) {
@@ -201,7 +197,8 @@ function parseArgs(argv) {
   const excludeRaw = flagValue(argv, '--exclude') || '';
   const exclude = excludeRaw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const remember = !argv.includes('--no-record');
-  return { language, count, exclude, remember };
+  const json = argv.includes('--json');
+  return { language, count, exclude, remember, json };
 }
 
 function main(argv = []) {
@@ -220,8 +217,13 @@ function main(argv = []) {
     else for (const e of entries) process.stdout.write(`${e.name}\t${e.language}\t${e.role}\t${e.at}\n`);
     return 0;
   }
-  for (const name of drawFor({ language: p.language, count: p.count, exclude: p.exclude, remember: p.remember })) {
-    process.stdout.write(`${name}\n`);
+  const drawn = drawFor({ language: p.language, count: p.count, exclude: p.exclude, remember: p.remember });
+  if (p.json) {
+    process.stdout.write(JSON.stringify({ version: 1, language: p.language, names: drawn }, null, 2) + '\n');
+  } else {
+    for (const name of drawn) {
+      process.stdout.write(`${name}\n`);
+    }
   }
   return 0;
 }

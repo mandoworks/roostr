@@ -79,7 +79,11 @@ async function shellPid(paneId) {
 
 // Jump to an agent pane (switches workspace and tab if needed).
 async function focusAgent(paneId) {
-  await runJson(['agent', 'focus', paneId]);
+  try {
+    await runJson(['agent', 'focus', paneId]);
+  } catch (e) {
+    await runJson(['pane', 'focus', paneId]);
+  }
 }
 
 async function focusWorkspace(workspaceId) {

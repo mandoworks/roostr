@@ -16,6 +16,7 @@ const os = require('os');
 const path = require('path');
 const ledger = require('./ledger');
 const state = require('./state');
+const stateDir = require('./state-dir');
 
 const EFFORTS = ['low', 'medium', 'high'];
 const TIERS = ['fast', 'balanced', 'reasoning'];
@@ -23,12 +24,7 @@ const EFFORT_TIER = { low: 'fast', medium: 'balanced', high: 'reasoning' };
 const OUTCOME_ALIASES = { accepted: 'pass', abandoned: 'fail' };
 
 function summaryPath() {
-  if (process.env.ROOSTR_SUMMARY) return process.env.ROOSTR_SUMMARY;
-  if (process.env.CREW_BOARD_SUMMARY) return process.env.CREW_BOARD_SUMMARY;
-  const roostr = path.join(os.homedir(), '.roostr', 'summary.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'summary.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('summary.json', ['ROOSTR_SUMMARY', 'CREW_BOARD_SUMMARY']);
 }
 
 function round(n, digits) {

@@ -1,11 +1,12 @@
 'use strict';
-// The user's setup: tools, preferred models, head name and role defaults. `~/.crew-board/config.json`, override with CREW_BOARD_CONFIG.
+// The user's setup: tools, preferred models, head name and role defaults. `~/.roostr/config.json`, override with ROOSTR_CONFIG / CREW_BOARD_CONFIG.
 // JSON only. The crew file stays TOML.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const state = require('./state');
+const stateDir = require('./state-dir');
 
 const TOOLS = ['claude', 'opencode', 'kilo', 'agy', 'codex', 'gemini'];
 const ROLES = ['head-honcho', 'worker', 'reviewer'];
@@ -74,12 +75,7 @@ function mergeTaskKinds(base = {}, overrides = {}) {
 }
 
 function configPath() {
-  if (process.env.ROOSTR_CONFIG) return process.env.ROOSTR_CONFIG;
-  if (process.env.CREW_BOARD_CONFIG) return process.env.CREW_BOARD_CONFIG;
-  const roostr = path.join(os.homedir(), '.roostr', 'config.json');
-  const legacy = path.join(os.homedir(), '.crew-board', 'config.json');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('config.json', ['ROOSTR_CONFIG', 'CREW_BOARD_CONFIG']);
 }
 
 function plainObject(v) {

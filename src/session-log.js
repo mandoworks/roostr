@@ -1,5 +1,5 @@
 'use strict';
-// `roostr log [--all] [--dir <path>] [--kind opencode|kilo|all] [--json]`
+// `roostr log [--all] [--dir <path>] [--kind opencode|kilo|claude|agy|all] [--json]`
 // `roostr log --resume <session-id> [--workspace <id|label>] [--pane <id>]`
 //
 // Recent conversations from the agent's own session store. This is the history
@@ -11,8 +11,8 @@ const herdr = require('./herdr');
 const sessions = require('./sessions');
 const ui = require('./ui');
 
-const KINDS = ['opencode', 'kilo'];
-const USAGE = 'usage: roostr log [--all] [--dir <path>] [--kind opencode|kilo|all] [--json] | log --resume <id> [--workspace <id|label>] [--pane <id>]';
+const KINDS = ['opencode', 'kilo', 'claude', 'agy'];
+const USAGE = 'usage: roostr log [--all] [--dir <path>] [--kind opencode|kilo|claude|agy|all] [--json] | log --resume <id> [--workspace <id|label>] [--pane <id>]';
 
 function parseArgs(argv) {
   const o = { all: false, dir: null, kind: 'all', json: false, resume: null, workspace: null, pane: null, help: false };
@@ -51,6 +51,8 @@ async function list(options = {}, deps = {}) {
     try {
       const items = await sessions.sessionList(kind, {
         bin: options.bins && options.bins[kind],
+        agyBrainDir: options.agyBrainDir,
+        claudeProjectsDir: options.claudeProjectsDir,
         noCache: options.noCache,
         timeout: options.timeout,
         limit: options.limit,

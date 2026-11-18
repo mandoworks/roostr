@@ -1,6 +1,6 @@
 'use strict';
 // The orchestration ledger: one JSON object per line, append only.
-// Default ~/.crew-board/orchestration.jsonl, override with CREW_BOARD_LEDGER.
+// Default ~/.roostr/orchestration.jsonl, override with ROOSTR_LEDGER / CREW_BOARD_LEDGER.
 //
 // The ledger stores the effort recommendation, the effort actually used and the
 // outcome. It never stores prompts, transcripts, pane screens or secrets.
@@ -14,18 +14,14 @@ const advisor = require('./advisor');
 const crewfile = require('./crewfile');
 const rotate = require('./rotate');
 const log = require('./log');
+const stateDir = require('./state-dir');
 
 const TIERS = ['fast', 'balanced', 'reasoning'];
 const EFFORTS = ['low', 'medium', 'high'];
 const RESULTS = ['pass', 'fail', 'blocked'];
 
 function ledgerPath() {
-  if (process.env.ROOSTR_LEDGER) return process.env.ROOSTR_LEDGER;
-  if (process.env.CREW_BOARD_LEDGER) return process.env.CREW_BOARD_LEDGER;
-  const roostr = path.join(os.homedir(), '.roostr', 'orchestration.jsonl');
-  const legacy = path.join(os.homedir(), '.crew-board', 'orchestration.jsonl');
-  if (fs.existsSync(roostr) || !fs.existsSync(legacy)) return roostr;
-  return legacy;
+  return stateDir.resolvePath('orchestration.jsonl', ['ROOSTR_LEDGER', 'CREW_BOARD_LEDGER']);
 }
 
 function readEntries(file = ledgerPath()) {
@@ -166,13 +162,14 @@ function main(args = []) {
   }
 
   try {
+    const json = argv.includes('--json');
     const crewPath = flagValue(argv, '--crew') || crewfile.findCrewFile(process.cwd());
     const crew = crewPath ? crewfile.loadCrew(crewPath) : null;
     if (sub === 'spawn') {
       const paneId = flagValue(argv, '--pane');
       const task = flagValue(argv, '--task');
       if (!paneId || !task) {
-        console.error('usage: roostr spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>]');
+        console.error('usage: roostr spawn --pane <id> --task "<task>" [--role worker] [--kind <kind>] [--tier fast|balanced|reasoning] [--effort low|medium|high] [--model <name>] [--crew <file>] [--json]');
         return 2;
       }
       const result = spawn({
@@ -186,14 +183,15 @@ function main(args = []) {
         kind: flagValue(argv, '--kind') || undefined,
         crew,
       });
-      console.log(formatSpawn(result));
+      if (json) console.log(JSON.stringify({ runId: result.entry.runId, entry: result.entry, recommendation: result.recommendation }, null, 2));
+      else console.log(formatSpawn(result));
       return 0;
     }
 
     const runId = flagValue(argv, '--run');
     const result = flagValue(argv, '--result');
     if (!runId || !result) {
-      console.error('usage: roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"]');
+      console.error('usage: roostr outcome --run <runId> --result pass|fail|blocked [--rework N] [--cost N] [--note "<text>"] [--json]');
       return 2;
     }
     const entry = outcome({
@@ -203,7 +201,8 @@ function main(args = []) {
       cost: flagValue(argv, '--cost'),
       note: flagValue(argv, '--note') || undefined,
     });
-    console.log(`outcome:     ${entry.outcome} · run ${entry.runId}`);
+    if (json) console.log(JSON.stringify(entry, null, 2));
+    else console.log(`outcome:     ${entry.outcome} · run ${entry.runId}`);
     return 0;
   } catch (e) {
     console.error(`roostr ${sub}: ${e.message}`);

@@ -131,25 +131,53 @@
       orchBtn.textContent = isOrch ? 'Orchestrator' : 'Mark orch';
 
       orchBtn.addEventListener('click', async () => {
-        await apiFetch('/agents/api/names/orchestrator', {
-          method: 'POST',
-          body: JSON.stringify({ slug: item.slug, enabled: !isOrch }),
-        });
-        await refresh();
+        orchBtn.disabled = true;
+        saveBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/orchestrator', {
+            method: 'POST',
+            body: JSON.stringify({ slug: item.slug, enabled: !isOrch }),
+          });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to update orchestrator', 'error');
+          }
+        } finally {
+          orchBtn.disabled = false;
+          saveBtn.disabled = false;
+        }
       });
 
       form.addEventListener('submit', async (evt) => {
         evt.preventDefault();
-        await apiFetch('/agents/api/names/override', {
-          method: 'POST',
-          body: JSON.stringify({ slug: item.slug, name: input.value }),
-        });
-        await refresh();
+        saveBtn.disabled = true;
+        orchBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/override', {
+            method: 'POST',
+            body: JSON.stringify({ slug: item.slug, name: input.value }),
+          });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to save override', 'error');
+          }
+        } finally {
+          saveBtn.disabled = false;
+          orchBtn.disabled = false;
+        }
       });
+
+      const manageLink = document.createElement('a');
+      manageLink.className = 'btn-link';
+      manageLink.href = `/agents/control/?select=${encodeURIComponent('muse:' + item.slug)}`;
+      manageLink.textContent = 'Manage in Control ->';
 
       form.appendChild(input);
       form.appendChild(saveBtn);
       form.appendChild(orchBtn);
+      form.appendChild(manageLink);
       card.appendChild(form);
       list.appendChild(card);
     }
@@ -174,9 +202,18 @@
 
       for (const w of h.workers) {
         const row = document.createElement('div');
-        row.className = 'audit-row';
+        row.className = 'orch-row';
         const label = w.name || w.agent || w.pane_id;
-        row.textContent = `${w.pane_id} | ${label} | ${w.state || 'unknown'} | ${w.task || ''}`;
+        const info = document.createElement('span');
+        info.textContent = `${w.pane_id} | ${label} | ${w.state || 'unknown'} | ${w.task || ''}`;
+        row.appendChild(info);
+        if (w.pane_id) {
+          const link = document.createElement('a');
+          link.className = 'btn-link';
+          link.href = `/agents/control/?select=${encodeURIComponent(w.pane_id)}`;
+          link.textContent = 'Manage in Control ->';
+          row.appendChild(link);
+        }
         box.appendChild(row);
       }
       hostsEl.appendChild(box);
@@ -241,8 +278,17 @@
     const revertBtn = document.getElementById('revert-btn');
     if (revertBtn) {
       revertBtn.addEventListener('click', async () => {
-        await apiFetch('/agents/api/names/revert', { method: 'POST', body: '{}' });
-        await refresh();
+        revertBtn.disabled = true;
+        try {
+          await apiFetch('/agents/api/names/revert', { method: 'POST', body: '{}' });
+          await refresh();
+        } catch (err) {
+          if (!err || err.message !== 'unauthorized') {
+            showError((err && err.message) || 'Failed to revert', 'error');
+          }
+        } finally {
+          revertBtn.disabled = false;
+        }
       });
     }
 
